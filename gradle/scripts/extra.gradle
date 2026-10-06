@@ -1,0 +1,34 @@
+// You may write any gradle buildscript component in this file
+// This file is automatically applied after build.gradle + dependencies.gradle is ran
+
+// If you wish to use the default helper methods, uncomment the line below
+// apply from: 'gradle/scripts/helpers.gradle'
+
+// ---- Install the target modpack's mods into run/mods for runClient/runServer ----
+// CubicChunks declares `TweakClass: MixinTweaker` alongside an FMLCorePlugin: on the dev classpath GradleStart would load its
+// coremod a second time (DuplicateModsFoundException: cubicchunkscore). Installing the deobfuscated jars into run/mods
+// reproduces the production loading path exactly (Forge mods-dir discovery, MixinBooter coremod rescue).
+// Only files previously installed by this task (tracked in a marker file) are ever removed.
+def devModsDir = file('run/mods')
+def devModsMarker = file('run/mods/.solarapocalypse-dev-mods')
+
+def installDevMods = tasks.register('installDevMods') {
+    group 'solarapocalypse'
+    description 'Installs the devMods configuration (deobfuscated CubicChunks, CubicWorldGen) into run/mods'
+    def modJars = configurations.devMods
+    inputs.files(modJars)
+    outputs.dir(devModsDir)
+    doLast {
+        devModsDir.mkdirs()
+        Set<String> wanted = modJars.files.collect { it.name } as Set
+        if (devModsMarker.exists()) {
+            devModsMarker.readLines().findAll { it && !wanted.contains(it) }.each { new File(devModsDir, it).delete() }
+        }
+        modJars.files.each { File jar -> project.copy { from jar; into devModsDir } }
+        devModsMarker.text = wanted.sort().join('\n') + '\n'
+    }
+}
+
+['runClient', 'runServer'].each { taskName ->
+    tasks.named(taskName).configure { dependsOn installDevMods }
+}

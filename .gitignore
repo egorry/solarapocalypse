@@ -1,0 +1,32 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# kate
+*.kate-swp
+
+# other
+eclipse
+run
+
+# local research material (decompiled third-party code, jars, probe logs)
+research
+
+# the user's prompt scratch file and in-game test logs
+prompt.txt
+test_log_files
