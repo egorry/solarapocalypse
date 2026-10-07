@@ -44,6 +44,7 @@ public class SolarApocalypse {
         MinecraftForge.EVENT_BUS.register(SolarApocalypse.class);
         MinecraftForge.EVENT_BUS.register(ApocalypseClock.class);
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
+        SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
     }
 
@@ -70,6 +71,7 @@ public class SolarApocalypse {
     public void serverStopped(FMLServerStoppedEvent event) {
         ApocalypseClock.detach();
         CHANGES.clear();
+        if (CUBIC_CHUNKS) CubicSky.reset();
         lastPhase = Integer.MIN_VALUE;
     }
 
@@ -83,6 +85,7 @@ public class SolarApocalypse {
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         rules = BlockRules.compile(SolarConfig.phases);
         CHANGES.clear();
+        if (CUBIC_CHUNKS) CubicSky.reset();
         requeueAll();
     }
 
@@ -107,10 +110,11 @@ public class SolarApocalypse {
     }
 
     public static BlockChanges changes(World world) {
-        return CHANGES.computeIfAbsent(world, w -> new BlockChanges(timeline, rules, topY(w), evaporationTopY(w)));
+        return CHANGES.computeIfAbsent(world, w -> new BlockChanges(timeline, rules, evaporationTopY(w)));
     }
 
-    private static int topY(World world) {
+    /** world.topY, resolving 'auto'. */
+    public static int topY(World world) {
         if (SolarConfig.topY != SolarConfig.AUTO) return SolarConfig.topY;
         return isCubic(world) ? CubicSky.maxGenerationHeight(world) : world.getActualHeight();
     }

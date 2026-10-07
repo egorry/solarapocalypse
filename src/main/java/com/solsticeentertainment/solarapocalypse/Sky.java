@@ -2,35 +2,31 @@ package com.solsticeentertainment.solarapocalypse;
 
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
-import net.minecraft.world.chunk.Chunk;
 
 /**
- * What lies above a position, by the vanilla rule (blocks with light opacity 0, such as glass, let the sun through;
- * leaves, water and ice do not). Never loads terrain.
+ * Sun and heat at a position, by the vanilla rule (what burns zombies): a position is in the sun when nothing with
+ * light opacity above 0 is over it (glass lets the sun through; leaves, water and ice do not). Never loads terrain.
  */
 public final class Sky {
 
-    public static final int UNKNOWN = -1;
+    public static final int SHADED = 0, EXPOSED = 1, UNKNOWN = 2;
 
     private Sky() {}
 
-    /**
-     * 0 if the position sees the sky, else the number of sun-blocking blocks above it (counting stops after cap + 1),
-     * or UNKNOWN when the terrain above is not loaded (Cubic Chunks: not known to be clear for world.skyClearance blocks).
-     */
-    public static int cover(World world, BlockPos pos, int cap) {
-        if (pos.getY() < SolarConfig.sunFloorY) return cap + 1;
-        if (SolarApocalypse.isCubic(world)) return CubicSky.cover(world, pos, cap);
-        Chunk chunk = world.getChunkProvider().getLoadedChunk(pos.getX() >> 4, pos.getZ() >> 4);
-        if (chunk == null) return UNKNOWN;
-        int x = pos.getX() & 15, z = pos.getZ() & 15;
-        int top = chunk.getHeightValue(x, z);
-        if (pos.getY() >= top) return 0;
-        int count = 0;
-        for (int y = top - 1; y > pos.getY() && count <= cap; y--) {
-            if (chunk.getBlockState(x, y, z).getLightOpacity() > 0) count++;
-        }
-        return Math.max(count, 1);
+    /** Whether a position (an entity's eyes) is in the sun: EXPOSED, SHADED, or UNKNOWN when the terrain above is not known. */
+    public static int at(World world, BlockPos pos) {
+        if (pos.getY() < SolarConfig.sunFloorY) return SHADED;
+        if (SolarApocalypse.isCubic(world)) return CubicSky.at(world, pos);
+        if (!world.isBlockLoaded(pos)) return UNKNOWN;
+        return world.canSeeSky(pos) ? EXPOSED : SHADED;
+    }
+
+    /** Whether background heat reaches a position: sky light of at least entities.backgroundMinSkyLight, terrain above known. */
+    public static boolean heat(World world, BlockPos pos) {
+        if (pos.getY() < SolarConfig.sunFloorY || !world.isBlockLoaded(pos)) return false;
+        if (world.getLightFor(EnumSkyBlock.SKY, pos) < SolarConfig.backgroundMinSkyLight) return false;
+        return !SolarApocalypse.isCubic(world) || CubicSky.columnTopKnown(world, pos);
     }
 }

@@ -7,35 +7,35 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 /**
- * What the apocalypse does to one block at a given progress, for one world: a pure function of (block, position, sky,
- * progress), so the same evaluation serves live progression and catch-up of terrain loaded later.
+ * What the apocalypse does to one block at a given progress: a pure function of (block, position, the column's
+ * reference and current surface, sky, progress), so the same evaluation serves live progression and the catch-up of
+ * terrain loaded later.
  *
- * - destroy rules remove blocks the depth line has reached: a block reached during the rule's phase goes when the line
- *   reaches it (layer by layer); one reached earlier goes at a random but fixed time within the phase.
- * - convert rules change blocks that are sun-exposed or reached by the depth line, at a random but fixed time within the
- *   phase (INSTANT phases: at the start).
- * - evaporation removes sun-exposed liquids from their phase on (LAYERS mode: once the descending level passes them).
- * Rules of every started phase apply in phase order, each to the result of the previous one.
+ * - destroy: blocks matching an active destroy rule go once the phase depth reaches them. Depth counts layers below the
+ *   column's reference (its terrain surface, or world.topY): a block reached during the rule's phase goes when the depth
+ *   passes it (layer by layer), one reached before goes at a random but fixed moment within the phase.
+ * - convert: blocks in the top convertDepth layers of the column's current surface change, once the phase's destruction
+ *   is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to its end.
+ * - evaporation: sun-exposed liquids go from their phase on (LAYERS mode: once a descending level passes them).
  */
 public final class BlockChanges {
 
-    public static final int SHADED = 0, EXPOSED = 1, UNKNOWN = 2;
+    public static final int NO_Y = Integer.MIN_VALUE;
     public static final long NEVER = Timeline.NEVER;
-    /** How soon to look again at a block whose sky is unknown, and the shortest gap between two looks at a cube. */
-    private static final long RECHECK = Timeline.DAY / 20;
+    /** How soon to look again at a block whose column is not known yet, and the shortest gap between two looks at a cube. */
+    public static final long RECHECK = Timeline.DAY / 20;
     public static final long MIN_WAKE = RECHECK;
+    private static final int MAX_CHAIN = 16;
     private static final IBlockState AIR = Blocks.AIR.getDefaultState();
 
     private final Timeline timeline;
     private final BlockRules rules;
-    public final int topY;
     public final int evaporationTopY;
     private long wake;
 
-    public BlockChanges(Timeline timeline, BlockRules rules, int topY, int evaporationTopY) {
+    public BlockChanges(Timeline timeline, BlockRules rules, int evaporationTopY) {
         this.timeline = timeline;
         this.rules = rules;
-        this.topY = topY;
         this.evaporationTopY = evaporationTopY;
     }
 
@@ -44,34 +44,50 @@ public final class BlockChanges {
         return wake;
     }
 
-    public IBlockState evaluate(IBlockState state, BlockPos pos, int sky, long progress) {
+    /**
+     * @param reference the column's reference Y for depths, or NO_Y if not known yet
+     * @param surface   the column's current surface (topmost block that blocks movement or is liquid), or NO_Y if not known
+     * @param sky       Sky.EXPOSED / SHADED / UNKNOWN for the block itself
+     */
+    public IBlockState evaluate(IBlockState state, BlockPos pos, int reference, int surface, int sky, long progress) {
         wake = NEVER;
+        int phase = timeline.phaseAt(progress);
+        if (phase < 0) return state;
         int x = pos.getX(), y = pos.getY(), z = pos.getZ();
-        int current = timeline.phaseAt(progress);
-        for (int q = 0; q < timeline.phaseCount(); q++) {
-            if (q > current) {
-                if (rules.hasRule(q, state)) wake = Math.min(wake, timeline.start(q));
-                break;
-            }
-            if (rules.destroys(q, state)) {
-                long reach = timeline.reachTime(y, topY);
-                long due = reach == NEVER ? NEVER : reach >= timeline.start(q) ? reach : spreadTime(x, y, z, q);
-                if (progress >= due) return AIR;
-                wake = Math.min(wake, due);
-            }
-            IBlockState to = rules.convert(q, state);
-            if (to == null) continue;
-            long due = spreadTime(x, y, z, q);
-            if (sky != EXPOSED && !timeline.reached(y, topY, progress)) {
-                long reach = timeline.reachTime(y, topY);
-                wake = Math.min(wake, sky == UNKNOWN ? progress + RECHECK : reach == NEVER ? NEVER : Math.max(due, reach));
-            } else if (progress < due) {
-                wake = Math.min(wake, due);
+
+        int destroyedBy = rules.destroyPhase(phase, state);
+        if (destroyedBy >= 0) {
+            if (reference == NO_Y) {
+                later(progress + RECHECK);
             } else {
-                state = to;
+                long reach = timeline.reachTime(y, reference);
+                long due = reach == NEVER ? NEVER
+                        : reach >= timeline.start(destroyedBy) ? reach : spread(timeline.start(destroyedBy), timeline.spread(destroyedBy), x, y, z, destroyedBy);
+                if (progress >= due) return AIR;
+                later(due);
             }
         }
+
+        for (int n = 0; n < MAX_CHAIN; n++) {
+            BlockRules.Step step = rules.convert(phase, state);
+            if (step == null) break;
+            if (surface == NO_Y) {
+                later(progress + RECHECK);
+                break;
+            }
+            if (y <= (long) surface - SolarConfig.phases[step.phase].convertDepth) break; // below the surface layer
+            long due = spread(timeline.convertStart(step.phase), timeline.convertSpread(step.phase), x, y, z, step.phase);
+            if (progress < due) {
+                later(due);
+                break;
+            }
+            state = step.target;
+        }
         return evaporate(state, y, sky, progress);
+    }
+
+    private void later(long time) {
+        wake = Math.min(wake, time);
     }
 
     private IBlockState evaporate(IBlockState state, int y, int sky, long progress) {
@@ -89,18 +105,18 @@ public final class BlockChanges {
                         : start + (long) Math.ceil(layers * Timeline.DAY / SolarConfig.evaporationLayersPerDay);
             }
         }
-        if (sky == UNKNOWN) {
-            wake = Math.min(wake, Math.max(due, progress + RECHECK));
+        if (sky == Sky.UNKNOWN) {
+            later(Math.max(due, progress + RECHECK));
             return state;
         }
-        if (sky == SHADED) return state;
+        if (sky == Sky.SHADED) return state;
         if (progress >= due) return AIR;
-        wake = Math.min(wake, due);
+        later(due);
         return state;
     }
 
-    private long spreadTime(int x, int y, int z, int phase) {
-        return timeline.start(phase) + (long) (Timeline.hash(x, y, z, phase) * timeline.spread(phase));
+    private static long spread(long from, long length, int x, int y, int z, int phase) {
+        return from + (long) (Timeline.hash(x, y, z, phase) * length);
     }
 
     /** Writes a change: no neighbour updates unless blocks.blockPhysics, no drops unless blocks.dropItems. */
@@ -108,5 +124,17 @@ public final class BlockChanges {
         if (!SolarConfig.dropItems && from.getBlock().hasTileEntity(from)) world.removeTileEntity(pos); // no container spill
         if (SolarConfig.dropItems && to.getMaterial() == Material.AIR) from.getBlock().dropBlockAsItem(world, pos, from, 0);
         world.setBlockState(pos, to, SolarConfig.blockPhysics ? 3 : 2 | 16);
+    }
+
+    /** The surface that conversions measure from: blocks movement or is liquid (leaves, glass and water count; plants do not). */
+    public static boolean isSurface(IBlockState state) {
+        Material m = state.getMaterial();
+        return m.blocksMovement() || m.isLiquid();
+    }
+
+    /** Terrain for a recorded reference surface: like isSurface, without trees and liquids. */
+    public static boolean isGround(IBlockState state) {
+        Material m = state.getMaterial();
+        return m.blocksMovement() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS && m != Material.GOURD;
     }
 }

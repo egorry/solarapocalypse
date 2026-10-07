@@ -13,25 +13,35 @@ import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import net.minecraftforge.oredict.OreDictionary;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Predicate;
 
 /**
  * The phases' convert and destroy lists, compiled once per config load into identity maps over every registered block
- * state, so applying them is two map lookups per block.
+ * state, so applying them is two map lookups per block. Per phase the maps hold the rules active in that phase
+ * (phases.ruleMode): CARRY = every phase so far, the latest phase's rule winning per block; ISOLATED = that phase only.
  */
 public final class BlockRules {
 
     public enum Liquid { NONE, WATER, LAVA, OTHER }
 
-    private final List<Map<IBlockState, IBlockState>> convert = new ArrayList<>();
-    private final List<Set<IBlockState>> destroy = new ArrayList<>();
+    /** One conversion: the result, and the (0-based) phase whose rule it is, which sets when it is due. */
+    public static final class Step {
+        public final IBlockState target;
+        public final int phase;
+
+        Step(IBlockState target, int phase) {
+            this.target = target;
+            this.phase = phase;
+        }
+    }
+
+    private final List<Map<IBlockState, Step>> convert = new ArrayList<>();
+    private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
 
     private BlockRules() {}
 
@@ -59,19 +69,20 @@ public final class BlockRules {
                 Predicate<IBlockState> selector = selector(s, where);
                 if (selector != null) gone.add(selector);
             }
-            Map<IBlockState, IBlockState> conversions = new IdentityHashMap<>();
-            Set<IBlockState> removals = Collections.newSetFromMap(new IdentityHashMap<>());
+            boolean carry = SolarConfig.ruleMode == SolarConfig.RuleMode.CARRY && i > 0;
+            Map<IBlockState, Step> conversions = carry ? new IdentityHashMap<>(rules.convert.get(i - 1)) : new IdentityHashMap<>();
+            Map<IBlockState, Integer> removals = carry ? new IdentityHashMap<>(rules.destroy.get(i - 1)) : new IdentityHashMap<>();
             for (IBlockState state : states) {
                 if (state.getMaterial() == Material.AIR) continue;
                 for (int r = 0; r < from.size(); r++) {
                     if (from.get(r).test(state)) {
-                        if (to.get(r) != state) conversions.put(state, to.get(r));
+                        if (to.get(r) != state) conversions.put(state, new Step(to.get(r), i));
                         break;
                     }
                 }
                 for (Predicate<IBlockState> g : gone) {
                     if (g.test(state)) {
-                        removals.add(state);
+                        removals.putIfAbsent(state, i);
                         break;
                     }
                 }
@@ -82,17 +93,15 @@ public final class BlockRules {
         return rules;
     }
 
-    /** Conversion target of a state in a phase (0-based), or null. */
-    public IBlockState convert(int phase, IBlockState state) {
+    /** The conversion active for a state while a phase (0-based) runs, or null. */
+    public Step convert(int phase, IBlockState state) {
         return convert.get(phase).get(state);
     }
 
-    public boolean destroys(int phase, IBlockState state) {
-        return destroy.get(phase).contains(state);
-    }
-
-    public boolean hasRule(int phase, IBlockState state) {
-        return convert.get(phase).containsKey(state) || destroy.get(phase).contains(state);
+    /** The phase whose destroy rule removes a state while a phase runs, or -1. */
+    public int destroyPhase(int phase, IBlockState state) {
+        Integer q = destroy.get(phase).get(state);
+        return q == null ? -1 : q;
     }
 
     public static Liquid liquid(IBlockState state) {

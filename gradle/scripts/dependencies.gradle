@@ -90,7 +90,8 @@ dependencies {
     // CubicChunks 1.12.2-0.0.1271.0-SNAPSHOT (cubic world API: cubes, columns, heightmaps, cube events)
     compileOnly rfg.deobf('curse.maven:opencubicchunks-292243:5135427')
     devMods rfg.deobf('curse.maven:opencubicchunks-292243:5135427')
-    // Dev runtime only: the pack's world generator. CubicWorldGen 1.12.2-0.0.152.0-SNAPSHOT
+    // CubicWorldGen 1.12.2-0.0.152.0-SNAPSHOT: also soft (cc/CwgSurface reads its terrain density; only loaded with it)
+    compileOnly rfg.deobf('curse.maven:cubicworldgen-304171:3546646')
     devMods rfg.deobf('curse.maven:cubicworldgen-304171:3546646')
 }
 

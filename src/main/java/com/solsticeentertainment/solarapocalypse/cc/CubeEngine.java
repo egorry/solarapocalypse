@@ -2,7 +2,11 @@ package com.solsticeentertainment.solarapocalypse.cc;
 
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
+import com.solsticeentertainment.solarapocalypse.Sky;
 import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
+import com.solsticeentertainment.solarapocalypse.SolarConfig;
+import com.solsticeentertainment.solarapocalypse.SurfaceRecord;
+import io.github.opencubicchunks.cubicchunks.api.util.Coords;
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
 import io.github.opencubicchunks.cubicchunks.api.world.CubeEvent;
 import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
@@ -11,6 +15,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
@@ -162,15 +167,20 @@ public final class CubeEngine {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
-                int top = heights.getHeightValue(lx, lz) - 1;
+                int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                int ceiling = CubicSky.ceiling(world, x, z);
+                int top = heights.getHeightValue(lx, lz) - 1; // topmost opaque block (sky rule)
+                int surface = surface(cubes, cx, cz, lx, lz, top);
+                boolean surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
+                int reference = reference(world, cubes, column, lx, lz, x, z, surface, surfaceKnown);
                 for (int ly = 15; ly >= 0; ly--) {
                     IBlockState from = storage.get(lx, ly, lz);
                     if (from.getMaterial() == Material.AIR) continue;
                     int y = minY + ly;
-                    int sky = y < top ? BlockChanges.SHADED
-                            : CubicSky.knownClear(y, loadedUpTo) ? BlockChanges.EXPOSED : BlockChanges.UNKNOWN;
-                    pos.setPos((cx << 4) + lx, y, (cz << 4) + lz);
-                    IBlockState to = changes.evaluate(from, pos, sky, progress);
+                    int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
+                            : CubicSky.knownClear(y, loadedUpTo, ceiling) ? Sky.EXPOSED : Sky.UNKNOWN;
+                    pos.setPos(x, y, z);
+                    IBlockState to = changes.evaluate(from, pos, reference, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
                     wake = Math.min(wake, changes.wake());
                     if (to == from) continue;
                     int xz = lz << 4 | lx;
@@ -178,8 +188,10 @@ public final class CubeEngine {
                     edited.set(xz);
                     BlockChanges.apply(world, pos, from, to);
                     blocksChanged++;
-                    if (from.getLightOpacity() != to.getLightOpacity()) {
+                    if (from.getLightOpacity() != to.getLightOpacity() || BlockChanges.isSurface(from) != BlockChanges.isSurface(to)) {
                         top = heights.getHeightValue(lx, lz) - 1;
+                        surface = surface(cubes, cx, cz, lx, lz, top);
+                        surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
                         if (top < minY) openedBelow = true;
                     }
                 }
@@ -188,4 +200,63 @@ public final class CubeEngine {
         if (openedBelow && cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
         return wake;
     }
+
+    /** The surface conversions count from: the topmost opaque block, raised over glass, liquids and the like stacked on it. */
+    private static int surface(ICubeProvider cubes, int cx, int cz, int lx, int lz, int top) {
+        for (int n = 0; n < 256; n++) {
+            IBlockState above = blockAt(cubes, cx, cz, lx, top + 1, lz);
+            if (above == null || !BlockChanges.isSurface(above)) break;
+            top++;
+        }
+        return top;
+    }
+
+    /** Depth reference of a column: world.topY, the CubicWorldGen terrain surface, or the recorded one (NO_Y if unknown). */
+    private static int reference(WorldServer world, ICubeProvider cubes, Chunk column, int lx, int lz, int x, int z, int surface,
+                                 boolean surfaceKnown) {
+        if (SolarConfig.depthReference == SolarConfig.DepthReference.TOP_Y) return SolarApocalypse.topY(world);
+        CwgSurface model = CubicSky.model(world);
+        if (model != null) {
+            int top = model.top(x, z);
+            return top == CwgSurface.NONE ? BlockChanges.NO_Y : top;
+        }
+        SurfaceRecord record = SurfaceRecord.of(column);
+        if (record == null) return BlockChanges.NO_Y;
+        int recorded = record.get(lx, lz);
+        if (recorded != SurfaceRecord.NONE || !surfaceKnown) return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
+        for (int y = surface; y > surface - 64; y--) { // first sight: the ground under trees, plants and liquids
+            IBlockState state = blockAt(cubes, column.x, column.z, lx, y, lz);
+            if (state == null) return BlockChanges.NO_Y;
+            if (BlockChanges.isGround(state)) {
+                record.set(lx, lz, y);
+                column.markDirty();
+                return y;
+            }
+        }
+        return BlockChanges.NO_Y;
+    }
+
+    /** The depth reference at x, z without recording one (for /solar status), or NO_Y. */
+    public static int referenceAt(World world, int x, int z) {
+        if (SolarConfig.depthReference == SolarConfig.DepthReference.TOP_Y) return SolarApocalypse.topY(world);
+        CwgSurface model = CubicSky.model(world);
+        if (model != null) {
+            int top = model.top(x, z);
+            return top == CwgSurface.NONE ? BlockChanges.NO_Y : top;
+        }
+        Chunk column = ((ICubicWorld) world).getCubeCache().getLoadedColumn(Coords.blockToCube(x), Coords.blockToCube(z));
+        SurfaceRecord record = column == null ? null : SurfaceRecord.of(column);
+        int recorded = record == null ? SurfaceRecord.NONE : record.get(Coords.blockToLocal(x), Coords.blockToLocal(z));
+        return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
+    }
+
+    /** A block of a loaded cube, or null if its cube is not loaded. */
+    private static IBlockState blockAt(ICubeProvider cubes, int cx, int cz, int lx, int y, int lz) {
+        ICube cube = cubes.getLoadedCube(cx, Coords.blockToCube(y), cz);
+        if (cube == null) return null;
+        ExtendedBlockStorage storage = cube.getStorage();
+        return storage == null ? AIR : storage.get(lx, Coords.blockToLocal(y), lz);
+    }
+
+    private static final IBlockState AIR = Blocks.AIR.getDefaultState();
 }

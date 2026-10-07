@@ -19,22 +19,24 @@ public final class SolarConfig {
     public enum Speed { PHASE, RATE, INSTANT }
     public enum EvaporationMode { INSTANT, LAYERS }
     public enum FireResistance { NONE, DIRECT, BACKGROUND, BOTH }
+    public enum DepthReference { SURFACE, TOP_Y }
+    public enum RuleMode { CARRY, ISOLATED }
 
     public static final int INFINITE = -1;
     public static final int AUTO = Integer.MIN_VALUE;
 
     public static final class Phase {
         public double days;
-        public int depth;            // layers below the reference Y reached by the end of this phase; INFINITE = no end
+        public int depth;            // layers below the reference surface reached by the end of this phase; INFINITE = no end
         public Speed speed;
         public double layersPerDay;  // RATE speed, and the descent rate once the depth is infinite
         public String[] convert;
+        public int convertDepth;     // conversions reach this many layers from the column's current surface
         public String[] destroy;
         public double sunDamage;
         public int sunFireSeconds;
         public double backgroundDamage;
         public int backgroundFireSeconds;
-        public int coverDepth;
     }
 
     private static File file;
@@ -49,10 +51,13 @@ public final class SolarConfig {
     public static double baseDays;
     public static Scaling scaling;
     public static double scalingFactor;
+    public static RuleMode ruleMode;
     public static Phase[] phases;
     // world
     public static Set<Integer> dimensions;
+    public static DepthReference depthReference;
     public static int topY;
+    public static int surfaceMargin;
     public static int skyClearance;
     public static int skyCeilingY;
     public static int sunFloorY;
@@ -72,6 +77,7 @@ public final class SolarConfig {
     public static boolean affectPlayers;
     public static boolean spareFireImmune;
     public static FireResistance fireResistance;
+    public static int backgroundMinSkyLight;
     public static Set<String> entityBlacklist;
     // performance
     public static double tickBudgetMs;
@@ -111,19 +117,32 @@ public final class SolarConfig {
                 "Length of phase n (when its own 'days' is 0): CONSTANT baseDays, LINEAR baseDays*n, QUADRATIC baseDays*n*n,\n" +
                 "EXPONENTIAL baseDays*scalingFactor^(n-1).");
         scalingFactor = c.get(cat, "scalingFactor", 1.5, "EXPONENTIAL scaling factor.").getDouble();
+        ruleMode = enumValue(c, cat, "ruleMode", RuleMode.CARRY,
+                "CARRY: the convert and destroy rules of every phase so far apply; for a block several phases convert, the latest\n" +
+                "phase's rule wins. Terrain loaded late then looks like terrain that lived through every phase.\n" +
+                "ISOLATED: only the running phase's rules apply.\n" +
+                "Either way a chain of rules (grass -> dirt, dirt -> sand) is followed to its end.");
 
         cat = "world";
         c.setCategoryComment(cat, "Where the apocalypse runs and how the sun's reach is measured.");
         dimensions = new HashSet<>();
         for (int d : c.get(cat, "dimensions", new int[]{0}, "Dimension ids the apocalypse affects.").getIntList()) dimensions.add(d);
+        depthReference = enumValue(c, cat, "depthReference", DepthReference.SURFACE,
+                "What phase depths count down from (layer 1 is the reference itself, layer 2 the block below, ...):\n" +
+                "SURFACE: each column's own terrain surface, so every column loses the same thickness at any altitude. Taken\n" +
+                "from the generator in CubicWorldGen worlds, otherwise recorded when the column is first seen (ignoring trees).\n" +
+                "TOP_Y: the fixed Y topY for every column (mountains go first, valleys when the depth gets down to them).\n" +
+                "Blocks above the reference count as reached from phase 1 on.");
         topY = intOrAuto(c, cat, "topY", "auto",
-                "Reference Y the depth of each phase is counted down from: layer 1 is topY, layer 2 is topY-1, ...\n" +
-                "Blocks above topY count as reached from the first phase on. 'auto': in Cubic Chunks worlds the height the\n" +
-                "world's generator reports (CubicWorldGen: the preset's estimated terrain height), otherwise the world height.");
+                "TOP_Y reference. 'auto': in Cubic Chunks worlds the height the world's generator reports (CubicWorldGen: the\n" +
+                "preset's estimated terrain height), otherwise the world height.");
+        surfaceMargin = c.getInt("surfaceMargin", cat, 48, 0, 1 << 20,
+                "CubicWorldGen worlds: blocks above the generator's terrain surface that trees and structures can reach. Above\n" +
+                "surface + margin nothing generated can cover the sun.");
         skyClearance = c.getInt("skyClearance", cat, 32, 0, 1 << 20,
                 "Cubic Chunks: a position only counts as sun-exposed when the cubes up to this many blocks above it are loaded\n" +
-                "(or it is above skyCeilingY). Never-generated cubes count as air in Cubic Chunks, so without this, caves deep\n" +
-                "underground near the top of the loaded area would count as open sky.");
+                "(or above skyCeilingY, or above the CubicWorldGen surface + surfaceMargin). Never-generated cubes count as air in\n" +
+                "Cubic Chunks, so without this, caves deep underground near the top of the loaded area would count as open sky.");
         skyCeilingY = intOrAuto(c, cat, "skyCeilingY", "none",
                 "Cubic Chunks: no terrain exists above this Y; positions above it are exposed unless something loaded covers them.\n" +
                 "'none' disables it.", "none");
@@ -155,7 +174,10 @@ public final class SolarConfig {
         affectPlayers = c.getBoolean("affectPlayers", cat, true, "Players take damage (never in creative or spectator).");
         spareFireImmune = c.getBoolean("spareFireImmune", cat, true, "Fire-immune mobs (blazes, magma cubes...) take no damage.");
         fireResistance = enumValue(c, cat, "fireResistance", FireResistance.NONE,
-                "What Fire Resistance protects from: NONE, DIRECT (sun), BACKGROUND (heat under cover), BOTH.");
+                "What Fire Resistance protects from: NONE, DIRECT (sun), BACKGROUND (heat), BOTH.");
+        backgroundMinSkyLight = c.getInt("backgroundMinSkyLight", cat, 1, 0, 15,
+                "Background heat reaches mobs wherever the sky light is at least this (under trees and overhangs, in houses with\n" +
+                "openings), day and night. Sealed rooms and caves without sky light are safe.");
         entityBlacklist = new HashSet<>(Arrays.asList(c.getStringList("blacklist", cat, new String[0],
                 "Entity ids that never take sun damage, e.g. minecraft:villager_golem.")));
 
@@ -176,27 +198,29 @@ public final class SolarConfig {
         Phase p = new Phase();
         p.days = c.get(cat, "days", 0.0, "Length in days; 0 = phases.baseDays with phases.scaling.").getDouble();
         String depth = c.getString("depth", cat, d.depth,
-                "Layers below world.topY the sun reaches by the end of this phase (whole number), or 'infinite'.\n" +
+                "Layers below the reference (world.depthReference) destroyed by the end of this phase (whole number), or 'infinite'.\n" +
                 "Never lower than an earlier phase's; once infinite, every later phase is infinite.");
         p.depth = "infinite".equalsIgnoreCase(depth.trim()) ? INFINITE : parseInt(depth, 0);
         p.speed = enumValue(c, cat, "speed", d.speed,
-                "How the depth is reached and conversions spread: PHASE over the whole phase, RATE at layersPerDay (the phase\n" +
-                "lasts until the layers are done), INSTANT at the phase start.");
+                "How the depth is reached: PHASE over the whole phase, RATE at layersPerDay (the phase lasts until the layers are\n" +
+                "done), INSTANT at the phase start. Conversions run once the phase's destruction is done, at random but fixed\n" +
+                "moments over the rest of the phase (INSTANT: at once); in an infinite phase they run from its start.");
         p.layersPerDay = c.get(cat, "layersPerDay", d.layersPerDay, "RATE speed, and infinite depth: layers per day.").getDouble();
         p.convert = c.getStringList("convert", cat, d.convert,
-                "Block conversions, applied to blocks the sun reaches (exposed to the sky, or above the depth line).\n" +
+                "Block conversions of the surface layer (see convertDepth).\n" +
                 "Format: <selector> -> <block>. Selectors: modid:name, modid:name:meta, modid:*, #oreDictName,\n" +
                 "material:<name>, * (any breakable block). Target: modid:name, modid:name:meta or air.\n" +
-                "Rules of earlier phases keep applying; within a phase the first matching rule wins.");
+                "Within a phase the first matching rule wins; phases.ruleMode decides whether earlier phases' rules still apply.");
+        p.convertDepth = c.getInt("convertDepth", cat, 1, 1, 1 << 20,
+                "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
+                "snow layers and the like on it). Converting a block to air makes the block below the new surface.");
         p.destroy = c.getStringList("destroy", cat, d.destroy,
-                "Selectors of blocks removed above the depth line (erosion). * = every breakable block.");
+                "Selectors of blocks removed down to the phase's depth (erosion). * = every breakable block.");
         p.sunDamage = c.get(cat, "sunDamage", d.sunDamage, "Damage to mobs in direct sunlight per interval (2 = one heart).").getDouble();
         p.sunFireSeconds = c.getInt("sunFireSeconds", cat, d.sunFire, 0, 3600, "Seconds mobs in direct sunlight are set on fire.");
         p.backgroundDamage = c.get(cat, "backgroundDamage", d.backgroundDamage,
-                "Damage per interval to mobs under at most coverDepth sun-blocking blocks, sunlight or not.").getDouble();
+                "Damage per interval to mobs wherever sky light reaches (entities.backgroundMinSkyLight), sun or not.").getDouble();
         p.backgroundFireSeconds = c.getInt("backgroundFireSeconds", cat, 0, 0, 3600, "Seconds background heat sets mobs on fire.");
-        p.coverDepth = c.getInt("coverDepth", cat, d.coverDepth, 0, 1 << 20,
-                "Background heat reaches mobs with at most this many sun-blocking blocks above them.");
         return p;
     }
 
@@ -208,7 +232,7 @@ public final class SolarConfig {
         String[] convert = new String[0];
         String[] destroy = new String[0];
         double sunDamage, backgroundDamage;
-        int sunFire, coverDepth;
+        int sunFire;
 
         static Defaults of(int n) {
             Defaults d = new Defaults();
@@ -232,14 +256,12 @@ public final class SolarConfig {
                     d.sunDamage = 2;
                     d.sunFire = 6;
                     d.backgroundDamage = 0.5;
-                    d.coverDepth = 1;
                     break;
                 case 4:
                     d.convert = new String[]{"minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"};
                     d.sunDamage = 4;
                     d.sunFire = 8;
                     d.backgroundDamage = 1;
-                    d.coverDepth = 3;
                     break;
                 case 5:
                     d.depth = "infinite";
@@ -248,7 +270,6 @@ public final class SolarConfig {
                     d.sunDamage = 8;
                     d.sunFire = 10;
                     d.backgroundDamage = 2;
-                    d.coverDepth = 8;
                     break;
                 default:
             }

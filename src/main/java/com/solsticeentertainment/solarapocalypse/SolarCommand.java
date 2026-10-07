@@ -84,21 +84,28 @@ public final class SolarCommand extends CommandBase {
             when = "phase " + (phase + 1) + "/" + timeline.phaseCount() + ", " + days(p - timeline.start(phase)) + " in"
                     + (last ? "" : ", next in " + days(timeline.end(phase) - p));
         }
-        BlockChanges changes = SolarApocalypse.changes(world);
-        double depth = timeline.depthAt(p);
-        String reach = SolarApocalypse.isActive(world)
-                ? "this world: topY " + changes.topY + ", sun reaches Y " + (long) Math.floor(changes.topY - depth + 1)
-                + " (" + (long) depth + " layers)" + (SolarApocalypse.isCubic(world) ? ", cubes waiting " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world) : "")
-                + ", your position " + sky(world, pos)
-                : "this world is not affected";
+        long depth = (long) timeline.depthAt(p);
+        String reach;
+        if (!SolarApocalypse.isActive(world)) {
+            reach = "this world is not affected";
+        } else {
+            int reference = SolarApocalypse.isCubic(world)
+                    ? com.solsticeentertainment.solarapocalypse.cc.CubeEngine.referenceAt(world, pos.getX(), pos.getZ())
+                    : SolarApocalypse.topY(world);
+            reach = "depth " + depth + " layers below " + SolarConfig.depthReference
+                    + (reference == BlockChanges.NO_Y ? " (not known here yet)" : " (here Y " + reference + ", destroyed down to Y " + (reference - depth + 1) + ")")
+                    + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world) : "")
+                    + "; you: " + sky(world, pos.up());
+        }
         return new String[]{
                 "Solar apocalypse: day " + days(p) + ", " + when + (ApocalypseClock.isPaused() ? " (paused)" : ""),
                 reach};
     }
 
     private static String sky(World world, BlockPos pos) {
-        int cover = Sky.cover(world, pos.up(), 1 << 10);
-        return cover == Sky.UNKNOWN ? "sky unknown" : cover == 0 ? "in the sun" : "under " + cover + " sun-blocking blocks";
+        int sky = Sky.at(world, pos);
+        return (sky == Sky.EXPOSED ? "in the sun" : sky == Sky.SHADED ? "in the shade" : "sky unknown")
+                + (Sky.heat(world, pos) ? ", in the heat" : ", out of the heat");
     }
 
     private static String days(long units) {

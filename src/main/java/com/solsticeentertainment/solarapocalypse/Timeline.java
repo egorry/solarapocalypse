@@ -19,6 +19,8 @@ public final class Timeline {
     private final double[] fromDepth, toDepth; // depth at the start and the end of the phase; toDepth infinite = grows forever
     private final double[] rate;    // layers per progress unit while the depth grows
     private final Speed[] speed;
+    private final long[] convertStart; // conversions start once the phase's destruction is done
+    private final long[] convertSpread;
 
     public Timeline(double safeDays, Phase[] phases) {
         int n = phases.length;
@@ -28,12 +30,17 @@ public final class Timeline {
         toDepth = new double[n];
         rate = new double[n];
         speed = new Speed[n];
+        convertStart = new long[n];
+        convertSpread = new long[n];
         long t = days(safeDays);
         double depth = 0;
         boolean infinite = false;
+        boolean destroys = false;
         for (int i = 0; i < n; i++) {
             Phase p = phases[i];
             infinite |= p.depth == SolarConfig.INFINITE; // once infinite, every later phase is too
+            boolean ownDestroy = p.destroy != null && p.destroy.length > 0;
+            destroys = ownDestroy || destroys && SolarConfig.ruleMode == SolarConfig.RuleMode.CARRY;
             double target = infinite ? Double.POSITIVE_INFINITY : Math.max(depth, p.depth);
             long length = days(p.days > 0 ? p.days : SolarConfig.baseDays * scale(i + 1));
             double perUnit = Math.max(p.layersPerDay, 0) / DAY;
@@ -54,6 +61,8 @@ public final class Timeline {
             toDepth[i] = target;
             rate[i] = speed[i] == Speed.PHASE ? (length > 0 ? (target - depth) / length : 0) : perUnit;
             end[i] = t + Math.max(length, effects);
+            convertStart[i] = !infinite && destroys && target > depth ? Math.min(t + effects, end[i]) : t;
+            convertSpread[i] = speed[i] == Speed.INSTANT ? 0 : end[i] - convertStart[i];
             // an infinite depth keeps growing; the next phase continues from where this one got to
             depth = infinite ? depth + rate[i] * (end[i] - t) : target;
             t = end[i];
@@ -92,9 +101,19 @@ public final class Timeline {
         return end[phase];
     }
 
-    /** Time over which a phase spreads its conversions (0 = all at the phase start). */
+    /** Time over which a phase spreads blocks it reached before it started (0 = all at the phase start). */
     public long spread(int phase) {
         return speed[phase] == Speed.INSTANT ? 0 : end[phase] - start[phase];
+    }
+
+    /** When a phase's conversions begin: after its destruction is done (at the start if it destroys nothing). */
+    public long convertStart(int phase) {
+        return convertStart[phase];
+    }
+
+    /** Time over which a phase spreads its conversions after convertStart (0 = all at once). */
+    public long convertSpread(int phase) {
+        return convertSpread[phase];
     }
 
     /** Layers reached at progress p. */

@@ -34,3 +34,8 @@ def installDevMods = tasks.register('installDevMods') {
 ['runClient', 'runServer'].each { taskName ->
     tasks.named(taskName).configure { dependsOn installDevMods }
 }
+
+// The changelog lives in docs/
+changelog {
+    path.set(file('docs/CHANGELOG.md').canonicalPath)
+}

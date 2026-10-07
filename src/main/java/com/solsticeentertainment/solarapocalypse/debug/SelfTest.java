@@ -1,6 +1,10 @@
 package com.solsticeentertainment.solarapocalypse.debug;
 
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
+import com.solsticeentertainment.solarapocalypse.BlockChanges;
+import com.solsticeentertainment.solarapocalypse.SolarConfig;
+import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
+import com.solsticeentertainment.solarapocalypse.cc.CwgSurface;
 import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
 import com.solsticeentertainment.solarapocalypse.Sky;
 import com.solsticeentertainment.solarapocalypse.Timeline;
@@ -61,8 +65,9 @@ public final class SelfTest {
         switch (stage) {
             case 0:
                 if (ticks < 40) return; // let spawn cubes finish lighting
-                log("topY {} (CC max generation height), phases start {} end {}", SolarApocalypse.changes(world).topY,
-                        t.firstStart(), t.end(t.phaseCount() - 1));
+                log("depth reference {}, CubicWorldGen model {}, phases start {} end {}", SolarConfig.depthReference,
+                        CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
+                modelCheck();
                 census("fresh world");
                 spawnPigs();
                 jump(t.end(0) - 1, "end of phase 1");
@@ -83,11 +88,12 @@ public final class SelfTest {
             case 2:
                 if (ticks - waited < 25) return;
                 pigs("phase 4, one hit (expect sun 5, roof 9, deep 10)");
-                jump(t.start(4) + Timeline.days(10), "phase 5 + 10 days");
+                jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
                 break;
             case 3:
                 if (!drained(3000)) return;
                 census("erosion");
+                erosionCheck(SolarApocalypse.timeline().depthAt(ApocalypseClock.progress()));
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -133,7 +139,7 @@ public final class SelfTest {
         deepPig = pig(dx, dy, z);
         for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) {
             BlockPos eye = new BlockPos(pig.posX, pig.posY + pig.getEyeHeight(), pig.posZ);
-            log("pig at {}: cover {}", eye, Sky.cover(world, eye, 64));
+            log("pig at {}: sun {}, heat {}", eye, Sky.at(world, eye), Sky.heat(world, eye));
         }
     }
 
@@ -149,10 +155,94 @@ public final class SelfTest {
     private static void pigs(String when) {
         for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) {
             BlockPos eye = new BlockPos(pig.posX, pig.posY + pig.getEyeHeight(), pig.posZ);
-            log("  pig at {}: cover {}, day {}", eye, Sky.cover(world, eye, 64), world.isDaytime());
+            log("  pig at {}: sun {} (1 = exposed), heat {}, day {}", eye, Sky.at(world, eye), Sky.heat(world, eye), world.isDaytime());
         }
         log("pigs after {}: sun {} hp burning={}, roof {} hp burning={}, deep {} hp burning={}", when,
                 sunPig.getHealth(), sunPig.isBurning(), roofPig.getHealth(), roofPig.isBurning(), deepPig.getHealth(), deepPig.isBurning());
+    }
+
+    /** Compares the CubicWorldGen surface model with the generated ground of the loaded spawn columns. */
+    private static void modelCheck() {
+        CwgSurface model = CubicSky.model(world);
+        if (model == null) return;
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int exact = 0, near = 0, lower = 0, higher = 0, unknown = 0, worst = 0;
+        long t0 = System.nanoTime();
+        int columns = 0;
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                if (cubes.getLoadedColumn(cx, cz) == null) continue;
+                columns++;
+                for (int i = 0; i < 256; i++) model.top((cx << 4) + (i & 15), (cz << 4) + (i >> 4));
+            }
+        }
+        double ms = (System.nanoTime() - t0) / 1e6;
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                if (cubes.getLoadedColumn(cx, cz) == null) continue;
+                for (int i = 0; i < 256; i++) {
+                    int x = (cx << 4) + (i & 15), z = (cz << 4) + (i >> 4);
+                    int ground = ground(cubes, x, z);
+                    if (ground == Integer.MIN_VALUE) {
+                        unknown++;
+                        continue;
+                    }
+                    int d = ground - model.top(x, z);
+                    if (d == 0) exact++;
+                    else if (Math.abs(d) == 1) near++;
+                    else if (d < 0) lower++;
+                    else higher++;
+                    if (d > 0) worst = Math.max(worst, d);
+                }
+            }
+        }
+        log("CWG surface model, {} columns in {} ms: ground = model {}, off by 1 {}, lower (caves, lakes) {}, higher {} (max +{}), unknown {}",
+                columns, String.format("%.1f", ms), exact, near, lower, higher, worst, unknown);
+    }
+
+    /** Topmost ground block (BlockChanges.isGround) under the column's top, from loaded cubes; MIN_VALUE if not loaded. */
+    private static int ground(ICubeProvider cubes, int x, int z) {
+        for (int y = top(cubes, x, z), n = 0; n < 64; y--, n++) {
+            ICube cube = cubes.getLoadedCube(x >> 4, y >> 4, z >> 4);
+            if (cube == null) return Integer.MIN_VALUE;
+            ExtendedBlockStorage storage = cube.getStorage();
+            if (storage != null && BlockChanges.isGround(storage.get(x & 15, y & 15, z & 15))) return y;
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** After erosion to `depth` layers: counts blocks left above reference - depth + 1 in the loaded spawn columns. */
+    private static void erosionCheck(double depth) {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int left = 0, checked = 0, noReference = 0;
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty() || !cube.isSurfaceTracked()) continue;
+                    for (int i = 0; i < 256; i++) {
+                        int x = (cx << 4) + (i & 15), z = (cz << 4) + (i >> 4);
+                        int reference = CubeEngine.referenceAt(world, x, z);
+                        if (reference == BlockChanges.NO_Y) {
+                            noReference++;
+                            continue;
+                        }
+                        for (int ly = 0; ly < 16; ly++) {
+                            int y = cube.getY() * 16 + ly;
+                            if (y <= reference - (long) depth) continue;
+                            checked++;
+                            if (storage.get(i & 15, ly, i >> 4).getMaterial() != Material.AIR) left++;
+                        }
+                    }
+                }
+            }
+        }
+        log("erosion check ({} layers): {} positions above the line in ready cubes, {} still hold a block, {} without reference",
+                (long) depth, checked, left, noReference);
     }
 
     private static int top(ICubeProvider cubes, int x, int z) {

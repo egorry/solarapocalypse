@@ -16,8 +16,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import java.util.List;
 
 /**
- * Burns mobs: direct sun (sky visible from the eyes, by day) and background heat (at most coverDepth sun-blocking blocks
- * overhead, day or night). Each living entity is checked once per interval, staggered by entity id.
+ * Burns mobs: direct sun (sky visible from the eyes, by day: the zombie rule) and background heat (wherever sky light
+ * reaches, day or night, so overhangs and trees are no refuge). Each living entity is checked once per interval,
+ * staggered by entity id.
  */
 public final class SunDamage {
 
@@ -57,10 +58,10 @@ public final class SunDamage {
             ResourceLocation id = EntityList.getKey(e);
             if (id != null && SolarConfig.entityBlacklist.contains(id.toString())) return;
         }
-        int cover = Sky.cover(world, new BlockPos(e.posX, e.posY + e.getEyeHeight(), e.posZ), p.coverDepth);
-        if (cover == Sky.UNKNOWN) return;
-        boolean direct = cover == 0 && (!SolarConfig.sunNeedsDaytime || world.isDaytime());
-        boolean background = cover <= p.coverDepth;
+        BlockPos eyes = new BlockPos(e.posX, e.posY + e.getEyeHeight(), e.posZ);
+        boolean direct = (p.sunDamage > 0 || p.sunFireSeconds > 0) && (!SolarConfig.sunNeedsDaytime || world.isDaytime())
+                && Sky.at(world, eyes) == Sky.EXPOSED;
+        boolean background = (p.backgroundDamage > 0 || p.backgroundFireSeconds > 0) && Sky.heat(world, eyes);
         if (e.isPotionActive(MobEffects.FIRE_RESISTANCE)) {
             SolarConfig.FireResistance fr = SolarConfig.fireResistance;
             if (fr == SolarConfig.FireResistance.DIRECT || fr == SolarConfig.FireResistance.BOTH) direct = false;
