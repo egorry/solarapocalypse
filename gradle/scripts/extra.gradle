@@ -17,14 +17,16 @@ def installDevMods = tasks.register('installDevMods') {
     description 'Installs the devMods configuration (deobfuscated CubicChunks, CubicWorldGen) into run/mods'
     def modJars = configurations.devMods
     inputs.files(modJars)
+    inputs.property('noDevMods', project.hasProperty('no_dev_mods'))
     outputs.dir(devModsDir)
     doLast {
         devModsDir.mkdirs()
-        Set<String> wanted = modJars.files.collect { it.name } as Set
+        // -Pno_dev_mods removes them instead: checks that the mod runs without Cubic Chunks
+        Set<String> wanted = project.hasProperty('no_dev_mods') ? [] as Set : modJars.files.collect { it.name } as Set
         if (devModsMarker.exists()) {
             devModsMarker.readLines().findAll { it && !wanted.contains(it) }.each { new File(devModsDir, it).delete() }
         }
-        modJars.files.each { File jar -> project.copy { from jar; into devModsDir } }
+        modJars.files.findAll { wanted.contains(it.name) }.each { File jar -> project.copy { from jar; into devModsDir } }
         devModsMarker.text = wanted.sort().join('\n') + '\n'
     }
 }

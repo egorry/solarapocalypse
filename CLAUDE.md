@@ -6,7 +6,8 @@
   mid-task: re-check it once or twice while working. `prompt.txt`, `test_log_files/` and `research/` are git-ignored.
 - Target pack: CurseForge instance `C:\Users\Solstice\curseforge\minecraft\Instances\Cubic Chunks` (CubicChunks 0.0.1271,
   CubicWorldGen 0.0.152, MixinBooter 11.17, LongerDays 1.0.4 with Time Multiplier 3). Never modify any CurseForge instance.
-- Sibling projects `../SRPCCC` and `../SolsticeCCPatches` use the same setup; reuse their patterns and research material
+- Only Cubic Chunks is a (soft) dependency; nothing is tailored to the user's pack (no LongerDays, ProperFiniteWater or
+  other pack-mod integration). Sibling projects `../SRPCCC` and `../SolsticeCCPatches` use the same setup; reuse their patterns and research material
   (CC 0.0.1271 decomp: `../SRPCCC/research/decomp/CubicChunks`, CC source: `../SRPCCC/research/repos/CubicChunks`,
   CWG: `../SRPCCC/research/{decomp,repos}/CubicWorldGen`, MC sources: `../SRPCCC/build/rfg/minecraft-src/java`).
 
@@ -22,8 +23,12 @@
   uses `level-type=CustomCubic`, `level-name=world_cubic`.
 - Headless smoke test: `bash scripts/smoke_server.sh <tag>` (starts runServer, waits for `Done`/crash, stops
   it, copies `run/logs/latest.log` to `research/server_latest_<tag>.log`).
-- Research probe: `bash scripts/probe_server.sh <tag>` (deletes `run/world_cubic`, runs `debug/CubicProbe` via
-  `-Dsolarapocalypse.probe`, the server stops itself). Logs land in `research/` (git-ignored).
+- End-to-end check: `bash scripts/probe_server.sh <tag> selftest` (deletes `run/world_cubic`, runs `debug/SelfTest` via
+  `-Dsolarapocalypse.selftest`: jumps through the phases, counts blocks around spawn, checks sun damage; the server stops
+  itself). Research probe: same script without `selftest` (`debug/CubicProbe`). Logs land in `research/` (git-ignored).
+  `run/config/solarapocalypse.cfg` is regenerated with defaults if deleted. Unit tests: `./gradlew test`.
+  Without CC: `./gradlew runServer -Pno_dev_mods` (removes the dev mods from run/mods; the next normal run restores them).
+  Console commands can be piped into `./gradlew runServer` (stdin reaches the server).
 - CC pitfalls (details in docs/RESEARCH.md): on a CC server `World.getBlockState`, `World.getLight`, `canBlockSeeSky`,
   `getTopSolidOrLiquidBlock`, `Chunk.getBlockState` and setBlockState flag 1 GENERATE unloaded cubes; use
   `getLoadedCube`/`isBlockLoaded` and flag 18. CC treats never-generated cubes as air (false sky exposure).

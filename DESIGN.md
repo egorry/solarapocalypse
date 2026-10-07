@@ -30,6 +30,15 @@ Everything happens retroactively on newly loaded chunks and old chunks when relo
 
 Optional integration with Simple Difficulty.
 
+Optional (default to off) flag for whether fire resistance grants immunity to apocalypse effects. Another setting which sets what fire resistance grants immunity to - direct exposure or background/undercover exposure
+
+* By "instant" I mean spread out over ticks in order to not stall anything, but as fast as possible. If we need a threshold like only 75% as fast as possible to give some overhead, then we can do that as well/instead.
+* If placing fire is laggy, we can create our own animated fire to place which is just a block. We can optionally (configurably) scan and ignite a portion of flammables as well.
+* Default config should have leaves burn away before logs, so logs being removed leaving leaves shouldn't happen, but since it is configurable it technically can happen. In that case, don't rely on fast decay mods, we want to ideally cull leaves as well in some way to prevent lag, optionally (configurable).
+* Falling blocks (sand, gravel) and flowing liquids (water, lava) should be configurable whether their block change or block removal triggers their physics.
+* Modded liquids should be removed the same way, and never converted to or from something unless configured that way.
+* Infinite destruction depth means all later phases (if any) share that setting. You cannot have phase 8 infinitely destroy layers and phase 9 only destroy 20 layers; phase 9 inherits infinite layer destruction off phase 8.
+
 ---
 
 ## Concessions:
