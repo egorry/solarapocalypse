@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntBinaryOperator;
 
 /**
  * Dev-only end-to-end check on a fresh Cubic Chunks world with the default config (-Dsolarapocalypse.selftest,
@@ -46,7 +47,7 @@ public final class SelfTest {
     private static int stage, ticks, waited;
     private static EntityPig sunPig, roofPig, deepPig;
     private static long engineNanos, engineCubes, engineBlocks;
-    private static int fireCount, cap;
+    private static int fireCount, cap, planeY;
     private static long lastChanged, maxChanges;
     private static final float[] firstHit = new float[2];
 
@@ -79,7 +80,7 @@ public final class SelfTest {
                 SolarConfig.phases[3].message = "&6The ground cracks"; // the phase 4 start log line carries it
                 census("fresh world");
                 spawnPigs();
-                jump(t.end(0) - 1, "end of phase 1");
+                jump(t.end(0) - 1, "end of phase 1, every world tick made 12 ms slower");
                 break;
             case 1:
                 if (!drained(600)) return;
@@ -118,7 +119,11 @@ public final class SelfTest {
                 if (!drained(3000)) return;
                 fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
-                erosionCheck(SolarApocalypse.timeline().depthAt(ApocalypseClock.progress()));
+                long depth = (long) t.depthAt(ApocalypseClock.progress(), Timeline.SURFACE);
+                lineCheck(depth + " layers of erosion", (x, z) -> {
+                    int ground = CubeEngine.groundAt(world, x, z);
+                    return ground == BlockChanges.NO_Y ? BlockChanges.NO_Y : (int) (ground - depth + 1);
+                });
                 SolarConfig.maxBlockChangesPerTick = cap;
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
@@ -129,6 +134,16 @@ public final class SelfTest {
                 if (ticks - waited < 100) return;
                 log("most block changes in one tick over 100 ticks: {} (cap {}), {} cubes still queued", maxChanges, cap,
                         CubeEngine.queued(world));
+                SolarConfig.maxBlockChangesPerTick = 0;
+                // below what the SURFACE line (frozen during phase 6) leaves of the highest ground, so the plane has terrain to cut
+                planeY = highestGround() - (int) t.depthAt(t.start(5), Timeline.SURFACE) - 8;
+                jump(t.reachTime(planeY, SolarApocalypse.topY(world), Timeline.TOP),
+                        "phase 6 (TOP_Y line from Y " + SolarApocalypse.topY(world) + ") down to Y " + planeY);
+                break;
+            case 7:
+                if (!drained(3000)) return;
+                long top = SolarApocalypse.topY(world) - (long) t.depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1;
+                lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -140,7 +155,7 @@ public final class SelfTest {
         ApocalypseClock.set(progress);
         SolarApocalypse.requeueAll();
         log("--- jump to {} (day {}, depth {} layers), {} cubes queued", what, String.format("%.2f", progress / (double) Timeline.DAY),
-                (long) SolarApocalypse.timeline().depthAt(progress), CubeEngine.queued(world));
+                (long) SolarApocalypse.timeline().depthAt(progress, Timeline.SURFACE), CubeEngine.queued(world));
         engineNanos = CubeEngine.nanos;
         engineCubes = CubeEngine.cubesProcessed;
         engineBlocks = BlockChanges.changed;
@@ -196,6 +211,14 @@ public final class SelfTest {
                 sunPig.getHealth(), sunPig.isBurning(), roofPig.getHealth(), roofPig.isBurning(), deepPig.getHealth(), deepPig.isBurning());
     }
 
+    /** Stage 1 runs with the world's own tick 12 ms slow, more than the 10 ms budget: the engine must still get its time. */
+    @SubscribeEvent
+    public static void onWorldTick(TickEvent.WorldTickEvent event) {
+        if (stage != 1 || event.phase != TickEvent.Phase.START || event.world != world) return;
+        long until = System.nanoTime() + 12_000_000L;
+        while (System.nanoTime() < until) Thread.yield();
+    }
+
     /** Chances, selector exclusions, loop cutting and the vanilla fire blacklist, on a throwaway two-phase rule set (CARRY). */
     private static void rulesCheck() {
         SolarConfig.Phase a = new SolarConfig.Phase(), b = new SolarConfig.Phase();
@@ -204,7 +227,13 @@ public final class SelfTest {
         a.destroy = new String[]{"material:rock, !minecraft:cobblestone"};
         b.convert = new String[]{"minecraft:sand -> minecraft:dirt"};
         b.destroy = new String[0];
+        a.evaporate = new String[]{"material:water, !temperature>=1000"};
+        b.evaporate = new String[]{"fluid:lava"};
         BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{a, b});
+        log("rules: evaporation from phase water {} (expect 0), flowing water {} (0), lava {} (1), flowing lava {} (1), stone {} (-1)",
+                r.evaporationPhase(Blocks.WATER.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_WATER.getDefaultState()),
+                r.evaporationPhase(Blocks.LAVA.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_LAVA.getDefaultState()),
+                r.evaporationPhase(Blocks.STONE.getDefaultState()));
         IBlockState dirt = Blocks.DIRT.getDefaultState(), sand = Blocks.SAND.getDefaultState(), gravel = Blocks.GRAVEL.getDefaultState();
         BlockRules.Step g = r.convert(0, gravel), d = r.convert(1, dirt), s = r.convert(1, sand);
         int toSand = 0, toClay = 0, same = 0;
@@ -281,10 +310,11 @@ public final class SelfTest {
     }
 
     /** After erosion to `depth` layers: counts blocks left above reference - depth + 1 in the loaded spawn columns. */
-    private static void erosionCheck(double depth) {
+    /** Checks that nothing is left at or above a line (lowest Y that must be gone per x, z) in the ready spawn cubes. */
+    private static void lineCheck(String what, IntBinaryOperator lowestGone) {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
-        int left = 0, checked = 0, noReference = 0;
+        int left = 0, checked = 0, noReference = 0, cubesSeen = 0, highest = Integer.MIN_VALUE;
         for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
             for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
                 Chunk column = cubes.getLoadedColumn(cx, cz);
@@ -292,16 +322,20 @@ public final class SelfTest {
                 for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
                     ExtendedBlockStorage storage = cube.getStorage();
                     if (storage == null || storage.isEmpty() || !cube.isSurfaceTracked()) continue;
+                    cubesSeen++;
+                    for (int i = 0; i < 4096; i++) {
+                        if (storage.get(i & 15, i >> 8, (i >> 4) & 15).getMaterial() != Material.AIR) highest = Math.max(highest, cube.getY() * 16 + (i >> 8));
+                    }
                     for (int i = 0; i < 256; i++) {
                         int x = (cx << 4) + (i & 15), z = (cz << 4) + (i >> 4);
-                        int reference = CubeEngine.referenceAt(world, x, z);
-                        if (reference == BlockChanges.NO_Y) {
+                        int gone = lowestGone.applyAsInt(x, z);
+                        if (gone == BlockChanges.NO_Y) {
                             noReference++;
                             continue;
                         }
                         for (int ly = 0; ly < 16; ly++) {
                             int y = cube.getY() * 16 + ly;
-                            if (y <= reference - (long) depth) continue;
+                            if (y < gone) continue;
                             checked++;
                             IBlockState left0 = storage.get(i & 15, ly, i >> 4);
                             if (left0.getMaterial() != Material.AIR && !SolarFire.is(left0)) left++; // solar fire stands on the surface
@@ -310,8 +344,18 @@ public final class SelfTest {
                 }
             }
         }
-        log("erosion check ({} layers): {} positions above the line in ready cubes, {} still hold a block, {} without reference",
-                (long) depth, checked, left, noReference);
+        log("line check, {}: {} positions above the line in {} ready cubes (highest block Y {}), {} still hold a block, {} without reference",
+                what, checked, cubesSeen, highest, left, noReference);
+    }
+
+    /** The highest terrain surface (SURFACE reference) among the spawn columns. */
+    private static int highestGround() {
+        BlockPos spawn = world.getSpawnPoint();
+        int highest = Integer.MIN_VALUE;
+        for (int x = spawn.getX() - RADIUS * 16; x < spawn.getX() + RADIUS * 16; x++) {
+            for (int z = spawn.getZ() - RADIUS * 16; z < spawn.getZ() + RADIUS * 16; z++) highest = Math.max(highest, CubeEngine.groundAt(world, x, z));
+        }
+        return highest;
     }
 
     private static int top(ICubeProvider cubes, int x, int z) {

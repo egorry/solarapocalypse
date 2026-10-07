@@ -1,12 +1,19 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * config/solarapocalypse.cfg. Loaded once at pre-init and again by "/solar reload". Every value is read into these
@@ -35,11 +42,13 @@ public final class SolarConfig {
         public double convertDays;   // conversions spread over this after destruction; -1 = rest of the phase's days
         public double ignitePercent, igniteFlammablePercent;
         public String[] destroy;
+        public String[] evaporate;
         public double sunDamage;
         public int sunFireSeconds;
         public double backgroundDamage;
         public int backgroundFireSeconds;
         public String message, sound, splash;
+        public DepthReference depthReference; // null = the previous phase's (phase 1: world.depthReference)
     }
 
     private static File file;
@@ -54,7 +63,7 @@ public final class SolarConfig {
     public static double baseDays;
     public static Scaling scaling;
     public static double scalingFactor;
-    public static RuleMode ruleMode;
+    public static RuleMode convertRuleMode, destroyRuleMode;
     public static Phase[] phases;
     // world
     public static Set<Integer> dimensions;
@@ -69,9 +78,6 @@ public final class SolarConfig {
     public static boolean blockPhysics;
     public static String[] vanillaFireBlacklist;
     // evaporation
-    public static int waterPhase;
-    public static int lavaPhase;
-    public static int otherLiquidsPhase;
     public static EvaporationMode evaporationMode;
     public static double evaporationLayersPerDay;
     public static int evaporationTopY;
@@ -102,6 +108,7 @@ public final class SolarConfig {
 
     public static void load() {
         Configuration c = new Configuration(file);
+        numberedCategoriesInOrder(c);
         c.load();
 
         String cat = "clock";
@@ -128,11 +135,13 @@ public final class SolarConfig {
                 "Length of phase n (when its own 'days' is 0): CONSTANT baseDays, LINEAR baseDays*n, QUADRATIC baseDays*n*n,\n" +
                 "EXPONENTIAL baseDays*scalingFactor^(n-1).");
         scalingFactor = c.get(cat, "scalingFactor", 1.5, "EXPONENTIAL scaling factor.").getDouble();
-        ruleMode = enumValue(c, cat, "ruleMode", RuleMode.CARRY,
-                "CARRY: the convert and destroy rules of every phase so far apply; for a block several phases convert, the latest\n" +
-                "phase's rule wins. Terrain loaded late then looks like terrain that lived through every phase.\n" +
+        convertRuleMode = enumValue(c, cat, "convertRuleMode", RuleMode.CARRY,
+                "CARRY: the convert rules of every phase so far apply; for a block several phases convert, the latest phase's\n" +
+                "rules win. Terrain loaded late then looks like terrain that lived through every phase.\n" +
                 "ISOLATED: only the running phase's rules apply.\n" +
                 "Either way a chain of rules (grass -> dirt, dirt -> sand) is followed to its end.");
+        destroyRuleMode = enumValue(c, cat, "destroyRuleMode", RuleMode.CARRY,
+                "CARRY: the destroy lists of every phase so far apply. ISOLATED: only the running phase's list.");
 
         cat = "world";
         c.setCategoryComment(cat, "Where the apocalypse runs and how the sun's reach is measured.");
@@ -143,7 +152,7 @@ public final class SolarConfig {
                 "SURFACE: each column's own terrain surface, so every column loses the same thickness at any altitude. Taken\n" +
                 "from the generator in CubicWorldGen worlds, otherwise recorded when the column is first seen (ignoring trees).\n" +
                 "TOP_Y: the fixed Y topY for every column (mountains go first, valleys when the depth gets down to them).\n" +
-                "Blocks above the reference count as reached from phase 1 on.");
+                "Blocks above the reference count as reached from phase 1 on. Phases can switch with their own depthReference.");
         topY = intOrAuto(c, cat, "topY", "auto",
                 "TOP_Y reference. 'auto': in Cubic Chunks worlds the height the world's generator reports (CubicWorldGen: the\n" +
                 "preset's estimated terrain height), otherwise the world height.");
@@ -172,13 +181,10 @@ public final class SolarConfig {
                 "gets vanilla fire.");
 
         cat = "evaporation";
-        c.setCategoryComment(cat, "Sun-exposed liquids vanish from these phases on (0 = never).");
-        waterPhase = c.getInt("waterPhase", cat, 3, 0, 1000, "First phase that evaporates water.");
-        lavaPhase = c.getInt("lavaPhase", cat, 6, 0, 1000, "First phase that evaporates lava.");
-        otherLiquidsPhase = c.getInt("otherLiquidsPhase", cat, 4, 0, 1000, "First phase that evaporates other (modded) liquids.");
+        c.setCategoryComment(cat, "How sun-exposed liquids vanish. Which liquids, from which phase: each phase's evaporate list.");
         evaporationMode = enumValue(c, cat, "mode", EvaporationMode.LAYERS,
                 "INSTANT: every exposed liquid block goes as soon as its phase starts (spread over ticks by the time budget).\n" +
-                "LAYERS: a level descends from topY at layersPerDay; exposed liquid above it goes.");
+                "LAYERS: from its phase's start, a level descends from topY at layersPerDay; exposed liquid above it goes.");
         evaporationLayersPerDay = c.get(cat, "layersPerDay", 4.0, "LAYERS mode: layers per day.").getDouble();
         evaporationTopY = intOrAuto(c, cat, "topY", "auto", "LAYERS mode: Y the level starts at. 'auto': the world's sea level.");
 
@@ -235,9 +241,15 @@ public final class SolarConfig {
                 "Minimum length in days (0 = phases.baseDays with phases.scaling). The phase first destroys (from its start, at\n" +
                 "its speed), then converts; if that takes longer, the next phase waits until it is done.").getDouble();
         String depth = c.getString("depth", cat, d.depth,
-                "Layers below the reference (world.depthReference) destroyed by the end of this phase (whole number), or 'infinite'.\n" +
-                "Never lower than an earlier phase's; once infinite, every later phase is infinite.");
+                "Layers below the reference (depthReference) destroyed by the end of this phase (whole number), or 'infinite'.\n" +
+                "Never lower than an earlier phase's with the same reference; once infinite, every later phase is infinite.");
         p.depth = "infinite".equalsIgnoreCase(depth.trim()) ? INFINITE : parseInt(depth, 0);
+        String reference = c.getString("depthReference", cat, "INHERIT",
+                "What this phase's depth counts from: SURFACE or TOP_Y (see world.depthReference); INHERIT = the previous\n" +
+                "phase's (phase 1: world.depthReference). Each reference has its own depth line, which only its phases move;\n" +
+                "a block goes when either line reaches it. A TOP_Y line starts at world.topY and descends at this phase's speed,\n" +
+                "flattening mountains first.", new String[]{"INHERIT", "SURFACE", "TOP_Y"}).trim().toUpperCase(Locale.ROOT);
+        p.depthReference = reference.equals("SURFACE") ? DepthReference.SURFACE : reference.equals("TOP_Y") ? DepthReference.TOP_Y : null;
         p.speed = enumValue(c, cat, "speed", d.speed,
                 "How destruction reaches the depth: PHASE over the phase's days, RATE at layersPerDay, INSTANT at the phase start.\n" +
                 "Infinite depth always descends at layersPerDay; each layer then stays for 1/layersPerDay of a day.");
@@ -252,7 +264,7 @@ public final class SolarConfig {
                 "Target: modid:name, modid:name:meta or air.\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
-                "but fixed per block. phases.ruleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
+                "but fixed per block. phases.convertRuleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
                 "phase with a rule for it wins).");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 1, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
@@ -264,6 +276,11 @@ public final class SolarConfig {
         p.destroy = c.getStringList("destroy", cat, d.destroy,
                 "Selectors of blocks removed down to the phase's depth (erosion). * = every breakable block; !<selector>\n" +
                 "excludes (* and !minecraft:obsidian on two lines).");
+        p.evaporate = c.getStringList("evaporate", cat, d.evaporate,
+                "Liquids that evaporate from this phase on wherever the sun reaches them (see the evaporation section); a liquid\n" +
+                "goes from the first phase that lists it. Selectors as in convert (* = every liquid), plus fluid:<name> (Forge\n" +
+                "fluid name, e.g. fluid:water) and temperature<K, <=, >, >= (Forge fluid temperature in kelvin: water 300, lava\n" +
+                "1300). Example: material:water and !temperature<250 here, temperature<250 in a later phase for cold liquids.");
         p.ignitePercent = c.get(cat, "ignitePercent", d.ignite,
                 "Percent of surface blocks the sun sets alight once the phase's conversions are done (chosen at random but fixed),\n" +
                 "with solar fire: looks, sounds and burns like fire but never spreads. Removed when the next phase starts; in an\n" +
@@ -299,7 +316,7 @@ public final class SolarConfig {
         private static final double[] CONVERT_DAYS = {-1, -1, -1, -1, -1, -1, 1, 1, 1, 1, -1};
         private static final double[] IGNITE = {0, 25, 50, 75, 80, 85, 90, 95, 95, 95, 100};
         private static final double[] SUN_DAMAGE = {0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10};
-        private static final int[] SUN_FIRE = {2, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10};
+        private static final int[] SUN_FIRE = {0, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10};
         private static final double[] BACKGROUND_DAMAGE = {0, 0, 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4};
         private static final String[][] CONVERT = {
                 {"minecraft:grass -> minecraft:grass_path", "minecraft:mycelium -> minecraft:grass_path",
@@ -313,6 +330,8 @@ public final class SolarConfig {
                 {"material:wood -> air", "minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"},
                 {"minecraft:sand -> minecraft:glass"},
                 {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"}};
+        // water from phase 3, other liquids from 4, lava from 6
+        private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
         static final int COUNT = DAYS.length;
 
         double days;
@@ -323,6 +342,7 @@ public final class SolarConfig {
         double convertDays = -1;
         String[] convert = new String[0];
         String[] destroy = new String[0];
+        String[] evaporate = new String[0];
         double ignite, sunDamage, backgroundDamage;
         int sunFire;
 
@@ -338,12 +358,35 @@ public final class SolarConfig {
             d.convertDays = CONVERT_DAYS[i];
             if (i < CONVERT.length) d.convert = CONVERT[i];
             if (i >= 6) d.destroy = new String[]{"*"};
+            if (i < EVAPORATE.length) d.evaporate = EVAPORATE[i];
             d.ignite = IGNITE[i];
             d.sunDamage = SUN_DAMAGE[i];
             d.sunFire = SUN_FIRE[i];
             d.backgroundDamage = BACKGROUND_DAMAGE[i];
             return d;
         }
+    }
+
+    /** Forge saves categories sorted as text (phase_1, phase_10, phase_11, phase_2...): sort numbers by value instead. */
+    private static void numberedCategoriesInOrder(Configuration c) {
+        try {
+            Field field = Configuration.class.getDeclaredField("categories");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, ConfigCategory> categories = (Map<String, ConfigCategory>) field.get(c);
+            Map<String, ConfigCategory> sorted = new TreeMap<>(Comparator.comparing(SolarConfig::paddedNumbers).thenComparing(s -> s));
+            sorted.putAll(categories);
+            field.set(c, sorted);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            SolarApocalypse.LOGGER.debug("Config categories stay in text order", e);
+        }
+    }
+
+    private static String paddedNumbers(String s) {
+        Matcher m = Pattern.compile("\\d+").matcher(s);
+        StringBuffer out = new StringBuffer();
+        while (m.find()) m.appendReplacement(out, String.format("%12s", m.group()).replace(' ', '0'));
+        return m.appendTail(out).toString();
     }
 
     private static int color(Configuration c, String cat, String key, String def, String comment) {

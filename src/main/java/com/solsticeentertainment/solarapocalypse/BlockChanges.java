@@ -50,11 +50,12 @@ public final class BlockChanges {
     }
 
     /**
-     * @param reference the column's reference Y for depths, or NO_Y if not known yet
-     * @param surface   the column's current surface (topmost block that blocks movement or is liquid), or NO_Y if not known
-     * @param sky       Sky.EXPOSED / SHADED / UNKNOWN for the block itself
+     * @param ground  the column's terrain surface, the reference of the SURFACE depth line, or NO_Y if not known yet
+     * @param topY    world.topY, the reference of the TOP depth line
+     * @param surface the column's current surface (topmost block that blocks movement or is liquid), or NO_Y if not known
+     * @param sky     Sky.EXPOSED / SHADED / UNKNOWN for the block itself
      */
-    public IBlockState evaluate(IBlockState state, BlockPos pos, int reference, int surface, int sky, long progress) {
+    public IBlockState evaluate(IBlockState state, BlockPos pos, int ground, int topY, int surface, int sky, long progress) {
         wake = NEVER;
         int phase = timeline.phaseAt(progress);
         if (phase < 0) return state;
@@ -62,19 +63,13 @@ public final class BlockChanges {
 
         int destroyedBy = rules.destroyPhase(phase, state);
         if (destroyedBy >= 0) {
-            if (reference == NO_Y) {
-                later(progress + RECHECK);
-            } else {
-                long reach = timeline.reachTime(y, reference);
-                long start = timeline.start(destroyedBy), length = timeline.spread(destroyedBy);
-                long due;
-                if (reach == NEVER) due = NEVER;
-                else if (reach >= start) due = reach; // reached while the phase runs: layer by layer
-                else if (y > reference) due = start + aboveSurface(y - reference, length); // trees, buildings: top down
-                else due = spread(start, length, x, y, z, destroyedBy);
-                if (progress >= due) return AIR;
-                later(due);
+            long due = destroyDue(x, y, z, topY, Timeline.TOP, destroyedBy);
+            if (timeline.uses(Timeline.SURFACE)) {
+                if (ground == NO_Y) later(progress + RECHECK); // the surface line may get here once the ground is known
+                else due = Math.min(due, destroyDue(x, y, z, ground, Timeline.SURFACE, destroyedBy));
             }
+            if (progress >= due) return AIR;
+            later(due);
         }
 
         for (int n = 0; n < MAX_CHAIN; n++) {
@@ -96,6 +91,17 @@ public final class BlockChanges {
         return evaporate(state, y, sky, progress);
     }
 
+    /** When a depth line removes a block that a phase's destroy rule matches (NEVER if the line never gets there). */
+    private long destroyDue(int x, int y, int z, int ref, int line, int destroyedBy) {
+        if (!timeline.uses(line)) return NEVER;
+        long reach = timeline.reachTime(y, ref, line);
+        long start = timeline.start(destroyedBy), length = timeline.spread(destroyedBy);
+        if (reach == NEVER) return NEVER;
+        if (reach >= start) return reach; // reached while the phase runs: layer by layer
+        if (y > ref) return start + aboveSurface(y - ref, length); // trees, buildings: top down
+        return spread(start, length, x, y, z, destroyedBy);
+    }
+
     /**
      * The fire that belongs above a column's surface block now: solar fire, vanilla fire (flammable surface), or null.
      * Fire comes after the phase's conversions (none while the surface block still has a conversion pending) and is
@@ -111,8 +117,9 @@ public final class BlockChanges {
         BlockRules.Step pending = rules.convert(phase, surface);
         if (pending != null && pending.pick(x, y, z, surface) != null) return null;
         boolean infinite = timeline.infinite(phase);
-        int epoch = infinite ? (int) timeline.depthAt(progress) : phase;
-        if (infinite) later(timeline.reachTime(-epoch, 0)); // the next layer redraws the fire
+        int line = timeline.track(phase);
+        int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;
+        if (infinite) later(timeline.reachTime(-epoch, 0, line)); // the next layer redraws the fire
         // with doFireTick false vanilla fire would neither spread nor burn out
         boolean flammable = world.getGameRules().getBoolean("doFireTick") && !rules.noVanillaFire(surface)
                 && surface.getBlock().isFlammable(world, surfacePos, EnumFacing.UP);
@@ -140,12 +147,9 @@ public final class BlockChanges {
     }
 
     private IBlockState evaporate(IBlockState state, int y, int sky, long progress) {
-        BlockRules.Liquid liquid = BlockRules.liquid(state);
-        if (liquid == BlockRules.Liquid.NONE) return state;
-        int number = liquid == BlockRules.Liquid.WATER ? SolarConfig.waterPhase
-                : liquid == BlockRules.Liquid.LAVA ? SolarConfig.lavaPhase : SolarConfig.otherLiquidsPhase;
-        long start = timeline.startOfPhaseNumber(number);
-        if (start == NEVER) return state;
+        int phase = rules.evaporationPhase(state);
+        if (phase < 0) return state;
+        long start = timeline.start(phase);
         long due = start;
         if (SolarConfig.evaporationMode == SolarConfig.EvaporationMode.LAYERS) {
             double layers = (double) evaporationTopY - y + 1;

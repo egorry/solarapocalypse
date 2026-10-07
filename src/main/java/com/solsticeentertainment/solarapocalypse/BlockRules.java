@@ -8,6 +8,8 @@ import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fluids.Fluid;
+import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.IFluidBlock;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import net.minecraftforge.oredict.OreDictionary;
@@ -21,15 +23,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The phases' convert and destroy lists, compiled once per config load into identity maps over every registered block
  * state, so applying them is two map lookups per block. Per phase the maps hold the rules active in that phase
- * (phases.ruleMode): CARRY = every phase so far, the latest phase's rule winning per block; ISOLATED = that phase only.
+ * (phases.convertRuleMode, destroyRuleMode): CARRY = every phase so far, the latest phase's rule winning per block;
+ * ISOLATED = that phase only.
  */
 public final class BlockRules {
-
-    public enum Liquid { NONE, WATER, LAVA, OTHER }
 
     /**
      * The conversion of one block state: its targets with their chances (rules with '@ n%'), and the (0-based) phase
@@ -79,6 +82,7 @@ public final class BlockRules {
     private final List<Map<IBlockState, Step>> convert = new ArrayList<>();
     private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
     private final Set<IBlockState> noVanillaFire = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<IBlockState, Integer> evaporate = new IdentityHashMap<>(); // liquid state -> first phase evaporating it
 
     private BlockRules() {}
 
@@ -108,9 +112,11 @@ public final class BlockRules {
                 share.add(chance);
             }
             Predicate<IBlockState> gone = selectors(phases[i].destroy, where);
-            boolean carry = SolarConfig.ruleMode == SolarConfig.RuleMode.CARRY && i > 0;
-            Map<IBlockState, Step> conversions = carry ? new IdentityHashMap<>(rules.convert.get(i - 1)) : new IdentityHashMap<>();
-            Map<IBlockState, Integer> removals = carry ? new IdentityHashMap<>(rules.destroy.get(i - 1)) : new IdentityHashMap<>();
+            Predicate<IBlockState> dry = selectors(phases[i].evaporate, where);
+            boolean carryConvert = SolarConfig.convertRuleMode == SolarConfig.RuleMode.CARRY && i > 0;
+            boolean carryDestroy = SolarConfig.destroyRuleMode == SolarConfig.RuleMode.CARRY && i > 0;
+            Map<IBlockState, Step> conversions = carryConvert ? new IdentityHashMap<>(rules.convert.get(i - 1)) : new IdentityHashMap<>();
+            Map<IBlockState, Integer> removals = carryDestroy ? new IdentityHashMap<>(rules.destroy.get(i - 1)) : new IdentityHashMap<>();
             for (IBlockState state : states) {
                 if (state.getMaterial() == Material.AIR) continue;
                 // matching rules share the block out in order ('@ n%', 100 % without); the latest phase's set wins
@@ -127,6 +133,7 @@ public final class BlockRules {
                 }
                 if (changes) conversions.put(state, new Step(targets, upTo, i));
                 if (gone != null && gone.test(state)) removals.putIfAbsent(state, i);
+                if (dry != null && isLiquid(state) && dry.test(state)) rules.evaporate.putIfAbsent(state, i);
             }
             cutLoops(conversions, where);
             rules.convert.add(conversions);
@@ -211,13 +218,30 @@ public final class BlockRules {
         return q == null ? -1 : q;
     }
 
-    public static Liquid liquid(IBlockState state) {
-        Material m = state.getMaterial();
-        if (!m.isLiquid() && !(state.getBlock() instanceof IFluidBlock)) return Liquid.NONE;
-        if (m == Material.WATER) return Liquid.WATER;
-        if (m == Material.LAVA) return Liquid.LAVA;
-        return state.getBlock() instanceof IFluidBlock || state.getBlock() instanceof BlockLiquid ? Liquid.OTHER : Liquid.NONE;
+    /** The (0-based) phase from which a liquid evaporates (the first phase whose evaporate list has it), or -1. */
+    public int evaporationPhase(IBlockState state) {
+        Integer q = evaporate.get(state);
+        return q == null ? -1 : q;
     }
+
+    /** Liquid states whose evaporation starts in a phase (for the load summary). */
+    public int evaporateCount(int phase) {
+        int n = 0;
+        for (int q : evaporate.values()) if (q == phase) n++;
+        return n;
+    }
+
+    public static boolean isLiquid(IBlockState state) {
+        return state.getBlock() instanceof BlockLiquid || state.getBlock() instanceof IFluidBlock;
+    }
+
+    /** The Forge fluid of a liquid block (vanilla water and lava included), or null. */
+    private static Fluid fluid(IBlockState state) {
+        Block block = state.getBlock();
+        return block instanceof IFluidBlock ? ((IFluidBlock) block).getFluid() : FluidRegistry.lookupFluidForBlock(block);
+    }
+
+    private static final Pattern TEMPERATURE = Pattern.compile("temperature\\s*(<=|>=|<|>)\\s*(-?\\d+)");
 
     /**
      * A list of selectors (each entry may hold several, separated by commas): any of the plain ones, minus any of the ones
@@ -244,6 +268,28 @@ public final class BlockRules {
     private static Predicate<IBlockState> selector(String raw, String where) {
         String s = raw.trim();
         if (s.equals("*")) return state -> !unbreakable(state);
+        if (s.toLowerCase(Locale.ROOT).startsWith("fluid:")) {
+            String name = s.substring(6).trim();
+            if (!FluidRegistry.isFluidRegistered(name)) {
+                SolarApocalypse.LOGGER.warn("{}: unknown fluid in '{}'", where, s);
+                return null;
+            }
+            return state -> {
+                Fluid f = fluid(state);
+                return f != null && f.getName().equals(name);
+            };
+        }
+        Matcher temperature = TEMPERATURE.matcher(s.toLowerCase(Locale.ROOT));
+        if (temperature.matches()) { // Forge fluid temperature in kelvin: water 300, lava 1300
+            String op = temperature.group(1);
+            int kelvin = Integer.parseInt(temperature.group(2));
+            return state -> {
+                Fluid f = fluid(state);
+                if (f == null) return false;
+                int t = f.getTemperature();
+                return op.equals("<") ? t < kelvin : op.equals("<=") ? t <= kelvin : op.equals(">") ? t > kelvin : t >= kelvin;
+            };
+        }
         if (s.startsWith("#")) {
             int id = OreDictionary.getOreID(s.substring(1));
             return state -> !unbreakable(state) && hasOre(state, id);

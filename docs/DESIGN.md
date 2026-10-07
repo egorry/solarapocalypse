@@ -12,6 +12,7 @@ How long each phase lasts, configurable per phase. Optionally set a scaling opti
 * *Update (turn 4): this length is the minimum. A phase runs its destruction from its start, then its conversions; if that takes longer, the next phase waits until both are done.*
 
 What phase onwards evaporates water and optionally (but by default) lava. We will set this up in such a way that liquids don't lag, but it *can* be configured otherwise - including allowing blocks to turn into liquids and vice versa. 
+* *Update (turn 6): each phase lists the liquids it starts evaporating (by block, Forge fluid name or temperature), so modded liquids can each have their own phase.*
 
 What blocks each phase turns into other blocks. E.g. minecraft:sand -> minecraft:glass. Also a way to do block groups (If Forge has those), and a special rule for converting unknown (modded) blocks to something). Also a way to do sub-IDs like somemod:someblock:4
 

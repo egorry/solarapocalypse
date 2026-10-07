@@ -7,6 +7,7 @@ import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.SurfaceRecord;
+import com.solsticeentertainment.solarapocalypse.Timeline;
 import io.github.opencubicchunks.cubicchunks.api.util.Coords;
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
 import io.github.opencubicchunks.cubicchunks.api.world.CubeEvent;
@@ -165,6 +166,8 @@ public final class CubeEngine {
         IColumn heights = (IColumn) column;
         int loadedUpTo = CubicSky.highestLoadedAbove(cubes, cx, cy, cz);
         int minY = cy << 4;
+        boolean needGround = SolarApocalypse.timeline().uses(Timeline.SURFACE);
+        int topY = SolarApocalypse.topY(world);
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         BitSet edited = state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
@@ -177,7 +180,7 @@ public final class CubeEngine {
                 if (empty && top != minY - 1) continue; // fire in an empty cube only stands on the cube below
                 int surface = surface(cubes, cx, cz, lx, lz, top);
                 boolean surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
-                int reference = reference(world, cubes, column, lx, lz, x, z, surface, surfaceKnown);
+                int ground = needGround ? ground(world, cubes, column, lx, lz, x, z, surface, surfaceKnown) : BlockChanges.NO_Y;
                 int fireY = BlockChanges.NO_Y; // solar fire found in this column of the cube
                 for (int ly = 15; ly >= 0 && !empty; ly--) {
                     IBlockState from = storage.get(lx, ly, lz);
@@ -192,7 +195,7 @@ public final class CubeEngine {
                     int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
                             : CubicSky.knownClear(y, loadedUpTo, ceiling) ? Sky.EXPOSED : Sky.UNKNOWN;
                     pos.setPos(x, y, z);
-                    IBlockState to = changes.evaluate(from, pos, reference, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
+                    IBlockState to = changes.evaluate(from, pos, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
                     wake = Math.min(wake, changes.wake());
                     if (to == from) continue;
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
@@ -300,10 +303,9 @@ public final class CubeEngine {
         return top;
     }
 
-    /** Depth reference of a column: world.topY, the CubicWorldGen terrain surface, or the recorded one (NO_Y if unknown). */
-    private static int reference(WorldServer world, ICubeProvider cubes, Chunk column, int lx, int lz, int x, int z, int surface,
-                                 boolean surfaceKnown) {
-        if (SolarConfig.depthReference == SolarConfig.DepthReference.TOP_Y) return SolarApocalypse.topY(world);
+    /** A column's terrain surface (SURFACE depth reference): from CubicWorldGen, or the recorded one (NO_Y if unknown). */
+    private static int ground(WorldServer world, ICubeProvider cubes, Chunk column, int lx, int lz, int x, int z, int surface,
+                              boolean surfaceKnown) {
         CwgSurface model = CubicSky.model(world);
         if (model != null) {
             int top = model.top(x, z);
@@ -325,9 +327,8 @@ public final class CubeEngine {
         return BlockChanges.NO_Y;
     }
 
-    /** The depth reference at x, z without recording one (for /solar status), or NO_Y. */
-    public static int referenceAt(World world, int x, int z) {
-        if (SolarConfig.depthReference == SolarConfig.DepthReference.TOP_Y) return SolarApocalypse.topY(world);
+    /** The terrain surface (SURFACE depth reference) at x, z without recording one (for /solar status), or NO_Y. */
+    public static int groundAt(World world, int x, int z) {
         CwgSurface model = CubicSky.model(world);
         if (model != null) {
             int top = model.top(x, z);

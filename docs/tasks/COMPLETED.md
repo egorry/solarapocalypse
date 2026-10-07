@@ -2,6 +2,15 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 6 (2026-10-08)
+- Fixed: the engine's time budget was a deadline from the tick's start, so a world tick longer than the budget left it
+  no time (no block changes in the user's singleplayer test). Self-test stage with 12 ms slow world ticks.
+- Fixed: a non-last infinite phase descended past its end in `reachTime` (blocks removed at the wrong rate).
+- Per-phase `depthReference` with one depth line per reference; `TOP_Y` lines start at `world.topY`.
+- Per-phase `evaporate` lists with `fluid:` and `temperature` selectors.
+- `convertRuleMode` / `destroyRuleMode`.
+- Config saves phases in number order; phase 1 `sunFireSeconds` default 0.
+
 ## Turn 5 (2026-10-08)
 - Phase announcements: chat message, sound, client splash title (font texture, flicker colours, fades); one log line;
   `/solar announce`.

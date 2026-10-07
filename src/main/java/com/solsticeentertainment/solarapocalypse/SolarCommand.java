@@ -103,15 +103,16 @@ public final class SolarCommand extends CommandBase {
             when = "phase " + (phase + 1) + "/" + timeline.phaseCount() + ", " + days(p - timeline.start(phase)) + " in"
                     + (last ? "" : ", next in " + days(timeline.end(phase) - p));
         }
-        long depth = (long) timeline.depthAt(p);
+        int line = timeline.track(Math.max(phase, 0));
+        long depth = (long) timeline.depthAt(p, line);
         String reach;
         if (!SolarApocalypse.isActive(world)) {
             reach = "this world is not affected";
         } else {
-            int reference = SolarApocalypse.isCubic(world)
-                    ? com.solsticeentertainment.solarapocalypse.cc.CubeEngine.referenceAt(world, pos.getX(), pos.getZ())
+            int reference = line == Timeline.SURFACE && SolarApocalypse.isCubic(world)
+                    ? com.solsticeentertainment.solarapocalypse.cc.CubeEngine.groundAt(world, pos.getX(), pos.getZ())
                     : SolarApocalypse.topY(world);
-            reach = "depth " + depth + " layers below " + SolarConfig.depthReference
+            reach = "depth " + depth + " layers below " + (line == Timeline.TOP ? "TOP_Y" : "SURFACE")
                     + (reference == BlockChanges.NO_Y ? " (not known here yet)" : " (here Y " + reference + ", destroyed down to Y " + (reference - depth + 1) + ")")
                     + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world) : "")
                     + "; you: " + sky(world, pos.up());

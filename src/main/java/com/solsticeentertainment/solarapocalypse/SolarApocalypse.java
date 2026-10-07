@@ -39,7 +39,7 @@ public class SolarApocalypse {
     private static BlockRules rules;
     private static final Map<World, BlockChanges> CHANGES = new WeakHashMap<>();
     private static int lastPhase = Integer.MIN_VALUE;
-    private static long budgetEnd;
+    private static long budgetNanos;
     private static final double MIN_BUDGET_MS = 0.5;
     private static double engineMs;
     private static long engineNanos;
@@ -108,22 +108,25 @@ public class SolarApocalypse {
 
     /** Logs the phase plan once per load, and warns about settings that do not do what they say. */
     private static void summarize() {
-        int previous = 0;
+        int[] previous = new int[2]; // per depth line
         boolean infinite = false;
         for (int i = 0; i < timeline.phaseCount(); i++) {
             SolarConfig.Phase p = SolarConfig.phases[i];
+            int line = timeline.track(i);
             if (infinite && p.depth != SolarConfig.INFINITE) {
                 LOGGER.warn("phase_{}.depth {} follows an infinite phase; every phase after an infinite one is infinite", i + 1, p.depth);
             }
             infinite |= p.depth == SolarConfig.INFINITE;
-            if (p.depth != SolarConfig.INFINITE && p.depth < previous) {
-                LOGGER.warn("phase_{}.depth {} is lower than an earlier phase's {}; depth never decreases, using {}", i + 1, p.depth, previous, previous);
+            if (p.depth != SolarConfig.INFINITE && p.depth < previous[line]) {
+                LOGGER.warn("phase_{}.depth {} is lower than an earlier phase's {} on the same reference; depth never decreases, using {}",
+                        i + 1, p.depth, previous[line], previous[line]);
             }
-            if (p.depth != SolarConfig.INFINITE) previous = Math.max(previous, p.depth);
-            LOGGER.info("Phase {}: days {} to {}, depth {}{}, {} convert rules ({} block states), {} destroy selectors ({} block states)",
+            if (p.depth != SolarConfig.INFINITE) previous[line] = Math.max(previous[line], p.depth);
+            LOGGER.info("Phase {}: days {} to {}, depth {} below {}{}, {} convert rules ({} block states), {} destroy selectors ({} block"
+                            + " states), {} liquid states start evaporating",
                     i + 1, String.format("%.2f", timeline.start(i) / (double) Timeline.DAY), String.format("%.2f", timeline.end(i) / (double) Timeline.DAY),
-                    p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), layerTime(i), p.convert.length,
-                    rules.convertCount(i), p.destroy.length, rules.destroyCount(i));
+                    p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), line == Timeline.TOP ? "TOP_Y" : "SURFACE",
+                    layerTime(i), p.convert.length, rules.convertCount(i), p.destroy.length, rules.destroyCount(i), rules.evaporateCount(i));
         }
     }
 
@@ -176,15 +179,16 @@ public class SolarApocalypse {
     public static void onFluidSource(BlockEvent.CreateFluidSourceEvent event) {
         World world = event.getWorld();
         if (world.isRemote || !SolarConfig.blockPhysics || !isActive(world)) return;
-        BlockRules.Liquid liquid = BlockRules.liquid(event.getState());
-        int number = liquid == BlockRules.Liquid.WATER ? SolarConfig.waterPhase
-                : liquid == BlockRules.Liquid.LAVA ? SolarConfig.lavaPhase : SolarConfig.otherLiquidsPhase;
-        if (ApocalypseClock.progress() >= timeline.startOfPhaseNumber(number)) event.setResult(Event.Result.DENY);
+        int phase = rules.evaporationPhase(event.getState());
+        if (phase >= 0 && ApocalypseClock.progress() >= timeline.start(phase)) event.setResult(Event.Result.DENY);
     }
 
-    /** Whether block changes may still run in this server tick: time and change count. */
+    /**
+     * Whether block changes may still run in this server tick: engine time spent in it, and change count. The engine runs
+     * after the world's own tick, so this is time spent, not a deadline from the tick's start.
+     */
     public static boolean hasBudget() {
-        return System.nanoTime() < budgetEnd && mayChange();
+        return CubeEngine.nanos - engineNanos < budgetNanos && mayChange();
     }
 
     /** Whether performance.maxBlockChangesPerTick allows another change in this tick. */
@@ -209,7 +213,7 @@ public class SolarApocalypse {
         tickStartChanges = BlockChanges.changed;
         double freeMs = Math.max(0, 50 - (averageMs - engineMs));
         double budgetMs = Math.max(MIN_BUDGET_MS, Math.min(SolarConfig.tickBudgetMs, SolarConfig.freeTickShare * freeMs));
-        budgetEnd = System.nanoTime() + (long) (budgetMs * 1.0E6);
+        budgetNanos = (long) (budgetMs * 1.0E6);
         long progress = ApocalypseClock.progress();
         int phase = timeline.phaseAt(progress);
         if (phase != lastPhase) {

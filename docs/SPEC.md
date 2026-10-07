@@ -29,12 +29,16 @@ in the generated `config/solarapocalypse.cfg`.
     first time the column's top is known (the ground under trees and water) and saved with the column
     (`SurfaceRecord`). Columns whose surface is not known yet wait.
   - `TOP_Y`: `world.topY` for every column (`auto` = the height the generator reports).
+- Per phase, `depthReference` (`INHERIT` default, `SURFACE`, `TOP_Y`) switches. Each reference has its own depth line,
+  moved only by its own phases (the other stays where it is), and a block goes when either line reaches it. A `TOP_Y`
+  line starts at `world.topY` when its first phase starts and descends at that phase's speed, so mountains are cut
+  flat first and nothing is swept all at once. A line reaches nothing before its first phase.
 - Destruction `speed`: `PHASE` spreads the descent over the phase's days, `RATE` goes at `layersPerDay`, `INSTANT` at
   the phase start. Conversion: `convertDays` after the destruction (-1 = the rest of the phase's days, 0 = at once).
-- Infinite depth descends at `layersPerDay` for ever (each layer stays 1/`layersPerDay` of a day: a day lasts 1200 s at
-  the vanilla day length, so a layer every S seconds is `layersPerDay = 1200 / S`; 16 = 75 s; the phase plan in the log
-  shows the interval); every later phase is
-  infinite too, with its own rate, conversions and damage. In infinite phases conversions run all the time, ahead of
+- Infinite depth descends at `layersPerDay` (each layer stays 1/`layersPerDay` of a day: a day lasts 1200 s at the
+  vanilla day length, so a layer every S seconds is `layersPerDay = 1200 / S`; 16 = 75 s; the phase plan in the log
+  shows the interval); every later phase is infinite too, with its own rate, conversions and damage, and the last one
+  goes on for ever. In infinite phases conversions run all the time, ahead of
   the destruction: with `convertDepth` n the n layers below the eroding surface are converted before they are destroyed.
 - Everything is a pure function of progress (`Timeline`), so terrain loaded on day 40 gets what terrain watched since
   day 0 got.
@@ -47,8 +51,8 @@ in the generated `config/solarapocalypse.cfg`.
   title flickers between `splash.titleColor` and `splash.flickerColor`.
 
 ## 3. Block effects
-Per block, using the rules active in the running phase (`phases.ruleMode`: `CARRY` = every phase so far, the latest
-phase's rule winning per block; `ISOLATED` = the running phase only):
+Per block, using the rules active in the running phase (`phases.convertRuleMode` and `phases.destroyRuleMode`, each
+`CARRY` = every phase so far, the latest phase's rule winning per block, or `ISOLATED` = the running phase only):
 1. **Destroy** (`destroy` selectors): removed once the depth reaches the block. Blocks reached while the rule's phase
    runs go layer by layer as the depth passes; blocks above the reference (trees, buildings) go top down over the first
    tenth of the phase; other blocks reached before the phase go at random but fixed moments within it.
@@ -62,8 +66,10 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
    in order (`dirt -> sand @ 30%` after it covers the rest), a rule without `@` takes all that is left. Which blocks
    convert is a fixed hash of position, phase and block state, so a block's outcome never changes between looks and
    nothing has to be stored; a later phase with its own rule for the block (e.g. 100 %) takes over in `CARRY`.
-3. **Evaporation**: sun-exposed liquids go from `evaporation.waterPhase` / `lavaPhase` / `otherLiquidsPhase` on;
-   `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
+3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
+   (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
+   water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
+   `evaporation.mode`: `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
    evaporation has started.
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
@@ -86,10 +92,10 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
   switches to flag 3. No item drops or container spills unless `blocks.dropItems`.
 - Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to
-  paths; sun sets mobs alight. 2: 30 % of paths to dirt, 30 % of wool, carpets and snow burn, TNT goes; 25 % fire.
+  paths. 2: 30 % of paths to dirt, 30 % of wool, carpets and snow burn, TNT goes; 25 % fire.
   3: the rest of those, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
   4 a day from sea level); 50 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
-  evaporate; 75 % fire. 5: sand to glass; 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
+  evaporate (`*, !material:lava`); 75 % fire. 5: sand to glass; 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
   7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 90-95 %. 11: infinite erosion at 200 layers a
   day (one every 6 s); 100 %. Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
   phase 7; heat 0.25 from phase 4 rising to 4; Fire Resistance protects from the sun, not the heat. Fire percentages
@@ -99,9 +105,10 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
 - Cubes are queued on load (new and reloaded: the retroactive part), on phase starts, on `/solar` time changes and
   reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
   1/20 day). Queued cubes are processed once ready (populated, lit, surface-tracked), top-down per x/z.
-- Time budget per server tick: at most `performance.tickBudgetMs` (4 ms) and at most `performance.freeTickShare` (50 %)
-  of the time the rest of the server leaves free in a 50 ms tick (100-tick average), at least 0.5 ms. A busy server slows
-  the apocalypse instead of lagging.
+- Time budget per server tick: the engine may spend at most `performance.tickBudgetMs` (4 ms) and at most
+  `performance.freeTickShare` (50 %) of the time the rest of the server leaves free in a 50 ms tick (100-tick average),
+  at least 0.5 ms. It is time spent by the engine, which runs after the world's own tick. A busy server slows the
+  apocalypse instead of lagging.
 - ...and at most `performance.maxBlockChangesPerTick` (512) changes per tick, also inside a cube, which caps what
   clients are sent and must redraw. A big ocean evaporating (2.2 M sources in the self-test's loaded area) then takes
   ~4400 ticks instead of ~160.
@@ -138,18 +145,21 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   fire-immune mobs only if `entities.spareFireImmune` (default false).
 
 ## 7. Checks
-- `./gradlew test`: `TimelineTest`.
+- `./gradlew test`: `TimelineTest` (depth and reach agree, also across infinite phases with different rates; two
+  reference lines).
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
-  (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5), so the checks do not move with the
-  defaults. Last run (2026-10-08):
+  (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5, plus a sixth `TOP_Y` phase at 64
+  layers a day), so the checks do not move with the defaults. Last run (2026-10-08):
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
   few blocks higher); rules check as expected (chances 30/20 % -> 3014 and 1977 of 10000 blocks, identical on a second
-  look; exclusion, loop cut, TNT blacklist); phase 1 catch-up of ~10.7k cubes
+  look; exclusion, loop cut, TNT blacklist; evaporation lists with fluid and temperature selectors); phase 1 catch-up
+  of ~10.7k cubes with every world tick made 12 ms slower than the 10 ms budget: 63-88 ticks; elsewhere
   with no change cap: 0.3-2.2 M blocks (mostly water) in 120-185 ticks, 0.8-1.7 s engine time; with the cap at the end:
   at most 512 changes in a tick; pigs, first hit in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep
   untouched; 8 layers of erosion below
   each column's surface: 0 of 459275 positions above the line still hold a block; solar fire at the end of phase 4 on
   8.9-9.6 % of positions (10 % asked; water and other non-solid tops get none), unchanged after 200 ticks; in the
-  infinite phase 14.5-14.9 % (15 % asked), only the current layer's fire left.
-- `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. `./gradlew runClient` reaches the main menu (the
-  splash itself has not been seen in a client yet).
+  infinite phase 14.2-15.1 % (15 % asked), only the current layer's fire left; `TOP_Y` line of phase 6 at Y 33-35:
+  0 of 56-65 k positions above it still hold a block.
+- `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and
+  burning in a client.
