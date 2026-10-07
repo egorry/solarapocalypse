@@ -1,11 +1,13 @@
 #!/bin/bash
 # Run a dev check on a fresh dev world. Usage: scripts/probe_server.sh [tag] [probe|selftest]
 # probe: the CubicProbe research probe (docs/RESEARCH.md section 9); selftest: debug/SelfTest (the apocalypse end to end).
-# Deletes run/world_cubic. Logs go to research/ (git-ignored); prints the SOLAR lines.
+# Deletes run/world_cubic; selftest copies scripts/selftest.cfg to run/config/solarapocalypse-selftest.cfg. Logs go to research/ (git-ignored); prints the SOLAR lines.
 cd "$(dirname "$0")/.." && mkdir -p research
 TAG=${1:-run}
 MODE=${2:-probe}
 rm -rf run/world_cubic run/logs/latest.log
+# the self-test's own config: the engine is checked against fixed phases, whatever the defaults or run/config say
+[ "$MODE" = selftest ] && cp scripts/selftest.cfg run/config/solarapocalypse-selftest.cfg
 ./gradlew runServer --console=plain "-Pextra_jvm_args=-Dsolarapocalypse.$MODE" > research/${MODE}_gradle_$TAG.log 2>&1 &
 GPID=$!
 for i in $(seq 1 240); do

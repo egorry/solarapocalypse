@@ -2,6 +2,7 @@ package com.solsticeentertainment.solarapocalypse.debug;
 
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
+import com.solsticeentertainment.solarapocalypse.BlockRules;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
@@ -45,7 +46,9 @@ public final class SelfTest {
     private static int stage, ticks, waited;
     private static EntityPig sunPig, roofPig, deepPig;
     private static long engineNanos, engineCubes, engineBlocks;
-    private static int fireCount;
+    private static int fireCount, cap;
+    private static long lastChanged, maxChanges;
+    private static final float[] firstHit = new float[2];
 
     private SelfTest() {}
 
@@ -70,6 +73,10 @@ public final class SelfTest {
                 log("depth reference {}, CubicWorldGen model {}, phases start {} end {}", SolarConfig.depthReference,
                         CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
                 modelCheck();
+                rulesCheck();
+                cap = SolarConfig.maxBlockChangesPerTick;
+                SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
+                SolarConfig.phases[3].message = "&6The ground cracks"; // the phase 4 start log line carries it
                 census("fresh world");
                 spawnPigs();
                 jump(t.end(0) - 1, "end of phase 1");
@@ -88,8 +95,12 @@ public final class SelfTest {
                 jump(t.start(3) + 1, "start of phase 4");
                 break;
             case 2:
+                // the first hit only: with entities still ticking, hurt cooldowns can run out and let a second one in
+                if (firstHit[0] == 0 && sunPig.getHealth() < sunPig.getMaxHealth()) firstHit[0] = sunPig.getHealth();
+                if (firstHit[1] == 0 && roofPig.getHealth() < roofPig.getMaxHealth()) firstHit[1] = roofPig.getHealth();
                 if (ticks - waited < 25) return;
-                pigs("phase 4, one hit (expect sun 5, roof 9, deep 10)");
+                log("pigs after the first hit in phase 4 (expect sun 5, roof 9, deep 10): sun {}, roof {}, deep {}",
+                        firstHit[0], firstHit[1], deepPig.getHealth());
                 jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar, 75 % of flammables)");
                 break;
             case 3:
@@ -108,6 +119,16 @@ public final class SelfTest {
                 fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
                 erosionCheck(SolarApocalypse.timeline().depthAt(ApocalypseClock.progress()));
+                SolarConfig.maxBlockChangesPerTick = cap;
+                jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
+                lastChanged = BlockChanges.changed;
+                break;
+            case 6:
+                maxChanges = Math.max(maxChanges, BlockChanges.changed - lastChanged);
+                lastChanged = BlockChanges.changed;
+                if (ticks - waited < 100) return;
+                log("most block changes in one tick over 100 ticks: {} (cap {}), {} cubes still queued", maxChanges, cap,
+                        CubeEngine.queued(world));
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -122,7 +143,7 @@ public final class SelfTest {
                 (long) SolarApocalypse.timeline().depthAt(progress), CubeEngine.queued(world));
         engineNanos = CubeEngine.nanos;
         engineCubes = CubeEngine.cubesProcessed;
-        engineBlocks = CubeEngine.blocksChanged;
+        engineBlocks = BlockChanges.changed;
         waited = ticks;
         stage++;
     }
@@ -134,7 +155,7 @@ public final class SelfTest {
             return false;
         }
         log("  caught up in {} ticks ({} queued left): {} cube passes, {} blocks changed, {} ms engine time", ticks - waited, queued,
-                CubeEngine.cubesProcessed - engineCubes, CubeEngine.blocksChanged - engineBlocks,
+                CubeEngine.cubesProcessed - engineCubes, BlockChanges.changed - engineBlocks,
                 String.format("%.1f", (CubeEngine.nanos - engineNanos) / 1e6));
         return true;
     }
@@ -175,35 +196,37 @@ public final class SelfTest {
                 sunPig.getHealth(), sunPig.isBurning(), roofPig.getHealth(), roofPig.isBurning(), deepPig.getHealth(), deepPig.isBurning());
     }
 
+    /** Chances, selector exclusions, loop cutting and the vanilla fire blacklist, on a throwaway two-phase rule set (CARRY). */
+    private static void rulesCheck() {
+        SolarConfig.Phase a = new SolarConfig.Phase(), b = new SolarConfig.Phase();
+        a.convert = new String[]{"minecraft:dirt -> minecraft:sand", "minecraft:gravel -> minecraft:sand @ 30%",
+                "minecraft:gravel -> minecraft:clay @ 20"};
+        a.destroy = new String[]{"material:rock, !minecraft:cobblestone"};
+        b.convert = new String[]{"minecraft:sand -> minecraft:dirt"};
+        b.destroy = new String[0];
+        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{a, b});
+        IBlockState dirt = Blocks.DIRT.getDefaultState(), sand = Blocks.SAND.getDefaultState(), gravel = Blocks.GRAVEL.getDefaultState();
+        BlockRules.Step g = r.convert(0, gravel), d = r.convert(1, dirt), s = r.convert(1, sand);
+        int toSand = 0, toClay = 0, same = 0;
+        for (int i = 0; i < 10000; i++) {
+            IBlockState to = g.pick(i, 64, i * 7, gravel);
+            if (to == sand) toSand++;
+            else if (to == Blocks.CLAY.getDefaultState()) toClay++;
+            if (to == g.pick(i, 64, i * 7, gravel)) same++;
+        }
+        log("rules: gravel of 10000 blocks -> {} sand (expect ~3000), {} clay (~2000), same on a second look {} (10000);"
+                        + " stone destroyed in phase {} (expect 0), cobblestone {} (-1); loop cut in phase 2: dirt -> {} (none),"
+                        + " sand -> {} (dirt); TNT blacklisted for vanilla fire {} (true)", toSand, toClay, same,
+                r.destroyPhase(0, Blocks.STONE.getDefaultState()), r.destroyPhase(0, Blocks.COBBLESTONE.getDefaultState()),
+                d == null ? "none" : d, s == null ? "none" : s, r.noVanillaFire(Blocks.TNT.getDefaultState()));
+    }
+
     /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */
     private static int fire(String when) {
-        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
-        BlockPos spawn = world.getSpawnPoint();
-        int solar = 0, vanilla = 0, columns = 0;
-        Map<Integer, Integer> epochs = new LinkedHashMap<>();
-        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
-            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
-                Chunk column = cubes.getLoadedColumn(cx, cz);
-                if (column == null) continue;
-                columns++;
-                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
-                    ExtendedBlockStorage storage = cube.getStorage();
-                    if (storage == null || storage.isEmpty()) continue;
-                    for (int i = 0; i < 4096; i++) {
-                        IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
-                        if (SolarFire.is(s)) {
-                            solar++;
-                            epochs.merge(SolarFire.epochOf(s), 1, Integer::sum);
-                        } else if (s.getBlock() == Blocks.FIRE) {
-                            vanilla++;
-                        }
-                    }
-                }
-            }
-        }
-        log("fire at {}: solar {} ({} % of {} x/z positions, by epoch {}), vanilla {}", when, solar,
-                String.format("%.1f", solar * 100.0 / (columns * 256)), columns * 256, epochs, vanilla);
-        return solar;
+        CubeEngine.FireCensus c = CubeEngine.fireCensus(world, world.getSpawnPoint(), RADIUS);
+        log("fire at {}: solar {} ({} % of {} x/z positions, by epoch {}), vanilla {}", when, c.solar,
+                String.format("%.1f", c.solar * 100.0 / (c.columns * 256)), c.columns * 256, c.epochs, c.vanilla);
+        return c.solar;
     }
 
     /** Compares the CubicWorldGen surface model with the generated ground of the loaded spawn columns. */

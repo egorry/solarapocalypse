@@ -6,6 +6,7 @@ import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.World;
 
@@ -14,10 +15,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-/** /solar status | set <days> | add <days> | phase <n> | pause | resume | reload */
+/** /solar status | set <days> | add <days> | phase <n> | pause | resume | reload | announce [n] | fire [radius] */
 public final class SolarCommand extends CommandBase {
 
-    private static final List<String> SUBCOMMANDS = Arrays.asList("status", "set", "add", "phase", "pause", "resume", "reload");
+    private static final List<String> SUBCOMMANDS = Arrays.asList("status", "set", "add", "phase", "pause", "resume", "reload", "announce", "fire");
 
     @Override
     public String getName() {
@@ -31,7 +32,7 @@ public final class SolarCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/solar status | set <days> | add <days> | phase <n> | pause | resume | reload";
+        return "/solar status | set <days> | add <days> | phase <n> | pause | resume | reload | announce [n] | fire [radius]";
     }
 
     @Override
@@ -66,6 +67,24 @@ public final class SolarCommand extends CommandBase {
             case "reload":
                 SolarApocalypse.reload();
                 break;
+            case "announce": { // replays a phase's message, sound and splash to the sender
+                int phase = args.length < 2 ? timeline.phaseAt(ApocalypseClock.progress()) + 1 : parseInt(args[1], 1, timeline.phaseCount());
+                if (phase < 1) throw new CommandException("The apocalypse has not started; give a phase number");
+                Announcer.announce(getCommandSenderAsPlayer(sender), phase - 1);
+                return;
+            }
+            case "fire": {
+                World world = sender.getEntityWorld();
+                if (!SolarApocalypse.isCubic(world)) throw new CommandException("Fire is only placed in Cubic Chunks worlds so far");
+                int radius = args.length < 2 ? 8 : parseInt(args[1], 0, 64);
+                com.solsticeentertainment.solarapocalypse.cc.CubeEngine.FireCensus c =
+                        com.solsticeentertainment.solarapocalypse.cc.CubeEngine.fireCensus(world, sender.getPosition(), radius);
+                sender.sendMessage(new TextComponentString(String.format(Locale.ROOT,
+                        "Fire in the loaded cubes of %d columns within %d: solar %d (by phase/layer mod 16: %s), vanilla %d."
+                                + " Lit by the sun since the server started: solar %d, vanilla %d.", c.columns, radius, c.solar, c.epochs,
+                        c.vanilla, BlockChanges.solarFireLit, BlockChanges.vanillaFireLit)));
+                return;
+            }
             default:
                 throw new WrongUsageException(getUsage(sender));
         }
@@ -97,9 +116,14 @@ public final class SolarCommand extends CommandBase {
                     + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world) : "")
                     + "; you: " + sky(world, pos.up());
         }
+        double tickMs = MathHelper.average(world.getMinecraftServer().tickTimeArray) * 1.0E-6;
+        String load = String.format(Locale.ROOT, "Engine: %.2f ms/tick average, %.2f ms slowest tick since the last status, %.1f block"
+                        + " changes/tick average, %d since start. Server: %.1f ms/tick (%.1f TPS).", SolarApocalypse.averageEngineMs,
+                SolarApocalypse.maxEngineMs, SolarApocalypse.averageChanges, BlockChanges.changed, tickMs, Math.min(20, 1000 / Math.max(tickMs, 1.0E-3)));
+        SolarApocalypse.maxEngineMs = 0;
         return new String[]{
                 "Solar apocalypse: day " + days(p) + ", " + when + (ApocalypseClock.isPaused() ? " (paused)" : ""),
-                reach};
+                reach, load};
     }
 
     private static String sky(World world, BlockPos pos) {

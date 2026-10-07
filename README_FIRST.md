@@ -21,7 +21,8 @@ automatically) has the working rules; this file points at everything else. Curre
 ## Code (`src/main/java/com/solsticeentertainment/solarapocalypse/`)
 - Package root: mod wiring (`SolarApocalypse`), config (`SolarConfig`), time (`ApocalypseClock`, `Timeline`), block
   rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun, heat and fire (`Sky`, `SunDamage`, `SolarFire`),
-  `/solar` (`SolarCommand`). No Cubic Chunks classes here.
+  phase announcements and the network channel (`Announcer`), `/solar` (`SolarCommand`). No Cubic Chunks classes here.
+- `client/`: client-only rendering (the phase splash); never loaded on a dedicated server.
 - `cc/`: everything that touches Cubic Chunks or CubicWorldGen classes; only loaded when they are installed.
 - `debug/`: dev-only checks run by `scripts/probe_server.sh`.
 - `src/test/`: unit tests.
@@ -29,7 +30,7 @@ automatically) has the working rules; this file points at everything else. Curre
 ## Commands (Git Bash, repo root)
 ```
 ./gradlew build                               # also runs the unit tests
-bash scripts/probe_server.sh <tag> selftest   # fresh dev world, phases end to end, prints SOLAR TEST lines
+bash scripts/probe_server.sh <tag> selftest   # fresh dev world, phases end to end on scripts/selftest.cfg, prints SOLAR TEST lines
 bash scripts/probe_server.sh <tag>            # fresh dev world + research probe, prints SOLAR PROBE lines
 bash scripts/smoke_server.sh <tag>            # start/stop the dev server, copy its log to research/
 ./gradlew runServer -Pno_dev_mods             # dev server without Cubic Chunks; the next normal run restores it

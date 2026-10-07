@@ -26,7 +26,9 @@
 - `run/` is git-ignored: `run/config` mirrors the pack's CC/CWG configs; `run/server.properties` uses
   `level-type=CustomCubic`, `level-name=world_cubic`. Delete `run/config/solarapocalypse.cfg` after config changes to
   regenerate it with the current defaults. Console commands can be piped into `./gradlew runServer` (stdin reaches it).
-- Dev checks write their logs to `research/`. The self-test deletes `run/world_cubic`.
+- Dev checks write their logs to `research/`. The self-test deletes `run/world_cubic` and runs on its own config
+  (`scripts/selftest.cfg`, copied to `run/config/solarapocalypse-selftest.cfg`). The user keeps named configs in
+  `run/config` (`solarapocalypse - <name>.cfg`): leave them alone.
 - CC pitfalls (details in docs/RESEARCH.md): on a CC server `World.getBlockState`, `World.getLight`, `canBlockSeeSky`,
   `getTopSolidOrLiquidBlock`, `Chunk.getBlockState` and setBlockState flag 1 GENERATE unloaded cubes; use
   `getLoadedCube`/`isBlockLoaded` and flag 18. CC treats never-generated cubes as air (false sky exposure).

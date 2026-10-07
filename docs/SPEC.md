@@ -31,11 +31,20 @@ in the generated `config/solarapocalypse.cfg`.
   - `TOP_Y`: `world.topY` for every column (`auto` = the height the generator reports).
 - Destruction `speed`: `PHASE` spreads the descent over the phase's days, `RATE` goes at `layersPerDay`, `INSTANT` at
   the phase start. Conversion: `convertDays` after the destruction (-1 = the rest of the phase's days, 0 = at once).
-- Infinite depth descends at `layersPerDay` for ever (each layer stays 1/`layersPerDay` of a day); every later phase is
+- Infinite depth descends at `layersPerDay` for ever (each layer stays 1/`layersPerDay` of a day: a day lasts 1200 s at
+  the vanilla day length, so a layer every S seconds is `layersPerDay = 1200 / S`; 16 = 75 s; the phase plan in the log
+  shows the interval); every later phase is
   infinite too, with its own rate, conversions and damage. In infinite phases conversions run all the time, ahead of
   the destruction: with `convertDepth` n the n layers below the eroding surface are converted before they are destroyed.
 - Everything is a pure function of progress (`Timeline`), so terrain loaded on day 40 gets what terrain watched since
   day 0 got.
+- Phase start: one log line (`Solar apocalypse phase n begins on day d: <message>`), and for the players online, from
+  the phase's section: `message` in chat, `sound` (any sound name the client knows, played at the player), `splash` (a
+  title on screen with the message small underneath; fonts, colours and timing in the `splash` section). All empty by
+  default. `&` formatting codes work in both texts. `/solar announce [n]` replays a phase's announcement to yourself.
+- Splash fonts are client textures in the layout of `minecraft:textures/font/ascii.png` (`splash.titleFont`, default
+  `solarapocalypse:textures/font/splash.png`, not shipped yet; `splash.messageFont`); Minecraft's font while missing. The
+  title flickers between `splash.titleColor` and `splash.flickerColor`.
 
 ## 3. Block effects
 Per block, using the rules active in the running phase (`phases.ruleMode`: `CARRY` = every phase so far, the latest
@@ -49,6 +58,10 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
    the phase's destruction is done, at random but fixed moments over `convertDays`. Converting to air makes the block
    below the new surface, so leaves burn through a canopy while grass -> dirt stops at the top. Rules are resolved to
    their end: with grass -> dirt, dirt -> gravel, gravel -> sand in effect, grass becomes sand in one change.
+   **Chances**: `dirt -> gravel @ 70%` converts 70 % of dirt and leaves the rest; rules matching a block share it out
+   in order (`dirt -> sand @ 30%` after it covers the rest), a rule without `@` takes all that is left. Which blocks
+   convert is a fixed hash of position, phase and block state, so a block's outcome never changes between looks and
+   nothing has to be stored; a later phase with its own rule for the block (e.g. 100 %) takes over in `CARRY`.
 3. **Evaporation**: sun-exposed liquids go from `evaporation.waterPhase` / `lavaPhase` / `otherLiquidsPhase` on;
    `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
@@ -59,27 +72,47 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
    blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Solar fire is
    tagged with its epoch (the phase, or the layer in infinite phases): stale fire is removed when the next phase starts
    and redrawn on every new layer. Punching the block under it puts it out (it comes back on the cube's next look).
+   No solar fire goes beside or under a flammable block: it would take the space vanilla fire spreads into and look odd
+   next to a block that never catches. Those positions just stay empty (checked on each look at the cube).
 
 - Selectors: `modid:name`, `modid:name:meta`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
-  unbreakable blocks. Within a phase the first matching rule wins.
+  unbreakable blocks. Several can be combined with commas, and `!` excludes: `material:rock, !minecraft:cobblestone`
+  (a destroy list counts as one combined selector). Exclusions apply to the list or rule they are in, not to rules
+  carried from earlier phases. Within a phase the first matching rule wins.
+- Loops (A -> B -> A, also across phases in `CARRY`) are cut when the rules are compiled: the loop's oldest rule is
+  dropped, with a warning in the log.
+- Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
+  `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
   switches to flag 3. No item drops or container spills unless `blocks.dropItems`.
-- Defaults: 5 phases of 3 days after 3 safe days. 1: grass, mycelium, farmland, paths to dirt; plants, vines, cacti,
-  snow, ice burn; water and lava evaporate; mobs in the sun catch fire. 2: leaves, gourds, cobwebs burn; 1 damage.
-  3: wood, wool, carpets, TNT burn; dirt to sand; 2 damage, 0.5 heat. 4: clay hardens, gravel to sand; 4 damage, 1 heat.
-  5: everything erodes, infinite, 16 layers a day; 8 damage, 2 heat. Solar fire on 2/5/10/15 % of the surface in
-  phases 2-5, vanilla fire on 75 % of flammable surface blocks.
+- Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to
+  paths; sun sets mobs alight. 2: 30 % of paths to dirt, 30 % of wool, carpets and snow burn, TNT goes; 25 % fire.
+  3: the rest of those, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
+  4 a day from sea level); 50 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
+  evaporate; 75 % fire. 5: sand to glass; 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
+  7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 90-95 %. 11: infinite erosion at 200 layers a
+  day (one every 6 s); 100 %. Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
+  phase 7; heat 0.25 from phase 4 rising to 4; Fire Resistance protects from the sun, not the heat. Fire percentages
+  are the same for solar fire and vanilla fire on flammables.
 
 ## 4. Engine (Cubic Chunks worlds)
 - Cubes are queued on load (new and reloaded: the retroactive part), on phase starts, on `/solar` time changes and
   reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
   1/20 day). Queued cubes are processed once ready (populated, lit, surface-tracked), top-down per x/z.
-- Time budget per server tick: at most `performance.tickBudgetMs` (10 ms) and at most `performance.freeTickShare` (75 %)
+- Time budget per server tick: at most `performance.tickBudgetMs` (4 ms) and at most `performance.freeTickShare` (50 %)
   of the time the rest of the server leaves free in a 50 ms tick (100-tick average), at least 0.5 ms. A busy server slows
   the apocalypse instead of lagging.
-- Every config load logs the phase plan (days, depth, rule and block-state counts) and warns about decreasing depths.
+- ...and at most `performance.maxBlockChangesPerTick` (512) changes per tick, also inside a cube, which caps what
+  clients are sent and must redraw. A big ocean evaporating (2.2 M sources in the self-test's loaded area) then takes
+  ~4400 ticks instead of ~160.
+- Every config load logs the phase plan (days, depth, layer interval, rule and block-state counts) and warns about
+  decreasing depths.
+- `/solar status` shows the engine's average and slowest tick, block changes per tick and the server's tick time;
+  `/solar fire [radius]` counts solar and vanilla fire in the loaded cubes around you and the fire lit since start.
 - Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte).
-- Nothing loads or generates a cube.
+- Nothing loads or generates a cube: a cube is processed only when it and what its blocks depend on are loaded,
+  otherwise it waits, and catch-up makes it right later. The one exception is opt-in: `blocks.blockPhysics` notifies
+  neighbours, which can generate a cube at a cube edge. Vanilla fire checks that its area is loaded (Forge).
 
 ## 5. Sky and the unknown above
 CC counts never-generated cubes as air. A position counts as sun-exposed only when nothing opaque is known above it
@@ -95,22 +128,28 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
 
 ## 6. Sun damage
 - Every `entities.intervalTicks` (20) each living entity is checked once, staggered by entity id.
-- Direct: the zombie rule (sky visible from the eyes; only by day if `entities.sunNeedsDaytime`, default false):
-  `sunDamage`, `sunFireSeconds`.
-- Background heat: sky light at the eyes at least `entities.backgroundMinSkyLight` (1), day or night: `backgroundDamage`,
+- Direct: the zombie rule (sky visible from the eyes; only by day if `entities.sunNeedsDaytime`, default true, until
+  phase `entities.sunAtNightFromPhase`, default 7): `sunDamage`, `sunFireSeconds`.
+- Background heat: sky light at the eyes at least `entities.backgroundMinSkyLight` (4), day or night: `backgroundDamage`,
   `backgroundFireSeconds`. Overhangs, trees and houses with openings are no refuge; sealed rooms and caves are. Both
   add up in the sun.
 - Damage source `solarapocalypse.sun` bypasses armour and is not fire damage; Fire Resistance protects as
-  `entities.fireResistance` says. Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
+  `entities.fireResistance` says (default `DIRECT`: the sun, not the heat). Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
   fire-immune mobs only if `entities.spareFireImmune` (default false).
 
 ## 7. Checks
 - `./gradlew test`: `TimelineTest`.
-- `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, default config. Last run (2026-10-07):
+- `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
+  (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5), so the checks do not move with the
+  defaults. Last run (2026-10-08):
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
-  few blocks higher); phase 1 catch-up of ~10.7k cubes: 0.3-1.7 M blocks (mostly water) in 120-145 ticks, 0.8-1.1 s
-  engine time; pigs in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep untouched; 8 layers of erosion below
+  few blocks higher); rules check as expected (chances 30/20 % -> 3014 and 1977 of 10000 blocks, identical on a second
+  look; exclusion, loop cut, TNT blacklist); phase 1 catch-up of ~10.7k cubes
+  with no change cap: 0.3-2.2 M blocks (mostly water) in 120-185 ticks, 0.8-1.7 s engine time; with the cap at the end:
+  at most 512 changes in a tick; pigs, first hit in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep
+  untouched; 8 layers of erosion below
   each column's surface: 0 of 459275 positions above the line still hold a block; solar fire at the end of phase 4 on
   8.9-9.6 % of positions (10 % asked; water and other non-solid tops get none), unchanged after 200 ticks; in the
   infinite phase 14.5-14.9 % (15 % asked), only the current layer's fire left.
-- `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks.
+- `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. `./gradlew runClient` reaches the main menu (the
+  splash itself has not been seen in a client yet).

@@ -20,3 +20,15 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   erosion); it looks, sounds and burns like fire but never spreads. Flammable blocks get ordinary fire. The mod is now
   needed on clients too.
 - Fire-immune mobs burn too, and direct sun burns at night as well, by default.
+- Phase announcements, all optional per phase: a chat message, a sound, and a splash title on screen with the message
+  underneath (own font and flickering fire colours). `/solar announce` previews them.
+- Selectors can be combined with commas and excluded with `!` (`material:rock, !minecraft:cobblestone`); conversion
+  rules that loop are cut, with a warning.
+- No vanilla fire on TNT (`blocks.vanillaFireBlacklist`) or while the gamerule `doFireTick` is false.
+- At most 512 block changes per tick by default (`performance.maxBlockChangesPerTick`), so clients are not flooded.
+- `entities.sunAtNightFromPhase`: with `sunNeedsDaytime`, the sun burns at night too from this phase on (default 7).
+- `/solar status` shows the apocalypse's tick time and block changes; `/solar fire` counts fire around you.
+- Conversion chances: `minecraft:dirt -> minecraft:gravel @ 70%`. Which blocks convert is fixed per block.
+- No solar fire next to flammable blocks, so vanilla fire can spread to them.
+- New defaults: eleven phases over 22 days, from paths and burning grass to infinite erosion; water evaporates from
+  phase 3, lava from phase 6; the sun burns by day only until phase 7; Fire Resistance protects from the sun.

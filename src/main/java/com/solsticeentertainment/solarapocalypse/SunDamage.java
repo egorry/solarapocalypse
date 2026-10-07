@@ -16,7 +16,7 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import java.util.List;
 
 /**
- * Burns mobs: direct sun (sky visible from the eyes, by day: the zombie rule) and background heat (wherever sky light
+ * Burns mobs: direct sun (sky visible from the eyes: the zombie rule, optionally by day only) and background heat (wherever sky light
  * reaches, day or night, so overhangs and trees are no refuge). Each living entity is checked once per interval,
  * staggered by entity id.
  */
@@ -36,18 +36,20 @@ public final class SunDamage {
         if (phase < 0) return;
         SolarConfig.Phase p = SolarConfig.phases[phase];
         if (p.sunDamage <= 0 && p.sunFireSeconds <= 0 && p.backgroundDamage <= 0 && p.backgroundFireSeconds <= 0) return;
+        boolean dayOnly = SolarConfig.sunNeedsDaytime && (SolarConfig.sunAtNightFromPhase <= 0 || phase + 1 < SolarConfig.sunAtNightFromPhase);
+        boolean sunUp = !dayOnly || world.isDaytime();
         int interval = SolarConfig.damageIntervalTicks;
         long tick = world.getTotalWorldTime();
         List<Entity> entities = world.loadedEntityList;
         for (int i = 0; i < entities.size(); i++) { // index loop: deaths can spawn drops into the list
             Entity e = entities.get(i);
             if (e instanceof EntityLivingBase && (e.getEntityId() + tick) % interval == 0 && !e.isDead) {
-                burn(world, (EntityLivingBase) e, p);
+                burn(world, (EntityLivingBase) e, p, sunUp);
             }
         }
     }
 
-    private static void burn(World world, EntityLivingBase e, SolarConfig.Phase p) {
+    private static void burn(World world, EntityLivingBase e, SolarConfig.Phase p, boolean sunUp) {
         if (e instanceof EntityArmorStand) return;
         if (e instanceof EntityPlayer) {
             EntityPlayer player = (EntityPlayer) e;
@@ -59,8 +61,7 @@ public final class SunDamage {
             if (id != null && SolarConfig.entityBlacklist.contains(id.toString())) return;
         }
         BlockPos eyes = new BlockPos(e.posX, e.posY + e.getEyeHeight(), e.posZ);
-        boolean direct = (p.sunDamage > 0 || p.sunFireSeconds > 0) && (!SolarConfig.sunNeedsDaytime || world.isDaytime())
-                && Sky.at(world, eyes) == Sky.EXPOSED;
+        boolean direct = (p.sunDamage > 0 || p.sunFireSeconds > 0) && sunUp && Sky.at(world, eyes) == Sky.EXPOSED;
         boolean background = (p.backgroundDamage > 0 || p.backgroundFireSeconds > 0) && Sky.heat(world, eyes);
         if (e.isPotionActive(MobEffects.FIRE_RESISTANCE)) {
             SolarConfig.FireResistance fr = SolarConfig.fireResistance;

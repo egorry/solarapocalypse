@@ -17,6 +17,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
@@ -35,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.WeakHashMap;
 
 /**
@@ -84,7 +86,7 @@ public final class CubeEngine {
     }
 
     /** Totals since server start, for /solar status and tests. */
-    public static long nanos, cubesProcessed, blocksChanged;
+    public static long nanos, cubesProcessed;
 
     @SubscribeEvent
     public static void onCubeLoad(CubeEvent.Load event) {
@@ -183,7 +185,8 @@ public final class CubeEngine {
                     int y = minY + ly;
                     if (SolarFire.is(from)) {
                         if (fireY == BlockChanges.NO_Y) fireY = y;
-                        else world.setBlockState(pos.setPos(x, y, z), AIR, 2 | 16); // a second one is always stale
+                        else if (limited(edited, lz << 4 | lx)) return PARTIAL;
+                        else BlockChanges.apply(world, pos.setPos(x, y, z), from, AIR); // a second one is always stale
                         continue;
                     }
                     int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
@@ -192,11 +195,8 @@ public final class CubeEngine {
                     IBlockState to = changes.evaluate(from, pos, reference, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
                     wake = Math.min(wake, changes.wake());
                     if (to == from) continue;
-                    int xz = lz << 4 | lx;
-                    if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return PARTIAL;
-                    edited.set(xz);
+                    if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     BlockChanges.apply(world, pos, from, to);
-                    blocksChanged++;
                     if (from.getLightOpacity() != to.getLightOpacity() || BlockChanges.isSurface(from) != BlockChanges.isSurface(to)) {
                         top = heights.getHeightValue(lx, lz) - 1;
                         surface = surface(cubes, cx, cz, lx, lz, top);
@@ -211,29 +211,83 @@ public final class CubeEngine {
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
                         wake = Math.min(wake, changes.wake());
+                        if (fire != null && SolarFire.is(fire) && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
                 boolean keep = fire != null && SolarFire.is(fire) && fireY == surface + 1
                         && SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire);
                 if (fireY != BlockChanges.NO_Y && !keep) {
-                    world.setBlockState(pos.setPos(x, fireY, z), AIR, 2 | 16);
-                    blocksChanged++;
+                    if (limited(edited, lz << 4 | lx)) return PARTIAL;
+                    BlockChanges.apply(world, pos.setPos(x, fireY, z), storage.get(lx, Coords.blockToLocal(fireY), lz), AIR);
                 }
                 if (fire != null && !keep) {
                     pos.setPos(x, surface + 1, z);
                     IBlockState there = world.getBlockState(pos); // loaded: the cube being processed
                     if (there.getMaterial() == Material.AIR) {
-                        int xz = lz << 4 | lx;
-                        if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return PARTIAL;
-                        edited.set(xz);
+                        if (limited(edited, lz << 4 | lx)) return PARTIAL;
                         BlockChanges.apply(world, pos, there, fire);
-                        blocksChanged++;
                     }
                 }
             }
         }
         if (openedBelow && cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
         return wake;
+    }
+
+    /**
+     * Whether a loaded block beside or above a position burns. Solar fire is not placed there: it would take the space
+     * vanilla fire spreads into, and look odd next to a block that never catches.
+     */
+    private static boolean nearFlammable(World world, ICubeProvider cubes, BlockPos.MutableBlockPos pos, int x, int y, int z) {
+        for (EnumFacing side : NEAR_FIRE) {
+            pos.setPos(x, y, z).move(side);
+            IBlockState s = blockAt(cubes, Coords.blockToCube(pos.getX()), Coords.blockToCube(pos.getZ()),
+                    Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
+            if (s != null && s.getMaterial() != Material.AIR && s.getBlock().isFlammable(world, pos, side.getOpposite())) return true;
+        }
+        return false;
+    }
+
+    private static final EnumFacing[] NEAR_FIRE = {EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, EnumFacing.UP};
+
+    /** Whether a change at x/z must wait for the next tick (column limit, performance.maxBlockChangesPerTick); marks x/z if not. */
+    private static boolean limited(BitSet edited, int xz) {
+        if (!SolarApocalypse.mayChange() || !edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
+        edited.set(xz);
+        return false;
+    }
+
+    /** Fire in the loaded cubes of the columns within a radius (in columns) of a block position. */
+    public static final class FireCensus {
+        public int solar, vanilla, columns;
+        public final Map<Integer, Integer> epochs = new TreeMap<>();
+    }
+
+    public static FireCensus fireCensus(World world, BlockPos center, int radius) {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        FireCensus census = new FireCensus();
+        int ccx = Coords.blockToCube(center.getX()), ccz = Coords.blockToCube(center.getZ());
+        for (int cx = ccx - radius; cx <= ccx + radius; cx++) {
+            for (int cz = ccz - radius; cz <= ccz + radius; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                census.columns++;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty()) continue;
+                    for (int i = 0; i < 4096; i++) {
+                        IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
+                        if (SolarFire.is(s)) {
+                            census.solar++;
+                            census.epochs.merge(SolarFire.epochOf(s), 1, Integer::sum);
+                        } else if (s.getBlock() == Blocks.FIRE) {
+                            census.vanilla++;
+                        }
+                    }
+                }
+            }
+        }
+        return census;
     }
 
     /** The surface conversions count from: the topmost opaque block, raised over glass, liquids and the like stacked on it. */

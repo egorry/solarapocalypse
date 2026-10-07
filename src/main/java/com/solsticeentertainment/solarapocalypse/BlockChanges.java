@@ -30,6 +30,9 @@ public final class BlockChanges {
     private static final int MAX_CHAIN = 16;
     private static final IBlockState AIR = Blocks.AIR.getDefaultState();
 
+    /** Totals since server start (/solar status, tests). */
+    public static long changed, solarFireLit, vanillaFireLit;
+
     private final Timeline timeline;
     private final BlockRules rules;
     public final int evaporationTopY;
@@ -76,7 +79,8 @@ public final class BlockChanges {
 
         for (int n = 0; n < MAX_CHAIN; n++) {
             BlockRules.Step step = rules.convert(phase, state);
-            if (step == null) break;
+            IBlockState target = step == null ? null : step.pick(x, y, z, state);
+            if (target == null) break; // no rule, or this block's share stays
             if (surface == NO_Y) {
                 later(progress + RECHECK);
                 break;
@@ -87,7 +91,7 @@ public final class BlockChanges {
                 later(due);
                 break;
             }
-            state = step.target;
+            state = target;
         }
         return evaporate(state, y, sky, progress);
     }
@@ -103,12 +107,15 @@ public final class BlockChanges {
         if (phase < 0) return null;
         SolarConfig.Phase p = SolarConfig.phases[phase];
         if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
-        if (rules.convert(phase, surface) != null) return null;
         int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
+        BlockRules.Step pending = rules.convert(phase, surface);
+        if (pending != null && pending.pick(x, y, z, surface) != null) return null;
         boolean infinite = timeline.infinite(phase);
         int epoch = infinite ? (int) timeline.depthAt(progress) : phase;
         if (infinite) later(timeline.reachTime(-epoch, 0)); // the next layer redraws the fire
-        boolean flammable = surface.getBlock().isFlammable(world, surfacePos, EnumFacing.UP);
+        // with doFireTick false vanilla fire would neither spread nor burn out
+        boolean flammable = world.getGameRules().getBoolean("doFireTick") && !rules.noVanillaFire(surface)
+                && surface.getBlock().isFlammable(world, surfacePos, EnumFacing.UP);
         double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
         if (Timeline.hash(x, y, z, FIRE_SALT + epoch) * 100 >= percent) return null;
         if (!flammable && !surface.isTopSolid()) return null;
@@ -167,11 +174,17 @@ public final class BlockChanges {
         return from + (long) (Timeline.hash(x, y, z, phase) * length);
     }
 
-    /** Writes a change: no neighbour updates unless blocks.blockPhysics, no drops unless blocks.dropItems. */
+    /**
+     * Writes a change: no neighbour updates unless blocks.blockPhysics, no drops unless blocks.dropItems. Every change the
+     * apocalypse makes goes through here (counted for performance.maxBlockChangesPerTick).
+     */
     public static void apply(World world, BlockPos pos, IBlockState from, IBlockState to) {
         if (!SolarConfig.dropItems && from.getBlock().hasTileEntity(from)) world.removeTileEntity(pos); // no container spill
         if (SolarConfig.dropItems && to.getMaterial() == Material.AIR) from.getBlock().dropBlockAsItem(world, pos, from, 0);
         world.setBlockState(pos, to, SolarConfig.blockPhysics ? 3 : 2 | 16);
+        changed++;
+        if (SolarFire.is(to)) solarFireLit++;
+        else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
     }
 
     /** The surface that conversions measure from: blocks movement or is liquid (leaves, glass and water count; plants do not). */

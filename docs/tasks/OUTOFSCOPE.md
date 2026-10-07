@@ -14,5 +14,8 @@
   is the topmost opaque block plus whatever blocking blocks are stacked directly on it.
 - **CC client heightmap packet bugs** (upstream, CC 0.0.1271): worked around by changing fewer than 256 x/z per column
   per tick; not fixed here.
+- **Fire seconds are whole seconds**: Minecraft's `setFire` takes seconds; fractions would need an access transformer
+  for little gain (damage amounts are decimals).
+- **Announcements** reach the players online when a phase starts; players joining later get no replay.
 - **Entities without nearby players** stop ticking (vanilla), so burning does no damage there; sun damage still applies
   but hurt cooldowns do not run down.

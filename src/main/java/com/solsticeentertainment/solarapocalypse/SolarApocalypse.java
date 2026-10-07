@@ -23,6 +23,7 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.File;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -42,15 +43,23 @@ public class SolarApocalypse {
     private static final double MIN_BUDGET_MS = 0.5;
     private static double engineMs;
     private static long engineNanos;
+    private static long tickStartChanges;
+    /** For /solar status: averages over ~100 ticks, and the slowest engine tick since the last status. */
+    public static double averageEngineMs, averageChanges, maxEngineMs;
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
-        SolarConfig.init(event.getSuggestedConfigurationFile());
+        File config = event.getSuggestedConfigurationFile();
+        // the self-test runs on its own fixed config (scripts/selftest.cfg), never on the one being edited
+        if (System.getProperty("solarapocalypse.selftest") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-selftest.cfg");
+        SolarConfig.init(config);
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         MinecraftForge.EVENT_BUS.register(SolarApocalypse.class);
         MinecraftForge.EVENT_BUS.register(ApocalypseClock.class);
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
         MinecraftForge.EVENT_BUS.register(SolarFire.class);
+        Announcer.register();
+        if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
     }
@@ -111,11 +120,20 @@ public class SolarApocalypse {
                 LOGGER.warn("phase_{}.depth {} is lower than an earlier phase's {}; depth never decreases, using {}", i + 1, p.depth, previous, previous);
             }
             if (p.depth != SolarConfig.INFINITE) previous = Math.max(previous, p.depth);
-            LOGGER.info("Phase {}: days {} to {}, depth {}, {} convert rules ({} block states), {} destroy selectors ({} block states)",
+            LOGGER.info("Phase {}: days {} to {}, depth {}{}, {} convert rules ({} block states), {} destroy selectors ({} block states)",
                     i + 1, String.format("%.2f", timeline.start(i) / (double) Timeline.DAY), String.format("%.2f", timeline.end(i) / (double) Timeline.DAY),
-                    p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), p.convert.length, rules.convertCount(i),
-                    p.destroy.length, rules.destroyCount(i));
+                    p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), layerTime(i), p.convert.length,
+                    rules.convertCount(i), p.destroy.length, rules.destroyCount(i));
         }
+    }
+
+    /** ", 16 layers a day (a layer every 75 s at 20-minute days)" for phases that descend at a rate. */
+    private static String layerTime(int phase) {
+        double perDay = timeline.layersPerDay(phase);
+        if (perDay <= 0) return "";
+        boolean sun = SolarConfig.clockMode == SolarConfig.ClockMode.SUN;
+        double seconds = (sun ? 1200 : SolarConfig.ticksPerDay / 20.0) / perDay;
+        return String.format(" at %.4g layers a day (a layer every %.4g s%s)", perDay, seconds, sun ? " at 20-minute days" : "");
     }
 
     /** After a jump in time or a new phase: every loaded cube may have work again. */
@@ -164,9 +182,14 @@ public class SolarApocalypse {
         if (ApocalypseClock.progress() >= timeline.startOfPhaseNumber(number)) event.setResult(Event.Result.DENY);
     }
 
-    /** Whether block changes may still run in this server tick. */
+    /** Whether block changes may still run in this server tick: time and change count. */
     public static boolean hasBudget() {
-        return System.nanoTime() < budgetEnd;
+        return System.nanoTime() < budgetEnd && mayChange();
+    }
+
+    /** Whether performance.maxBlockChangesPerTick allows another change in this tick. */
+    public static boolean mayChange() {
+        return SolarConfig.maxBlockChangesPerTick <= 0 || BlockChanges.changed - tickStartChanges < SolarConfig.maxBlockChangesPerTick;
     }
 
     @SubscribeEvent
@@ -176,16 +199,23 @@ public class SolarApocalypse {
         double averageMs = MathHelper.average(server.tickTimeArray) * 1.0E-6;
         if (CUBIC_CHUNKS) {
             long used = CubeEngine.nanos;
-            engineMs = engineMs * 0.99 + (used - engineNanos) * 1.0E-6 * 0.01; // ~100-tick average, like tickTimeArray
+            double ms = (used - engineNanos) * 1.0E-6;
+            engineMs = engineMs * 0.99 + ms * 0.01; // ~100-tick average, like tickTimeArray
+            maxEngineMs = Math.max(maxEngineMs, ms);
             engineNanos = used;
         }
+        averageEngineMs = engineMs;
+        averageChanges = averageChanges * 0.99 + (BlockChanges.changed - tickStartChanges) * 0.01;
+        tickStartChanges = BlockChanges.changed;
         double freeMs = Math.max(0, 50 - (averageMs - engineMs));
         double budgetMs = Math.max(MIN_BUDGET_MS, Math.min(SolarConfig.tickBudgetMs, SolarConfig.freeTickShare * freeMs));
         budgetEnd = System.nanoTime() + (long) (budgetMs * 1.0E6);
-        int phase = timeline.phaseAt(ApocalypseClock.progress());
+        long progress = ApocalypseClock.progress();
+        int phase = timeline.phaseAt(progress);
         if (phase != lastPhase) {
             if (lastPhase != Integer.MIN_VALUE) {
-                LOGGER.info(phase < 0 ? "The sun is calm again" : "Solar apocalypse phase {} begins", phase + 1);
+                if (phase < 0) LOGGER.info("The sun is calm again");
+                else Announcer.phaseStarted(server, phase, progress);
                 requeueAll();
             }
             lastPhase = phase;

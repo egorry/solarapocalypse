@@ -2,6 +2,21 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 5 (2026-10-08)
+- Phase announcements: chat message, sound, client splash title (font texture, flicker colours, fades); one log line;
+  `/solar announce`.
+- `entities.sunAtNightFromPhase` (default 7).
+- Selectors: comma lists and `!` exclusions; conversion loops cut with a warning.
+- No vanilla fire while `doFireTick` is false or on `blocks.vanillaFireBlacklist` (TNT).
+- `performance.maxBlockChangesPerTick` (512), checked inside cubes too.
+- Load and fire statistics: `/solar status` engine line, `/solar fire`.
+- Layer interval formula in the `layersPerDay` comment and the phase plan log.
+- Conversion chances (`@ n%`), fixed per block by a position hash.
+- Solar fire is not placed beside or under flammable blocks.
+- The user's eleven-phase set (`run/config/solarapocalypse - default-phases.cfg`) is now the config default.
+- Self-test: own fixture config (`scripts/selftest.cfg`); rules check incl. chances, first-hit pig check, change cap
+  check; client start-up smoke run.
+
 ## Turn 4 (2026-10-07)
 - Phase timing: days are the minimum; destruction from the phase start, then conversions (`convertDays`); the next
   phase waits for both.

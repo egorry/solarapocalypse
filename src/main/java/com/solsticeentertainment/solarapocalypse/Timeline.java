@@ -124,6 +124,11 @@ public final class Timeline {
         return convertSpread[phase];
     }
 
+    /** Layers per day of a phase that descends at a rate (RATE speed or infinite), else 0. */
+    public double layersPerDay(int phase) {
+        return speed[phase] == Speed.RATE ? rate[phase] * DAY : 0;
+    }
+
     /** Layers reached at progress p. */
     public double depthAt(long p) {
         int i = phaseAt(p);
