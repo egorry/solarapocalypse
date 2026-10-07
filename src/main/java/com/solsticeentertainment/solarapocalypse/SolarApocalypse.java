@@ -15,6 +15,9 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartedEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.event.FMLServerStoppedEvent;
+import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.fml.common.eventhandler.Event;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
@@ -36,6 +39,9 @@ public class SolarApocalypse {
     private static final Map<World, BlockChanges> CHANGES = new WeakHashMap<>();
     private static int lastPhase = Integer.MIN_VALUE;
     private static long budgetEnd;
+    private static final double MIN_BUDGET_MS = 0.5;
+    private static double engineMs;
+    private static long engineNanos;
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
@@ -84,9 +90,26 @@ public class SolarApocalypse {
     private static void rebuild() {
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         rules = BlockRules.compile(SolarConfig.phases);
+        summarize();
         CHANGES.clear();
         if (CUBIC_CHUNKS) CubicSky.reset();
         requeueAll();
+    }
+
+    /** Logs the phase plan once per load, and warns about settings that do not do what they say. */
+    private static void summarize() {
+        int previous = 0;
+        for (int i = 0; i < timeline.phaseCount(); i++) {
+            SolarConfig.Phase p = SolarConfig.phases[i];
+            if (p.depth != SolarConfig.INFINITE && p.depth < previous) {
+                LOGGER.warn("phase_{}.depth {} is lower than an earlier phase's {}; depth never decreases, using {}", i + 1, p.depth, previous, previous);
+            }
+            if (p.depth != SolarConfig.INFINITE) previous = Math.max(previous, p.depth);
+            LOGGER.info("Phase {}: days {} to {}, depth {}, {} convert rules ({} block states), {} destroy selectors ({} block states)",
+                    i + 1, String.format("%.2f", timeline.start(i) / (double) Timeline.DAY), String.format("%.2f", timeline.end(i) / (double) Timeline.DAY),
+                    p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), p.convert.length, rules.convertCount(i),
+                    p.destroy.length, rules.destroyCount(i));
+        }
     }
 
     /** After a jump in time or a new phase: every loaded cube may have work again. */
@@ -124,6 +147,17 @@ public class SolarApocalypse {
         return CubicWorldGenWater.level(world);
     }
 
+    /** Stops liquids from making new sources while their evaporation runs (only matters with blocks.blockPhysics). */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onFluidSource(BlockEvent.CreateFluidSourceEvent event) {
+        World world = event.getWorld();
+        if (world.isRemote || !SolarConfig.blockPhysics || !isActive(world)) return;
+        BlockRules.Liquid liquid = BlockRules.liquid(event.getState());
+        int number = liquid == BlockRules.Liquid.WATER ? SolarConfig.waterPhase
+                : liquid == BlockRules.Liquid.LAVA ? SolarConfig.lavaPhase : SolarConfig.otherLiquidsPhase;
+        if (ApocalypseClock.progress() >= timeline.startOfPhaseNumber(number)) event.setResult(Event.Result.DENY);
+    }
+
     /** Whether block changes may still run in this server tick. */
     public static boolean hasBudget() {
         return System.nanoTime() < budgetEnd;
@@ -134,7 +168,13 @@ public class SolarApocalypse {
         if (event.phase != TickEvent.Phase.START) return;
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         double averageMs = MathHelper.average(server.tickTimeArray) * 1.0E-6;
-        double budgetMs = averageMs > SolarConfig.lagThresholdMs ? Math.min(1, SolarConfig.tickBudgetMs) : SolarConfig.tickBudgetMs;
+        if (CUBIC_CHUNKS) {
+            long used = CubeEngine.nanos;
+            engineMs = engineMs * 0.99 + (used - engineNanos) * 1.0E-6 * 0.01; // ~100-tick average, like tickTimeArray
+            engineNanos = used;
+        }
+        double freeMs = Math.max(0, 50 - (averageMs - engineMs));
+        double budgetMs = Math.max(MIN_BUDGET_MS, Math.min(SolarConfig.tickBudgetMs, SolarConfig.freeTickShare * freeMs));
         budgetEnd = System.nanoTime() + (long) (budgetMs * 1.0E6);
         int phase = timeline.phaseAt(ApocalypseClock.progress());
         if (phase != lastPhase) {

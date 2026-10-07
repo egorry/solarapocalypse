@@ -81,7 +81,7 @@ public final class SolarConfig {
     public static Set<String> entityBlacklist;
     // performance
     public static double tickBudgetMs;
-    public static double lagThresholdMs;
+    public static double freeTickShare;
 
     private SolarConfig() {}
 
@@ -182,9 +182,10 @@ public final class SolarConfig {
                 "Entity ids that never take sun damage, e.g. minecraft:villager_golem.")));
 
         cat = "performance";
-        tickBudgetMs = c.get(cat, "tickBudgetMs", 10.0, "Milliseconds per server tick spent changing blocks.").getDouble();
-        lagThresholdMs = c.get(cat, "lagThresholdMs", 45.0,
-                "When the average server tick takes longer than this, block changes run at most 1 ms per tick.").getDouble();
+        tickBudgetMs = c.get(cat, "tickBudgetMs", 10.0, "At most this many milliseconds per server tick are spent changing blocks.").getDouble();
+        freeTickShare = c.get(cat, "freeTickShare", 0.75,
+                "...and at most this share of the time left in a 50 ms tick by everything else (average of the last 100 ticks),\n" +
+                "so a busy server slows the apocalypse down instead of lagging. At least 0.5 ms per tick always runs.").getDouble();
 
         phases = new Phase[count];
         for (int i = 0; i < count; i++) phases[i] = loadPhase(c, i + 1);

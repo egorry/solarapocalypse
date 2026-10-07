@@ -98,6 +98,15 @@ public final class BlockRules {
         return convert.get(phase).get(state);
     }
 
+    /** Block states with an active conversion / destroy rule in a phase (for the load summary). */
+    public int convertCount(int phase) {
+        return convert.get(phase).size();
+    }
+
+    public int destroyCount(int phase) {
+        return destroy.get(phase).size();
+    }
+
     /** The phase whose destroy rule removes a state while a phase runs, or -1. */
     public int destroyPhase(int phase, IBlockState state) {
         Integer q = destroy.get(phase).get(state);

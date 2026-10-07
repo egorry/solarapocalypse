@@ -10,6 +10,10 @@ Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CH
 - Background heat = sky light reaches the mob (no block counting).
 - Docs: DESIGN.md and CHANGELOG.md moved to docs/, task lists in docs/tasks/.
 - Self-test: CWG model accuracy, erosion line check.
+- Time budget: fixed maximum and a share (default 75 %) of the tick time left by everything else.
+- Liquids cannot make new sources during their evaporation phases (with `blocks.blockPhysics`).
+- Trees and buildings above the surface erode top down at the start of a destroying phase.
+- Phase plan summary and depth warning logged on every config load.
 
 ## Turn 2 (2026-10-07)
 - Config with any number of phases, phase scaling, safe phase.

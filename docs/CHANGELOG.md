@@ -14,3 +14,4 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Sun damage and fire for mobs in direct sunlight, background heat wherever sky light reaches, optional Fire Resistance
   immunity.
 - `/solar` (alias of `/solarapocalypse`): status, set, add, phase, pause, resume, reload.
+- Block changes use a share of the free tick time, so a busy server slows the apocalypse instead of lagging.

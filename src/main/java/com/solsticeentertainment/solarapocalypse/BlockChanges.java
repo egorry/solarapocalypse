@@ -13,7 +13,8 @@ import net.minecraft.world.World;
  *
  * - destroy: blocks matching an active destroy rule go once the phase depth reaches them. Depth counts layers below the
  *   column's reference (its terrain surface, or world.topY): a block reached during the rule's phase goes when the depth
- *   passes it (layer by layer), one reached before goes at a random but fixed moment within the phase.
+ *   passes it (layer by layer); blocks above the reference (trees, buildings) go top down early in the phase; other
+ *   blocks reached before the phase go at a random but fixed moment within it.
  * - convert: blocks in the top convertDepth layers of the column's current surface change, once the phase's destruction
  *   is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to its end.
  * - evaporation: sun-exposed liquids go from their phase on (LAYERS mode: once a descending level passes them).
@@ -61,8 +62,12 @@ public final class BlockChanges {
                 later(progress + RECHECK);
             } else {
                 long reach = timeline.reachTime(y, reference);
-                long due = reach == NEVER ? NEVER
-                        : reach >= timeline.start(destroyedBy) ? reach : spread(timeline.start(destroyedBy), timeline.spread(destroyedBy), x, y, z, destroyedBy);
+                long start = timeline.start(destroyedBy), length = timeline.spread(destroyedBy);
+                long due;
+                if (reach == NEVER) due = NEVER;
+                else if (reach >= start) due = reach; // reached while the phase runs: layer by layer
+                else if (y > reference) due = start + aboveSurface(y - reference, length); // trees, buildings: top down
+                else due = spread(start, length, x, y, z, destroyedBy);
                 if (progress >= due) return AIR;
                 later(due);
             }
@@ -113,6 +118,12 @@ public final class BlockChanges {
         if (progress >= due) return AIR;
         later(due);
         return state;
+    }
+
+    /** Blocks above the reference go top down over the first 1/10 of the phase (world.surfaceMargin blocks high and up first). */
+    private static long aboveSurface(int height, long phaseLength) {
+        int margin = Math.max(1, SolarConfig.surfaceMargin);
+        return (long) ((phaseLength / 10.0) * (1 - Math.min(height, margin) / (double) margin));
     }
 
     private static long spread(long from, long length, int x, int y, int z, int phase) {

@@ -33,8 +33,8 @@ in the generated `config/solarapocalypse.cfg`.
 Per block, using the rules active in the running phase (`phases.ruleMode`: `CARRY` = every phase so far, the latest
 phase's rule winning per block; `ISOLATED` = the running phase only):
 1. **Destroy** (`destroy` selectors): removed once the depth reaches the block. Blocks reached while the rule's phase
-   runs go layer by layer as the depth passes; blocks reached before (everything above the reference, e.g. trees and
-   buildings) go at random but fixed moments within the phase.
+   runs go layer by layer as the depth passes; blocks above the reference (trees, buildings) go top down over the first
+   tenth of the phase; other blocks reached before the phase go at random but fixed moments within it.
 2. **Convert** (`selector -> target`, target may be `air`): only the **surface layer**, the top `convertDepth` layers
    (default 1) of the column's current surface. The surface is the topmost opaque block, raised over blocking blocks and
    liquids stacked on it (glass, lava); plants, snow layers and the like on it belong to layer 1. Conversions start once
@@ -43,7 +43,8 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
    through a canopy while grass -> dirt stops at the top. A chain of rules runs to its end.
 3. **Evaporation**: sun-exposed liquids go from `evaporation.waterPhase` / `lavaPhase` / `otherLiquidsPhase` on;
    `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
-   preset's water level) at `layersPerDay`.
+   preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
+   evaporation has started.
 
 - Selectors: `modid:name`, `modid:name:meta`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
   unbreakable blocks. Within a phase the first matching rule wins.
@@ -57,8 +58,11 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
 ## 4. Engine (Cubic Chunks worlds)
 - Cubes are queued on load (new and reloaded: the retroactive part), on phase starts, on `/solar` time changes and
   reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
-  1/20 day). Queued cubes are processed once ready (populated, lit, surface-tracked), top-down per x/z, within
-  `performance.tickBudgetMs` per tick (1 ms while the average tick exceeds `performance.lagThresholdMs`).
+  1/20 day). Queued cubes are processed once ready (populated, lit, surface-tracked), top-down per x/z.
+- Time budget per server tick: at most `performance.tickBudgetMs` (10 ms) and at most `performance.freeTickShare` (75 %)
+  of the time the rest of the server leaves free in a 50 ms tick (100-tick average), at least 0.5 ms. A busy server slows
+  the apocalypse instead of lagging.
+- Every config load logs the phase plan (days, depth, rule and block-state counts) and warns about decreasing depths.
 - Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte).
 - Nothing loads or generates a cube.
 
@@ -87,7 +91,8 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
 ## 7. Checks
 - `./gradlew test`: `TimelineTest`.
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, default config. Last run (2026-10-07):
-  CWG model 42639/43264 exact; phase 1 catch-up of ~10.7k cubes: 1.66 M blocks (mostly ocean water) in 145 ticks,
-  1.1 s engine time; pigs in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep untouched; 8 layers of erosion
-  below each column's surface: 1 of 491737 positions above the line still holding a block (scheduled later in the phase).
+  CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
+  few blocks higher); phase 1 catch-up of ~10.7k cubes: 0.3-1.7 M blocks (mostly water) in 120-145 ticks, 0.8-1.1 s
+  engine time; pigs in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep untouched; 8 layers of erosion below
+  each column's surface: 0 of 483252 positions above the line still hold a block.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks.
