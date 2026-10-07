@@ -337,17 +337,5 @@ the CWG noise bound (3.3), fire (6). Further implementation pitfalls they found:
   (`registerForCompatibilityGenerator` is separate).
 - No other light engine (Phosphor, Alfheim...) is in the pack; CC's engine is the only one.
 
-## 11. Open questions for the design turn
-1. Unknown-above policy: compute the CWG surface (exact in the user's preset, reflection), require "cubes above known",
-   a `sunFloor`, or a combination? Default for non-CWG worlds?
-2. What counts as cover: vanilla opacity rule (glass does not protect; leaves, water, ice protect fully), or a custom rule
-   (glass protects, leaves/water partial)? Graded shade for entities via sky light?
-3. Erosion reference: depth from the original/computed surface (stable) vs from the current top. Meaning of "infinite".
-4. Should neighbours react to removed blocks (water flowing in, sand falling, leaf decay drops), or should edits be
-   "silent" (flag 18, no cascades)?
-5. Pre-first-light mixin for new cubes (no pop-in, zero light cost) acceptable as an optional CC-only mixin?
-6. Clock: SUN mode default (follows LongerDays, sleep counts) vs TICKS; should the apocalypse progress with no players
-   online?
-7. Lava evaporation by default (DESIGN.md) while the user's world has lava oceans up to Y 850: intended?
-8. Tests to add next turn: CWG surface prediction accuracy on the user's preset (copy its `custom_generator_settings.json`
-   into a dev world, compare 1000 predicted tops with generated ones); client packet cost with `runClient`.
+## 11. Open questions
+All answered in turns 2-4; the decisions are in [SPEC.md](SPEC.md) and [DESIGN.md](DESIGN.md).

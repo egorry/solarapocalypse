@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 // Cubic Chunks is optional: "after:" only orders loading, it never requires the mod.
-@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "after:cubicchunks", acceptableRemoteVersions = "*")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "after:cubicchunks")
 public class SolarApocalypse {
 
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
@@ -50,6 +50,7 @@ public class SolarApocalypse {
         MinecraftForge.EVENT_BUS.register(SolarApocalypse.class);
         MinecraftForge.EVENT_BUS.register(ApocalypseClock.class);
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
+        MinecraftForge.EVENT_BUS.register(SolarFire.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
     }
@@ -99,8 +100,13 @@ public class SolarApocalypse {
     /** Logs the phase plan once per load, and warns about settings that do not do what they say. */
     private static void summarize() {
         int previous = 0;
+        boolean infinite = false;
         for (int i = 0; i < timeline.phaseCount(); i++) {
             SolarConfig.Phase p = SolarConfig.phases[i];
+            if (infinite && p.depth != SolarConfig.INFINITE) {
+                LOGGER.warn("phase_{}.depth {} follows an infinite phase; every phase after an infinite one is infinite", i + 1, p.depth);
+            }
+            infinite |= p.depth == SolarConfig.INFINITE;
             if (p.depth != SolarConfig.INFINITE && p.depth < previous) {
                 LOGGER.warn("phase_{}.depth {} is lower than an earlier phase's {}; depth never decreases, using {}", i + 1, p.depth, previous, previous);
             }

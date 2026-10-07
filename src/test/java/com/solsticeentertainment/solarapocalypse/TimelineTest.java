@@ -13,6 +13,8 @@ class TimelineTest {
         p.depth = depth;
         p.speed = speed;
         p.layersPerDay = layersPerDay;
+        p.destroy = new String[]{"*"};
+        p.convertDays = -1;
         return p;
     }
 
@@ -32,6 +34,9 @@ class TimelineTest {
         assertEquals(5, t.depthAt(2 * day + day / 2), 1e-9);
         assertEquals(15, t.depthAt(3 * day), 1e-9);
         assertEquals(6 * day, t.end(2)); // RATE phase stretched to finish its layers
+        assertEquals(6 * day, t.convertStart(2)); // conversions after the destruction
+        assertEquals(0, t.convertSpread(2));      // nothing left of the phase's days: at once
+        assertEquals(2 * day + day, t.convertStart(0)); // PHASE destruction takes the phase
         assertEquals(35, t.depthAt(6 * day), 1e-9);
         assertEquals(39, t.depthAt(7 * day), 1e-9);
         assertEquals(43, t.depthAt(8 * day), 1e-9);

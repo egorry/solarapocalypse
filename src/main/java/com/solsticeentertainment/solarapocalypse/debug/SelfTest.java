@@ -3,6 +3,7 @@ package com.solsticeentertainment.solarapocalypse.debug;
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
+import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
 import com.solsticeentertainment.solarapocalypse.cc.CwgSurface;
 import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
@@ -44,6 +45,7 @@ public final class SelfTest {
     private static int stage, ticks, waited;
     private static EntityPig sunPig, roofPig, deepPig;
     private static long engineNanos, engineCubes, engineBlocks;
+    private static int fireCount;
 
     private SelfTest() {}
 
@@ -88,10 +90,22 @@ public final class SelfTest {
             case 2:
                 if (ticks - waited < 25) return;
                 pigs("phase 4, one hit (expect sun 5, roof 9, deep 10)");
-                jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
+                jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar, 75 % of flammables)");
                 break;
             case 3:
                 if (!drained(3000)) return;
+                fireCount = fire("end of phase 4");
+                stage++;
+                waited = ticks;
+                break;
+            case 4:
+                if (ticks - waited < 200) return;
+                log("solar fire after 200 more ticks: {} (was {}; it must not spread or burn out)", fire("200 ticks later"), fireCount);
+                jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
+                break;
+            case 5:
+                if (!drained(3000)) return;
+                fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
                 erosionCheck(SolarApocalypse.timeline().depthAt(ApocalypseClock.progress()));
                 server.initiateShutdown();
@@ -159,6 +173,37 @@ public final class SelfTest {
         }
         log("pigs after {}: sun {} hp burning={}, roof {} hp burning={}, deep {} hp burning={}", when,
                 sunPig.getHealth(), sunPig.isBurning(), roofPig.getHealth(), roofPig.isBurning(), deepPig.getHealth(), deepPig.isBurning());
+    }
+
+    /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */
+    private static int fire(String when) {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int solar = 0, vanilla = 0, columns = 0;
+        Map<Integer, Integer> epochs = new LinkedHashMap<>();
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                columns++;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty()) continue;
+                    for (int i = 0; i < 4096; i++) {
+                        IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
+                        if (SolarFire.is(s)) {
+                            solar++;
+                            epochs.merge(SolarFire.epochOf(s), 1, Integer::sum);
+                        } else if (s.getBlock() == Blocks.FIRE) {
+                            vanilla++;
+                        }
+                    }
+                }
+            }
+        }
+        log("fire at {}: solar {} ({} % of {} x/z positions, by epoch {}), vanilla {}", when, solar,
+                String.format("%.1f", solar * 100.0 / (columns * 256)), columns * 256, epochs, vanilla);
+        return solar;
     }
 
     /** Compares the CubicWorldGen surface model with the generated ground of the loaded spawn columns. */
@@ -235,7 +280,8 @@ public final class SelfTest {
                             int y = cube.getY() * 16 + ly;
                             if (y <= reference - (long) depth) continue;
                             checked++;
-                            if (storage.get(i & 15, ly, i >> 4).getMaterial() != Material.AIR) left++;
+                            IBlockState left0 = storage.get(i & 15, ly, i >> 4);
+                            if (left0.getMaterial() != Material.AIR && !SolarFire.is(left0)) left++; // solar fire stands on the surface
                         }
                     }
                 }

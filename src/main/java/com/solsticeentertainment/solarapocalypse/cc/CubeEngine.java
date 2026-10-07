@@ -5,6 +5,7 @@ import com.solsticeentertainment.solarapocalypse.BlockChanges;
 import com.solsticeentertainment.solarapocalypse.Sky;
 import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
+import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.SurfaceRecord;
 import io.github.opencubicchunks.cubicchunks.api.util.Coords;
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
@@ -154,7 +155,8 @@ public final class CubeEngine {
     private static long process(WorldServer world, ICubeProvider cubes, ICube cube, BlockChanges changes, long progress, State state,
                                 List<CubePos> later) {
         ExtendedBlockStorage storage = cube.getStorage();
-        if (storage == null || storage.isEmpty()) return BlockChanges.NEVER;
+        boolean empty = storage == null || storage.isEmpty();
+        if (empty && !changes.ignites(progress)) return BlockChanges.NEVER; // an empty cube can only get fire
         int cx = cube.getX(), cy = cube.getY(), cz = cube.getZ();
         Chunk column = cubes.getLoadedColumn(cx, cz);
         if (column == null) return BlockChanges.NEVER;
@@ -170,13 +172,20 @@ public final class CubeEngine {
                 int x = (cx << 4) + lx, z = (cz << 4) + lz;
                 int ceiling = CubicSky.ceiling(world, x, z);
                 int top = heights.getHeightValue(lx, lz) - 1; // topmost opaque block (sky rule)
+                if (empty && top != minY - 1) continue; // fire in an empty cube only stands on the cube below
                 int surface = surface(cubes, cx, cz, lx, lz, top);
                 boolean surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
                 int reference = reference(world, cubes, column, lx, lz, x, z, surface, surfaceKnown);
-                for (int ly = 15; ly >= 0; ly--) {
+                int fireY = BlockChanges.NO_Y; // solar fire found in this column of the cube
+                for (int ly = 15; ly >= 0 && !empty; ly--) {
                     IBlockState from = storage.get(lx, ly, lz);
                     if (from.getMaterial() == Material.AIR) continue;
                     int y = minY + ly;
+                    if (SolarFire.is(from)) {
+                        if (fireY == BlockChanges.NO_Y) fireY = y;
+                        else world.setBlockState(pos.setPos(x, y, z), AIR, 2 | 16); // a second one is always stale
+                        continue;
+                    }
                     int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
                             : CubicSky.knownClear(y, loadedUpTo, ceiling) ? Sky.EXPOSED : Sky.UNKNOWN;
                     pos.setPos(x, y, z);
@@ -193,6 +202,32 @@ public final class CubeEngine {
                         surface = surface(cubes, cx, cz, lx, lz, top);
                         surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
                         if (top < minY) openedBelow = true;
+                    }
+                }
+                // Fire: removed when its epoch is over, placed on the surface once the phase's conversions are done.
+                IBlockState fire = null;
+                if (surfaceKnown && Coords.blockToCube(surface + 1) == cy) {
+                    IBlockState below = blockAt(cubes, cx, cz, lx, surface, lz);
+                    if (below != null) {
+                        fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
+                        wake = Math.min(wake, changes.wake());
+                    }
+                }
+                boolean keep = fire != null && SolarFire.is(fire) && fireY == surface + 1
+                        && SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire);
+                if (fireY != BlockChanges.NO_Y && !keep) {
+                    world.setBlockState(pos.setPos(x, fireY, z), AIR, 2 | 16);
+                    blocksChanged++;
+                }
+                if (fire != null && !keep) {
+                    pos.setPos(x, surface + 1, z);
+                    IBlockState there = world.getBlockState(pos); // loaded: the cube being processed
+                    if (there.getMaterial() == Material.AIR) {
+                        int xz = lz << 4 | lx;
+                        if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return PARTIAL;
+                        edited.set(xz);
+                        BlockChanges.apply(world, pos, there, fire);
+                        blocksChanged++;
                     }
                 }
             }

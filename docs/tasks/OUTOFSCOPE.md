@@ -2,8 +2,10 @@
 
 - **Modpack integrations** (LongerDays, ProperFiniteWater, ...): not catered for. The SUN clock follows any day-length
   mod by itself; only Cubic Chunks (and CubicWorldGen for the surface model) are soft dependencies.
-- **"One conversion per block per phase"** would need a memory per block. Rules are evaluated on the current block, so
-  a chain (grass -> dirt, dirt -> sand) always runs to its end; `phases.ruleMode` picks which phases' rules apply.
+- **CPU backlog does not delay phases.** A phase waits for its configured destruction and conversion time, not for the
+  queue of loaded terrain: exploring keeps adding work. The outcome is the same, it only shows up later.
+- **Vanilla fire** placed on flammable blocks is left to vanilla (it spreads and burns out); only solar fire is removed
+  when its phase or layer is over. Solar fire a player puts out comes back the next time the sun looks at that cube.
 - **Never-generated terrain in Cubic Chunks** counts as air. Without the CubicWorldGen model, a column's surface is only
   known once its top has been loaded; deep areas under never-seen surfaces wait (no erosion, no sun) until then.
 - **CubicWorldGen presets with cube areas, or terrain floating more than 64 blocks above the rest**: no surface model;

@@ -2,6 +2,15 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 4 (2026-10-07)
+- Phase timing: days are the minimum; destruction from the phase start, then conversions (`convertDays`); the next
+  phase waits for both.
+- Infinite phases: conversions run ahead of the destruction; a finite depth after an infinite phase is warned about.
+- Solar fire block (vanilla fire without ticking) and ignition: share of surface blocks after the conversions,
+  flammables get vanilla fire; removed at the next phase, redrawn per layer in infinite phases.
+- Defaults: `entities.spareFireImmune` and `entities.sunNeedsDaytime` false.
+- Docs: answered questions removed from RESEARCH.md, update notes in DESIGN.md, IDEAS.md.
+
 ## Turn 3 (2026-10-07)
 - Depth reference: per-column surface ("3D printer" layers, default) or a fixed top Y, configurable.
 - Per-column surface from the CubicWorldGen generator (no generation); recorded per column elsewhere (saved with the column).

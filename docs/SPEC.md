@@ -11,10 +11,15 @@ in the generated `config/solarapocalypse.cfg`.
   takes, so any day-length mod is followed; sleeping counts; jumps over `clock.maxSunJump` are ignored; it stops while
   `doDaylightCycle` is false. `TICKS` counts server ticks (`clock.ticksPerDay` per day).
 - `clock.progressWhileEmpty = false` pauses while nobody is online; `true` keeps counting and terrain catches up on load.
+- Every "days" setting is in apocalypse days, whose length the clock mode defines: in `TICKS` mode one day is
+  `clock.ticksPerDay` ticks (`phase_n.days = 2` with `ticksPerDay = 72000` lasts 144000 ticks, two real hours).
 
 ## 2. Phases and depth
-- Phase 0 (`phases.safeDays`) is quiet; phases 1..`phases.count` follow, each `days` long (0 = `phases.baseDays` x
-  `phases.scaling`).
+- Phase 0 (`phases.safeDays`) is quiet; phases 1..`phases.count` follow.
+- A phase's `days` (0 = `phases.baseDays` x `phases.scaling`) is its minimum length. It runs two tasks: destruction
+  from its start, then conversion. If they take longer than its days, the next phase waits until they are done; if they
+  finish early, nothing happens until the days are over. Task times come from the config, never from CPU load: the
+  time budget (section 4) only delays when the changes show up, not the timeline.
 - `depth`: layers destroyed by the end of the phase, counted down from the column's **reference** (layer 1 = the
   reference block), or `infinite`. Never decreases; once infinite, every later phase is infinite at the last positive
   `layersPerDay`.
@@ -24,8 +29,11 @@ in the generated `config/solarapocalypse.cfg`.
     first time the column's top is known (the ground under trees and water) and saved with the column
     (`SurfaceRecord`). Columns whose surface is not known yet wait.
   - `TOP_Y`: `world.topY` for every column (`auto` = the height the generator reports).
-- `speed`: `PHASE` spreads the descent over the phase, `RATE` goes at `layersPerDay` (the phase lasts until done),
-  `INSTANT` at the phase start.
+- Destruction `speed`: `PHASE` spreads the descent over the phase's days, `RATE` goes at `layersPerDay`, `INSTANT` at
+  the phase start. Conversion: `convertDays` after the destruction (-1 = the rest of the phase's days, 0 = at once).
+- Infinite depth descends at `layersPerDay` for ever (each layer stays 1/`layersPerDay` of a day); every later phase is
+  infinite too, with its own rate, conversions and damage. In infinite phases conversions run all the time, ahead of
+  the destruction: with `convertDepth` n the n layers below the eroding surface are converted before they are destroyed.
 - Everything is a pure function of progress (`Timeline`), so terrain loaded on day 40 gets what terrain watched since
   day 0 got.
 
@@ -38,13 +46,19 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
 2. **Convert** (`selector -> target`, target may be `air`): only the **surface layer**, the top `convertDepth` layers
    (default 1) of the column's current surface. The surface is the topmost opaque block, raised over blocking blocks and
    liquids stacked on it (glass, lava); plants, snow layers and the like on it belong to layer 1. Conversions start once
-   the phase's destruction is done and are spread at random but fixed moments over the rest of the phase (`INSTANT`: at
-   once; infinite phases: from the start). Converting to air makes the block below the new surface, so leaves burn
-   through a canopy while grass -> dirt stops at the top. A chain of rules runs to its end.
+   the phase's destruction is done, at random but fixed moments over `convertDays`. Converting to air makes the block
+   below the new surface, so leaves burn through a canopy while grass -> dirt stops at the top. Rules are resolved to
+   their end: with grass -> dirt, dirt -> gravel, gravel -> sand in effect, grass becomes sand in one change.
 3. **Evaporation**: sun-exposed liquids go from `evaporation.waterPhase` / `lavaPhase` / `otherLiquidsPhase` on;
    `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
    evaporation has started.
+4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
+   positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
+   sound, light and entity burning, but it never ticks, so it never spreads, burns out or burns blocks. Flammable surface
+   blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Solar fire is
+   tagged with its epoch (the phase, or the layer in infinite phases): stale fire is removed when the next phase starts
+   and redrawn on every new layer. Punching the block under it puts it out (it comes back on the cube's next look).
 
 - Selectors: `modid:name`, `modid:name:meta`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
   unbreakable blocks. Within a phase the first matching rule wins.
@@ -53,7 +67,8 @@ phase's rule winning per block; `ISOLATED` = the running phase only):
 - Defaults: 5 phases of 3 days after 3 safe days. 1: grass, mycelium, farmland, paths to dirt; plants, vines, cacti,
   snow, ice burn; water and lava evaporate; mobs in the sun catch fire. 2: leaves, gourds, cobwebs burn; 1 damage.
   3: wood, wool, carpets, TNT burn; dirt to sand; 2 damage, 0.5 heat. 4: clay hardens, gravel to sand; 4 damage, 1 heat.
-  5: everything erodes, infinite, 16 layers a day; 8 damage, 2 heat.
+  5: everything erodes, infinite, 16 layers a day; 8 damage, 2 heat. Solar fire on 2/5/10/15 % of the surface in
+  phases 2-5, vanilla fire on 75 % of flammable surface blocks.
 
 ## 4. Engine (Cubic Chunks worlds)
 - Cubes are queued on load (new and reloaded: the retroactive part), on phase starts, on `/solar` time changes and
@@ -80,13 +95,14 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
 
 ## 6. Sun damage
 - Every `entities.intervalTicks` (20) each living entity is checked once, staggered by entity id.
-- Direct: the zombie rule (sky visible from the eyes, by day if `entities.sunNeedsDaytime`): `sunDamage`, `sunFireSeconds`.
+- Direct: the zombie rule (sky visible from the eyes; only by day if `entities.sunNeedsDaytime`, default false):
+  `sunDamage`, `sunFireSeconds`.
 - Background heat: sky light at the eyes at least `entities.backgroundMinSkyLight` (1), day or night: `backgroundDamage`,
   `backgroundFireSeconds`. Overhangs, trees and houses with openings are no refuge; sealed rooms and caves are. Both
   add up in the sun.
 - Damage source `solarapocalypse.sun` bypasses armour and is not fire damage; Fire Resistance protects as
-  `entities.fireResistance` says. Skipped: creative/spectator players, armour stands, fire-immune mobs
-  (`entities.spareFireImmune`), `entities.blacklist`.
+  `entities.fireResistance` says. Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
+  fire-immune mobs only if `entities.spareFireImmune` (default false).
 
 ## 7. Checks
 - `./gradlew test`: `TimelineTest`.
@@ -94,5 +110,7 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
   few blocks higher); phase 1 catch-up of ~10.7k cubes: 0.3-1.7 M blocks (mostly water) in 120-145 ticks, 0.8-1.1 s
   engine time; pigs in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep untouched; 8 layers of erosion below
-  each column's surface: 0 of 483252 positions above the line still hold a block.
+  each column's surface: 0 of 459275 positions above the line still hold a block; solar fire at the end of phase 4 on
+  8.9-9.6 % of positions (10 % asked; water and other non-solid tops get none), unchanged after 200 ticks; in the
+  infinite phase 14.5-14.9 % (15 % asked), only the current layer's fire left.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks.

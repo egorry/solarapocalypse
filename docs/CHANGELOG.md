@@ -15,3 +15,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   immunity.
 - `/solar` (alias of `/solarapocalypse`): status, set, add, phase, pause, resume, reload.
 - Block changes use a share of the free tick time, so a busy server slows the apocalypse instead of lagging.
+- Phase length is a minimum: destruction runs first, then conversions, and the next phase waits for both.
+- Solar fire: the sun sets a share of the surface alight after each phase's conversions (and on every layer of infinite
+  erosion); it looks, sounds and burns like fire but never spreads. Flammable blocks get ordinary fire. The mod is now
+  needed on clients too.
+- Fire-immune mobs burn too, and direct sun burns at night as well, by default.

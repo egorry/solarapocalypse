@@ -45,7 +45,7 @@ public final class Timeline {
             long length = days(p.days > 0 ? p.days : SolarConfig.baseDays * scale(i + 1));
             double perUnit = Math.max(p.layersPerDay, 0) / DAY;
             if (infinite && perUnit == 0 && i > 0) perUnit = rate[i - 1]; // an inherited infinite depth keeps the last rate
-            long effects;
+            long effects; // how long the depth takes to descend this phase
             if (infinite) {
                 speed[i] = Speed.RATE;
                 effects = length;
@@ -60,9 +60,12 @@ public final class Timeline {
             fromDepth[i] = depth;
             toDepth[i] = target;
             rate[i] = speed[i] == Speed.PHASE ? (length > 0 ? (target - depth) / length : 0) : perUnit;
-            end[i] = t + Math.max(length, effects);
-            convertStart[i] = !infinite && destroys && target > depth ? Math.min(t + effects, end[i]) : t;
-            convertSpread[i] = speed[i] == Speed.INSTANT ? 0 : end[i] - convertStart[i];
+            // Tasks: destruction from the start, then conversion. The days are the minimum; the phase lasts until both are done.
+            boolean destroying = !infinite && destroys && target > depth;
+            convertStart[i] = destroying ? t + effects : t;
+            if (infinite) convertSpread[i] = p.convertDays > 0 ? days(p.convertDays) : 0;
+            else convertSpread[i] = p.convertDays < 0 ? Math.max(0, t + length - convertStart[i]) : days(p.convertDays);
+            end[i] = infinite ? t + length : Math.max(t + length, convertStart[i] + convertSpread[i]);
             // an infinite depth keeps growing; the next phase continues from where this one got to
             depth = infinite ? depth + rate[i] * (end[i] - t) : target;
             t = end[i];
@@ -106,7 +109,12 @@ public final class Timeline {
         return speed[phase] == Speed.INSTANT ? 0 : end[phase] - start[phase];
     }
 
-    /** When a phase's conversions begin: after its destruction is done (at the start if it destroys nothing). */
+    /** Whether a phase's depth is infinite (it descends for ever; it and every later phase). */
+    public boolean infinite(int phase) {
+        return Double.isInfinite(toDepth[phase]);
+    }
+
+    /** When a phase's conversions begin: after its destruction is done (at the start if it destroys nothing or is infinite). */
     public long convertStart(int phase) {
         return convertStart[phase];
     }

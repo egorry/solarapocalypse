@@ -32,6 +32,8 @@ public final class SolarConfig {
         public double layersPerDay;  // RATE speed, and the descent rate once the depth is infinite
         public String[] convert;
         public int convertDepth;     // conversions reach this many layers from the column's current surface
+        public double convertDays;   // conversions spread over this after destruction; -1 = rest of the phase's days
+        public double ignitePercent, igniteFlammablePercent;
         public String[] destroy;
         public double sunDamage;
         public int sunFireSeconds;
@@ -170,9 +172,9 @@ public final class SolarConfig {
         cat = "entities";
         c.setCategoryComment(cat, "Sun damage. Amounts per phase are in the phase sections.");
         damageIntervalTicks = c.getInt("intervalTicks", cat, 20, 1, 72000, "Damage is dealt every this many ticks.");
-        sunNeedsDaytime = c.getBoolean("sunNeedsDaytime", cat, true, "Direct sun damage only while the world counts it as day.");
+        sunNeedsDaytime = c.getBoolean("sunNeedsDaytime", cat, false, "Direct sun damage only while the world counts it as day.");
         affectPlayers = c.getBoolean("affectPlayers", cat, true, "Players take damage (never in creative or spectator).");
-        spareFireImmune = c.getBoolean("spareFireImmune", cat, true, "Fire-immune mobs (blazes, magma cubes...) take no damage.");
+        spareFireImmune = c.getBoolean("spareFireImmune", cat, false, "Fire-immune mobs (blazes, magma cubes...) take no damage.");
         fireResistance = enumValue(c, cat, "fireResistance", FireResistance.NONE,
                 "What Fire Resistance protects from: NONE, DIRECT (sun), BACKGROUND (heat), BOTH.");
         backgroundMinSkyLight = c.getInt("backgroundMinSkyLight", cat, 1, 0, 15,
@@ -197,15 +199,16 @@ public final class SolarConfig {
         String cat = "phase_" + n;
         Defaults d = Defaults.of(n);
         Phase p = new Phase();
-        p.days = c.get(cat, "days", 0.0, "Length in days; 0 = phases.baseDays with phases.scaling.").getDouble();
+        p.days = c.get(cat, "days", 0.0,
+                "Minimum length in days (0 = phases.baseDays with phases.scaling). The phase first destroys (from its start, at\n" +
+                "its speed), then converts; if that takes longer, the next phase waits until it is done.").getDouble();
         String depth = c.getString("depth", cat, d.depth,
                 "Layers below the reference (world.depthReference) destroyed by the end of this phase (whole number), or 'infinite'.\n" +
                 "Never lower than an earlier phase's; once infinite, every later phase is infinite.");
         p.depth = "infinite".equalsIgnoreCase(depth.trim()) ? INFINITE : parseInt(depth, 0);
         p.speed = enumValue(c, cat, "speed", d.speed,
-                "How the depth is reached: PHASE over the whole phase, RATE at layersPerDay (the phase lasts until the layers are\n" +
-                "done), INSTANT at the phase start. Conversions run once the phase's destruction is done, at random but fixed\n" +
-                "moments over the rest of the phase (INSTANT: at once); in an infinite phase they run from its start.");
+                "How destruction reaches the depth: PHASE over the phase's days, RATE at layersPerDay, INSTANT at the phase start.\n" +
+                "Infinite depth always descends at layersPerDay; each layer then stays for 1/layersPerDay of a day.");
         p.layersPerDay = c.get(cat, "layersPerDay", d.layersPerDay, "RATE speed, and infinite depth: layers per day.").getDouble();
         p.convert = c.getStringList("convert", cat, d.convert,
                 "Block conversions of the surface layer (see convertDepth).\n" +
@@ -214,9 +217,20 @@ public final class SolarConfig {
                 "Within a phase the first matching rule wins; phases.ruleMode decides whether earlier phases' rules still apply.");
         p.convertDepth = c.getInt("convertDepth", cat, 1, 1, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
-                "snow layers and the like on it). Converting a block to air makes the block below the new surface.");
+                "snow layers and the like on it). Converting a block to air makes the block below the new surface.\n" +
+                "In an infinite phase the conversions run all the time, ahead of the descending destruction.");
+        p.convertDays = c.get(cat, "convertDays", -1.0,
+                "Conversions start once this phase's destruction is done and land at random but fixed moments over this many\n" +
+                "days: -1 = the rest of the phase's days (at once if none are left), 0 = at once. Infinite phases: at once.").getDouble();
         p.destroy = c.getStringList("destroy", cat, d.destroy,
                 "Selectors of blocks removed down to the phase's depth (erosion). * = every breakable block.");
+        p.ignitePercent = c.get(cat, "ignitePercent", d.ignite,
+                "Percent of surface blocks the sun sets alight once the phase's conversions are done (chosen at random but fixed),\n" +
+                "with solar fire: looks, sounds and burns like fire but never spreads. Removed when the next phase starts; in an\n" +
+                "infinite phase it is redrawn on every new layer.").getDouble();
+        p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.igniteFlammable,
+                "Percent of flammable surface blocks (wood, leaves, wool...) set alight with vanilla fire instead, which spreads\n" +
+                "and burns them as usual.").getDouble();
         p.sunDamage = c.get(cat, "sunDamage", d.sunDamage, "Damage to mobs in direct sunlight per interval (2 = one heart).").getDouble();
         p.sunFireSeconds = c.getInt("sunFireSeconds", cat, d.sunFire, 0, 3600, "Seconds mobs in direct sunlight are set on fire.");
         p.backgroundDamage = c.get(cat, "backgroundDamage", d.backgroundDamage,
@@ -234,6 +248,7 @@ public final class SolarConfig {
         String[] destroy = new String[0];
         double sunDamage, backgroundDamage;
         int sunFire;
+        double ignite, igniteFlammable;
 
         static Defaults of(int n) {
             Defaults d = new Defaults();
@@ -248,18 +263,24 @@ public final class SolarConfig {
                     break;
                 case 2:
                     d.convert = new String[]{"material:leaves -> air", "material:gourd -> air", "material:web -> air"};
+                    d.ignite = 2;
+                    d.igniteFlammable = 75;
                     d.sunDamage = 1;
                     d.sunFire = 4;
                     break;
                 case 3:
                     d.convert = new String[]{"material:wood -> air", "material:cloth -> air", "material:carpet -> air",
                             "material:tnt -> air", "minecraft:dirt -> minecraft:sand"};
+                    d.ignite = 5;
+                    d.igniteFlammable = 75;
                     d.sunDamage = 2;
                     d.sunFire = 6;
                     d.backgroundDamage = 0.5;
                     break;
                 case 4:
                     d.convert = new String[]{"minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"};
+                    d.ignite = 10;
+                    d.igniteFlammable = 75;
                     d.sunDamage = 4;
                     d.sunFire = 8;
                     d.backgroundDamage = 1;
@@ -268,6 +289,8 @@ public final class SolarConfig {
                     d.depth = "infinite";
                     d.speed = Speed.RATE;
                     d.destroy = new String[]{"*"};
+                    d.ignite = 15;
+                    d.igniteFlammable = 75;
                     d.sunDamage = 8;
                     d.sunFire = 10;
                     d.backgroundDamage = 2;

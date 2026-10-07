@@ -3,6 +3,7 @@ package com.solsticeentertainment.solarapocalypse;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -89,6 +90,42 @@ public final class BlockChanges {
             state = step.target;
         }
         return evaporate(state, y, sky, progress);
+    }
+
+    /**
+     * The fire that belongs above a column's surface block now: solar fire, vanilla fire (flammable surface), or null.
+     * Fire comes after the phase's conversions (none while the surface block still has a conversion pending) and is
+     * tagged with an epoch: the phase, or in an infinite phase the layer, so fire from an earlier epoch can be removed.
+     */
+    public IBlockState fire(World world, BlockPos surfacePos, IBlockState surface, long progress) {
+        wake = NEVER;
+        int phase = timeline.phaseAt(progress);
+        if (phase < 0) return null;
+        SolarConfig.Phase p = SolarConfig.phases[phase];
+        if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
+        if (rules.convert(phase, surface) != null) return null;
+        int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
+        boolean infinite = timeline.infinite(phase);
+        int epoch = infinite ? (int) timeline.depthAt(progress) : phase;
+        if (infinite) later(timeline.reachTime(-epoch, 0)); // the next layer redraws the fire
+        boolean flammable = surface.getBlock().isFlammable(world, surfacePos, EnumFacing.UP);
+        double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
+        if (Timeline.hash(x, y, z, FIRE_SALT + epoch) * 100 >= percent) return null;
+        if (!flammable && !surface.isTopSolid()) return null;
+        long due = infinite ? progress : spread(timeline.convertStart(phase), timeline.convertSpread(phase), x, y, z, FIRE_SALT - epoch);
+        if (progress < due) {
+            later(due);
+            return null;
+        }
+        return flammable ? Blocks.FIRE.getDefaultState() : SolarFire.forEpoch(epoch);
+    }
+
+    private static final int FIRE_SALT = 1 << 20;
+
+    /** Whether the running phase sets anything alight. */
+    public boolean ignites(long progress) {
+        int phase = timeline.phaseAt(progress);
+        return phase >= 0 && (SolarConfig.phases[phase].ignitePercent > 0 || SolarConfig.phases[phase].igniteFlammablePercent > 0);
     }
 
     private void later(long time) {

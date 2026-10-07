@@ -11,6 +11,7 @@ automatically) has the working rules; this file points at everything else. Curre
 | [docs/tasks/TODO.md](docs/tasks/TODO.md) | In progress and will do |
 | [docs/tasks/COMPLETED.md](docs/tasks/COMPLETED.md) | Done action items, per turn |
 | [docs/tasks/OUTOFSCOPE.md](docs/tasks/OUTOFSCOPE.md) | Limitations, won't fix, out of scope |
+| [docs/tasks/IDEAS.md](docs/tasks/IDEAS.md) | Suggestions, not planned |
 | [docs/DESIGN.md](docs/DESIGN.md) | The user's feature list (theirs: read, don't rewrite) |
 | [docs/SPEC.md](docs/SPEC.md) | How the mod works as built |
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Feasibility research (turn 1): how CC knows what faces the sky, costs, hooks, clock, prior art |
@@ -19,7 +20,7 @@ automatically) has the working rules; this file points at everything else. Curre
 
 ## Code (`src/main/java/com/solsticeentertainment/solarapocalypse/`)
 - Package root: mod wiring (`SolarApocalypse`), config (`SolarConfig`), time (`ApocalypseClock`, `Timeline`), block
-  rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun and heat (`Sky`, `SunDamage`),
+  rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun, heat and fire (`Sky`, `SunDamage`, `SolarFire`),
   `/solar` (`SolarCommand`). No Cubic Chunks classes here.
 - `cc/`: everything that touches Cubic Chunks or CubicWorldGen classes; only loaded when they are installed.
 - `debug/`: dev-only checks run by `scripts/probe_server.sh`.

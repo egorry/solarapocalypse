@@ -7,7 +7,8 @@
 - Keep `docs/tasks/` current while working: TODO.md (in progress / will do), COMPLETED.md (done action items, short),
   OUTOFSCOPE.md (limitations, won't fix). Player-facing changes go to `docs/CHANGELOG.md`, behaviour to `docs/SPEC.md`.
   Keep this file and README_FIRST.md as static pointers.
-- Commit at the end of every turn (also when the user asks mid-turn). Push only when asked.
+- "Commit" means commit and push. Commit and push at the end of every turn (and freely in between). Ask the user
+  before anything else in git (deleting, rebasing, branching, force-pushing...).
 - Only Cubic Chunks (and CubicWorldGen) are soft dependencies; nothing is tailored to the user's modpack.
 - The user's CurseForge instances may be read, never modified. Target pack: `C:\Users\Solstice\curseforge\minecraft\Instances\Cubic Chunks`.
 - Sibling projects `../SRPCCC` and `../SolsticeCCPatches` share the setup and research material (CC 0.0.1271 decomp:
