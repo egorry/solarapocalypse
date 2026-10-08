@@ -4,8 +4,11 @@
   mod by itself; only Cubic Chunks (and CubicWorldGen for the surface model) are soft dependencies.
 - **CPU backlog does not delay phases.** A phase waits for its configured destruction and conversion time, not for the
   queue of loaded terrain: exploring keeps adding work. The outcome is the same, it only shows up later.
-- **Vanilla fire** placed on flammable blocks is left to vanilla (it spreads and burns out); only solar fire is removed
-  when its phase or layer is over. Solar fire a player puts out comes back the next time the sun looks at that cube.
+- **Vanilla fire** placed on flammable blocks is left to vanilla (it spreads and burns out). Solar fire stays until its
+  ground goes, or in infinite phases until its layer is over. Solar fire a player puts out comes back the next time the
+  sun looks at that cube.
+- **Ice and snow farther from solar fire** melt as vanilla has them (block light above 11, about 3 blocks from fire);
+  only fire right next to them (diagonals too) is kept away.
 - **Never-generated terrain in Cubic Chunks** counts as air. Without the CubicWorldGen model, a column's surface is only
   known once its top has been loaded; deep areas under never-seen surfaces wait (no erosion, no sun) until then.
 - **CubicWorldGen presets with cube areas, or terrain floating more than 64 blocks above the rest**: no surface model;

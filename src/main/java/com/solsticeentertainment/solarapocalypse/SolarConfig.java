@@ -115,12 +115,12 @@ public final class SolarConfig {
         c.setCategoryComment(cat, "How apocalypse time advances. 1 day = 24000 progress units.");
         clockMode = enumValue(c, cat, "mode", ClockMode.SUN,
                 "SUN: count the overworld's sun clock (worldTime) moving forward, so a day lasts as long as the sun takes, with any\n" +
-                "day-length mod, and sleeping counts. Stops while doDaylightCycle is false.\n" +
+                "day-length mod. Skipped time counts: sleeping, /time add, and /time set (as the skip forward to that time of day;\n" +
+                "setting the time back by less than 1000 counts nothing). Stops while doDaylightCycle is false.\n" +
                 "TICKS: count server ticks; one day = ticksPerDay ticks.");
         ticksPerDay = c.getInt("ticksPerDay", cat, 24000, 1, Integer.MAX_VALUE, "TICKS mode: server ticks per apocalypse day.");
         maxSunJump = c.getInt("maxSunJump", cat, 24000, 1, Integer.MAX_VALUE,
-                "SUN mode: a single-tick forward jump of worldTime larger than this is ignored (/time set, /time add).\n" +
-                "Sleeping skips less than one day, so it still counts.");
+                "SUN mode: the most a single time skip can add (a larger /time add counts as this much).");
         progressWhileEmpty = c.getBoolean("progressWhileEmpty", cat, false,
                 "true: time runs while no player is online and the changes are caught up when terrain loads.\n" +
                 "false: the apocalypse pauses while the server is empty.");
@@ -259,9 +259,12 @@ public final class SolarConfig {
                 "layer every S seconds use layersPerDay = 1200 / S: 16 = a layer every 75 s, 600 = a layer every 2 s.").getDouble();
         p.convert = c.getStringList("convert", cat, d.convert,
                 "Block conversions of the surface layer (see convertDepth).\n" +
-                "Format: <selector> -> <block>, optionally @ <chance>%. Selectors: modid:name, modid:name:meta, modid:*,\n" +
-                "#oreDictName, material:<name>, * (any breakable block); several separated by commas, and !<selector> excludes.\n" +
-                "Target: modid:name, modid:name:meta or air.\n" +
+                "Format: <selector> -> <block> [modifiers]. Selectors: modid:name, modid:name:meta, modid:name[property=value,...],\n" +
+                "modid:*, #oreDictName, material:<name>, * (any breakable block); several separated by commas, and !<selector>\n" +
+                "excludes. Target: modid:name, modid:name:meta, modid:name[property=value,...] or air. Modifiers, in any order:\n" +
+                "@ <chance>%, and preserveState (keep the block's facing and other properties the target has too, unless the target\n" +
+                "sets them), e.g. minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState. The top half of a tall\n" +
+                "plant or door never converts by itself: it goes when its bottom half changes.\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
                 "but fixed per block. phases.convertRuleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
@@ -282,9 +285,10 @@ public final class SolarConfig {
                 "fluid name, e.g. fluid:water) and temperature<K, <=, >, >= (Forge fluid temperature in kelvin: water 300, lava\n" +
                 "1300). Example: material:water and !temperature<250 here, temperature<250 in a later phase for cold liquids.");
         p.ignitePercent = c.get(cat, "ignitePercent", d.ignite,
-                "Percent of surface blocks the sun sets alight once the phase's conversions are done (chosen at random but fixed),\n" +
-                "with solar fire: looks, sounds and burns like fire but never spreads. Removed when the next phase starts; in an\n" +
-                "infinite phase it is redrawn on every new layer.").getDouble();
+                "Percent of surface blocks alight with solar fire once the phase's conversions are done (chosen at random but\n" +
+                "fixed): looks, sounds and burns like fire but never spreads. A total: 25 then 50 in the next phase keeps the first\n" +
+                "25 % alight and lights as many again. Fire is never put out between phases; in an infinite phase it is redrawn on\n" +
+                "every new layer. No solar fire next to (diagonals too) blocks vanilla fire would burn, nor ice and snow.").getDouble();
         p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.ignite,
                 "Percent of flammable surface blocks (wood, leaves, wool...) set alight with vanilla fire instead, which spreads\n" +
                 "and burns them as usual.").getDouble();
@@ -321,8 +325,7 @@ public final class SolarConfig {
         private static final String[][] CONVERT = {
                 {"minecraft:grass -> minecraft:grass_path", "minecraft:mycelium -> minecraft:grass_path",
                         "minecraft:farmland -> minecraft:grass_path"},
-                {"minecraft:grass_path -> minecraft:dirt @ 30%", "material:cloth -> air @ 30%", "material:carpet -> air @ 30%",
-                        "material:snow -> air @ 30%", "material:crafted_snow -> air @ 30%", "material:tnt -> air"},
+                {"minecraft:grass_path -> minecraft:dirt @ 30%", "material:snow -> air @ 30%", "material:crafted_snow -> air @ 30%", "material:tnt -> air"},
                 {"minecraft:grass_path -> minecraft:dirt", "minecraft:dirt -> minecraft:gravel", "material:cloth -> air",
                         "material:carpet -> air", "material:snow -> air", "material:crafted_snow -> air", "material:plants -> air",
                         "material:leaves -> air", "material:gourd -> air", "material:web -> air", "material:vine -> air",

@@ -23,6 +23,7 @@ How far the phase can break or change, by block/layer. Infinite is a valid optio
 
 Percentage of exposed blocks ignited. This is further configured like the below to happen randomly but deterministically or instantly. This also refreshes each time a block layer is broken.
 * *Update (turn 4): fire comes after the phase's conversions and is removed when the next phase starts; in infinite phases it is redrawn on every layer.*
+* *Update (turn 7): fire is no longer removed between phases: a phase's percentage is the total alight (25 % then 50 % keeps the first 25 %). Infinite phases still redraw it on every layer.*
 
 Whether the speed of phase effects (minus ignition) happens in the full duration of current phase -> next phase, or at a fixed rate determined by user, or instantly. If the amount of layers destroyed * user defined speed of destruction exceeds the phase -> phase time, it will be added to the phase -> phase time i.e. until the destruction effects are completely done. Block changes happen to random blocks but in a deterministic speed, or instantly on phase start.
 * *Update (turn 4): see the update under phase length: destruction first, then conversion, the phase length being the minimum.*

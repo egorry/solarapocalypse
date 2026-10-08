@@ -9,7 +9,8 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 /**
  * The apocalypse's own clock: progress units (24000 per day) saved in the overworld's data/solarapocalypse.dat. Advanced
- * at the end of every server tick, from the overworld's worldTime (SUN) or from ticks (TICKS); /time set cannot rewind it.
+ * at the end of every server tick, from the overworld's worldTime (SUN) or from ticks (TICKS). Skipping time (sleeping,
+ * /time add, /time set) moves it forward; nothing rewinds it.
  */
 public final class ApocalypseClock extends WorldSavedData {
 
@@ -72,8 +73,8 @@ public final class ApocalypseClock extends WorldSavedData {
         if (paused || !playersOnline && !SolarConfig.progressWhileEmpty) return;
         long delta;
         if (SolarConfig.clockMode == SolarConfig.ClockMode.SUN) {
-            delta = previous == Long.MIN_VALUE ? 0 : worldTime - previous;
-            if (delta <= 0 || delta > SolarConfig.maxSunJump) return;
+            delta = previous == Long.MIN_VALUE ? 0 : sunDelta(previous, worldTime, SolarConfig.maxSunJump);
+            if (delta == 0) return;
         } else {
             tickRemainder += Timeline.DAY;
             delta = tickRemainder / SolarConfig.ticksPerDay;
@@ -82,6 +83,19 @@ public final class ApocalypseClock extends WorldSavedData {
         }
         progress += delta;
         markDirty();
+    }
+
+    /** Steps back smaller than this count nothing (a day-length mod could step the time back a little). */
+    static final long MIN_SET_BACK = 1000;
+
+    /**
+     * Progress for a step of worldTime: forward as is, at most maxJump; a step back (/time set day) counts as the skip
+     * forward to that time of day, unless it is smaller than MIN_SET_BACK.
+     */
+    static long sunDelta(long previous, long now, long maxJump) {
+        long delta = now - previous;
+        if (delta < 0) delta = delta > -MIN_SET_BACK ? 0 : Math.floorMod(delta, Timeline.DAY);
+        return Math.min(delta, maxJump);
     }
 
     @Override

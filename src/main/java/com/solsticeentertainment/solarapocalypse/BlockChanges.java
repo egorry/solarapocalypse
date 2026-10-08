@@ -1,5 +1,6 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import net.minecraft.block.BlockFalling;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
@@ -104,8 +105,9 @@ public final class BlockChanges {
 
     /**
      * The fire that belongs above a column's surface block now: solar fire, vanilla fire (flammable surface), or null.
-     * Fire comes after the phase's conversions (none while the surface block still has a conversion pending) and is
-     * tagged with an epoch: the phase, or in an infinite phase the layer, so fire from an earlier epoch can be removed.
+     * Fire comes after the phase's conversions (none while the surface block still has a conversion pending). Outside
+     * infinite phases one roll serves every phase, so a phase's percent is the total alight (25 % then 50 % keeps the
+     * first 25 %) and lit fire is left alone. In an infinite phase fire is tagged with its layer and redrawn on each one.
      */
     public IBlockState fire(World world, BlockPos surfacePos, IBlockState surface, long progress) {
         wake = NEVER;
@@ -120,11 +122,9 @@ public final class BlockChanges {
         int line = timeline.track(phase);
         int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;
         if (infinite) later(timeline.reachTime(-epoch, 0, line)); // the next layer redraws the fire
-        // with doFireTick false vanilla fire would neither spread nor burn out
-        boolean flammable = world.getGameRules().getBoolean("doFireTick") && !rules.noVanillaFire(surface)
-                && surface.getBlock().isFlammable(world, surfacePos, EnumFacing.UP);
+        boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
         double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
-        if (Timeline.hash(x, y, z, FIRE_SALT + epoch) * 100 >= percent) return null;
+        if (Timeline.hash(x, y, z, infinite ? FIRE_SALT + epoch : TOTAL_FIRE_SALT) * 100 >= percent) return null;
         if (!flammable && !surface.isTopSolid()) return null;
         long due = infinite ? progress : spread(timeline.convertStart(phase), timeline.convertSpread(phase), x, y, z, FIRE_SALT - epoch);
         if (progress < due) {
@@ -134,7 +134,32 @@ public final class BlockChanges {
         return flammable ? Blocks.FIRE.getDefaultState() : SolarFire.forEpoch(epoch);
     }
 
-    private static final int FIRE_SALT = 1 << 20;
+    private static final int FIRE_SALT = 1 << 20, TOTAL_FIRE_SALT = 0x7F1E0000;
+
+    /** Whether fire follows the layer (infinite phases: redrawn on each one); otherwise fire, once lit, is left alone. */
+    public boolean redrawsFire(long progress) {
+        int phase = timeline.phaseAt(progress);
+        return phase >= 0 && timeline.infinite(phase);
+    }
+
+    /**
+     * Whether a block next to a spot keeps solar fire off it: vanilla fire from the sun could burn it (it would spread
+     * there), or fire would melt it.
+     */
+    public boolean shunsFire(World world, IBlockState state, BlockPos pos, EnumFacing towardFire) {
+        return melts(state) || burns(world, state, pos, towardFire);
+    }
+
+    /** Ice and snow: fire next to them looks wrong (vanilla melts them near light above 11, about 3 blocks from fire). */
+    public static boolean melts(IBlockState state) {
+        Material m = state.getMaterial();
+        return m == Material.ICE || m == Material.PACKED_ICE || m == Material.SNOW || m == Material.CRAFTED_SNOW;
+    }
+
+    /** Whether vanilla fire from the sun burns a block (with doFireTick false it would neither spread nor burn out). */
+    private boolean burns(World world, IBlockState state, BlockPos pos, EnumFacing face) {
+        return world.getGameRules().getBoolean("doFireTick") && !rules.noVanillaFire(state) && state.getBlock().isFlammable(world, pos, face);
+    }
 
     /** Whether the running phase sets anything alight. */
     public boolean ignites(long progress) {
@@ -179,16 +204,40 @@ public final class BlockChanges {
     }
 
     /**
-     * Writes a change: no neighbour updates unless blocks.blockPhysics, no drops unless blocks.dropItems. Every change the
-     * apocalypse makes goes through here (counted for performance.maxBlockChangesPerTick).
+     * Writes a change: no neighbour updates unless blocks.blockPhysics (but see settleAbove), no drops unless
+     * blocks.dropItems, also from blocks that pop off. Every change the apocalypse makes goes through here (counted for
+     * performance.maxBlockChangesPerTick).
      */
     public static void apply(World world, BlockPos pos, IBlockState from, IBlockState to) {
         if (!SolarConfig.dropItems && from.getBlock().hasTileEntity(from)) world.removeTileEntity(pos); // no container spill
         if (SolarConfig.dropItems && to.getMaterial() == Material.AIR) from.getBlock().dropBlockAsItem(world, pos, from, 0);
-        world.setBlockState(pos, to, SolarConfig.blockPhysics ? 3 : 2 | 16);
+        boolean restoring = world.restoringBlockSnapshots;
+        world.restoringBlockSnapshots |= !SolarConfig.dropItems; // Forge's no-drops switch (used when it restores blocks)
+        try {
+            world.setBlockState(pos, to, SolarConfig.blockPhysics ? 3 : 2 | 16);
+            if (!SolarConfig.blockPhysics) settleAbove(world, pos, to);
+        } finally {
+            world.restoringBlockSnapshots = restoring;
+        }
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
         else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
+    }
+
+    /**
+     * Without block physics the block above still gets its neighbour update, so what the new block cannot hold pops off
+     * now instead of on a later random tick (plants and crops on paths, torches, the top half of tall plants and doors);
+     * sand and gravel do not fall and liquids do not flow.
+     */
+    private static void settleAbove(World world, BlockPos pos, IBlockState to) {
+        BlockPos up = pos.up();
+        if (!world.isBlockLoaded(up)) return;
+        for (EnumFacing side : EnumFacing.values()) {
+            if (!world.isBlockLoaded(up.offset(side))) return; // its update may look around: generate nothing
+        }
+        IBlockState above = world.getBlockState(up);
+        if (above.getMaterial() == Material.AIR || above.getBlock() instanceof BlockFalling || BlockRules.isLiquid(above)) return;
+        above.neighborChanged(world, up, to.getBlock(), pos);
     }
 
     /** The surface that conversions measure from: blocks movement or is liquid (leaves, glass and water count; plants do not). */

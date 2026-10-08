@@ -5,11 +5,13 @@ The behaviour as built. The user's feature list is [DESIGN.md](DESIGN.md); feasi
 in the generated `config/solarapocalypse.cfg`.
 
 ## 1. Time
-- Progress is a `long` saved in the overworld's `data/solarapocalypse.dat`; 1 day = 24000 units. `/time set` cannot
-  rewind it.
+- Progress is a `long` saved in the overworld's `data/solarapocalypse.dat`; 1 day = 24000 units. Nothing rewinds it.
 - `clock.mode = SUN` (default) adds the forward movement of the overworld's `worldTime`: a day lasts as long as the sun
-  takes, so any day-length mod is followed; sleeping counts; jumps over `clock.maxSunJump` are ignored; it stops while
-  `doDaylightCycle` is false. `TICKS` counts server ticks (`clock.ticksPerDay` per day).
+  takes, so any day-length mod is followed. Skipped time counts: sleeping and `/time add` as they move the clock,
+  `/time set` (which sets the time back to that day's value) as the skip forward to that time of day; a step back under
+  1000 counts nothing (a day-length mod such as Longer Days steps the time back by one each tick); one skip adds at
+  most `clock.maxSunJump` (a day). The engine then catches the loaded terrain up. It stops while `doDaylightCycle` is
+  false. `TICKS` counts server ticks (`clock.ticksPerDay` per day).
 - `clock.progressWhileEmpty = false` pauses while nobody is online; `true` keeps counting and terrain catches up on load.
 - Every "days" setting is in apocalypse days, whose length the clock mode defines: in `TICKS` mode one day is
   `clock.ticksPerDay` ticks (`phase_n.days = 2` with `ticksPerDay = 72000` lasts 144000 ticks, two real hours).
@@ -66,6 +68,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    in order (`dirt -> sand @ 30%` after it covers the rest), a rule without `@` takes all that is left. Which blocks
    convert is a fixed hash of position, phase and block state, so a block's outcome never changes between looks and
    nothing has to be stored; a later phase with its own rule for the block (e.g. 100 %) takes over in `CARRY`.
+   **Modifiers** follow the target in any order: `@ n%`, and `preserveState`, which keeps the source block's properties
+   the target block has too (by name: facing, half, shape...) unless the target sets them:
+   `minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState` damages a quarter of anvils and keeps
+   their facing. The top half of a two-block plant or door (`half=upper`) never converts by itself: it pops off when
+   its bottom half changes.
 3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
@@ -75,13 +82,15 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
    positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
    sound, light and entity burning, but it never ticks, so it never spreads, burns out or burns blocks. Flammable surface
-   blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Solar fire is
-   tagged with its epoch (the phase, or the layer in infinite phases): stale fire is removed when the next phase starts
-   and redrawn on every new layer. Punching the block under it puts it out (it comes back on the cube's next look).
-   No solar fire goes beside or under a flammable block: it would take the space vanilla fire spreads into and look odd
-   next to a block that never catches. Those positions just stay empty (checked on each look at the cube).
+   blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Outside infinite
+   phases one roll serves every phase, so the percent is the total alight: 25 % then 50 % keeps the first 25 % and
+   lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases fire is
+   tagged with its layer and redrawn on every new layer. Punching the block under it puts it out (it comes back on the
+   cube's next look). No solar fire goes next to (diagonals too) a block vanilla fire would burn, nor next to ice or snow
+   (or on snow): it would take the space vanilla fire spreads into, or look odd next to a block that never catches or
+   melts. Those positions just stay empty (checked on each look at the cube).
 
-- Selectors: `modid:name`, `modid:name:meta`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
+- Selectors: `modid:name`, `modid:name:meta`, `modid:name[property=value,...]`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
   unbreakable blocks. Several can be combined with commas, and `!` excludes: `material:rock, !minecraft:cobblestone`
   (a destroy list counts as one combined selector). Exclusions apply to the list or rule they are in, not to rules
   carried from earlier phases. Within a phase the first matching rule wins.
@@ -90,10 +99,13 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
-  switches to flag 3. No item drops or container spills unless `blocks.dropItems`.
+  switches to flag 3. The block above a change still gets its neighbour update when its neighbours are loaded, so what
+  the new block cannot hold (plants and crops on paths, torches, top halves, fire) pops off at once; sand, gravel and
+  liquids above are left alone. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
+  off (Forge's `restoringBlockSnapshots` switch is set during the change).
 - Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to
-  paths. 2: 30 % of paths to dirt, 30 % of wool, carpets and snow burn, TNT goes; 25 % fire.
-  3: the rest of those, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
+  paths. 2: 30 % of paths to dirt, 30 % of snow burns, TNT goes; 25 % fire.
+  3: the rest of those, wool and carpets, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
   4 a day from sea level); 50 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
   evaporate (`*, !material:lava`); 75 % fire. 5: sand to glass; 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
   7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 90-95 %. 11: infinite erosion at 200 layers a
@@ -149,17 +161,21 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   reference lines).
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
   (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5, plus a sixth `TOP_Y` phase at 64
-  layers a day), so the checks do not move with the defaults. Last run (2026-10-08):
+  layers a day), so the checks do not move with the defaults. Last runs (2026-10-08):
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
   few blocks higher); rules check as expected (chances 30/20 % -> 3014 and 1977 of 10000 blocks, identical on a second
-  look; exclusion, loop cut, TNT blacklist; evaporation lists with fluid and temperature selectors); phase 1 catch-up
-  of ~10.7k cubes with every world tick made 12 ms slower than the 10 ms budget: 63-88 ticks; elsewhere
+  look; exclusion, loop cut, TNT blacklist; evaporation lists with fluid and temperature selectors; `preserveState`:
+  stone brick stairs facing east, top half -> stone stairs the same; `anvil[damage=0] -> anvil[damage=1] @ 25%
+  preserveState` 2516 of 10000, facing kept; top half of a tall plant: no rule); grass under tall grass and a sunflower
+  turned to path: all three pop off, 0 items dropped; phase 1 catch-up
+  of ~10.7k cubes with every world tick made 12 ms slower than the 10 ms budget: 57-88 ticks; elsewhere
   with no change cap: 0.3-2.2 M blocks (mostly water) in 120-185 ticks, 0.8-1.7 s engine time; with the cap at the end:
   at most 512 changes in a tick; pigs, first hit in phase 4: sun 10 -> 5, under a roof 10 -> 9 (heat), 24 deep
   untouched; 8 layers of erosion below
-  each column's surface: 0 of 459275 positions above the line still hold a block; solar fire at the end of phase 4 on
-  8.9-9.6 % of positions (10 % asked; water and other non-solid tops get none), unchanged after 200 ticks; in the
-  infinite phase 14.2-15.1 % (15 % asked), only the current layer's fire left; `TOP_Y` line of phase 6 at Y 33-35:
-  0 of 56-65 k positions above it still hold a block.
+  each column's surface: 0 of 441-511 k positions above the line still hold a block; solar fire at the end of phase 3
+  on 4.2-4.9 % of positions (5 % asked; water and other non-solid tops get none, nor spots next to flammables, ice and
+  snow), at the end of phase 4 10.0-10.2 % (10 % asked), phase 3's fire all kept but where its ground went (1801 of
+  1802), unchanged after 200 ticks; in the infinite phase 14.0-14.5 % (15 % asked), only the current layer's fire left;
+  `TOP_Y` line of phase 6 at Y 26-45: 0 of 13-230 k positions above it still hold a block.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and
   burning in a client.

@@ -3,6 +3,7 @@ package com.solsticeentertainment.solarapocalypse;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
+import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
@@ -17,7 +18,9 @@ import net.minecraftforge.oredict.OreDictionary;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -79,6 +82,31 @@ public final class BlockRules {
 
     private static final int CHANCE_SALT = 0x5EED << 12;
 
+    /** A rule's target: a block state, and with preserveState the source block's properties the target block has too. */
+    private static final class Target {
+        final IBlockState state;
+        final Set<String> given; // properties the rule sets itself
+        final boolean preserve;
+
+        Target(IBlockState state, Set<String> given, boolean preserve) {
+            this.state = state;
+            this.given = given;
+            this.preserve = preserve;
+        }
+
+        IBlockState of(IBlockState from) {
+            if (!preserve) return state;
+            IBlockState to = state;
+            for (Map.Entry<IProperty<?>, Comparable<?>> e : from.getProperties().entrySet()) {
+                IProperty<?> p = to.getBlock().getBlockState().getProperty(e.getKey().getName());
+                if (p == null || given.contains(p.getName())) continue;
+                Comparable<?> value = p.parseValue(valueName(e.getKey(), e.getValue())).orNull(); // by name: stairs of any mod
+                if (value != null) to = with(to, p, value);
+            }
+            return to;
+        }
+    }
+
     private final List<Map<IBlockState, Step>> convert = new ArrayList<>();
     private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
     private final Set<IBlockState> noVanillaFire = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -93,19 +121,26 @@ public final class BlockRules {
         for (int i = 0; i < phases.length; i++) {
             String where = "phase_" + (i + 1);
             List<Predicate<IBlockState>> from = new ArrayList<>();
-            List<IBlockState> to = new ArrayList<>();
+            List<Target> to = new ArrayList<>();
             List<Double> share = new ArrayList<>();
-            for (String line : phases[i].convert) {
+            for (String raw : phases[i].convert) {
+                String line = raw.replaceAll("\\s+(?=[^\\[\\]]*\\])", ""); // no spaces inside [...]
                 int arrow = line.indexOf("->");
                 if (arrow < 0) {
-                    SolarApocalypse.LOGGER.warn("{}.convert: '{}' has no '->'", where, line);
+                    SolarApocalypse.LOGGER.warn("{}.convert: '{}' has no '->'", where, raw);
                     continue;
                 }
-                String right = line.substring(arrow + 2);
-                int at = right.indexOf('@');
-                double chance = at < 0 ? 1 : percent(right.substring(at + 1), where);
+                // target, then modifiers in any order: '@ n%' and preserveState
+                String[] words = line.substring(arrow + 2).replaceAll("\\s*%", "%").replace("@", " @ ").trim().split("\\s+");
+                double chance = 1;
+                boolean preserve = false;
+                for (int w = 1; w < words.length; w++) {
+                    if (words[w].equals("@") && w + 1 < words.length) chance = percent(words[++w], where);
+                    else if (words[w].equalsIgnoreCase("preserveState")) preserve = true;
+                    else SolarApocalypse.LOGGER.warn("{}.convert: unknown modifier '{}' in '{}'", where, words[w], raw);
+                }
                 Predicate<IBlockState> selector = selectors(new String[]{line.substring(0, arrow)}, where);
-                IBlockState target = target(at < 0 ? right : right.substring(0, at), where);
+                Target target = target(words[0], preserve, where);
                 if (selector == null || target == null || chance <= 0) continue;
                 from.add(selector);
                 to.add(target);
@@ -119,17 +154,19 @@ public final class BlockRules {
             Map<IBlockState, Integer> removals = carryDestroy ? new IdentityHashMap<>(rules.destroy.get(i - 1)) : new IdentityHashMap<>();
             for (IBlockState state : states) {
                 if (state.getMaterial() == Material.AIR) continue;
-                // matching rules share the block out in order ('@ n%', 100 % without); the latest phase's set wins
+                // matching rules share the block out in order ('@ n%', 100 % without); the latest phase's set wins.
+                // The top half of a tall plant or door follows its bottom half (it pops off when that changes).
                 List<IBlockState> targets = new ArrayList<>();
                 List<Double> upTo = new ArrayList<>();
                 double total = 0;
                 boolean changes = false;
-                for (int r = 0; r < from.size() && total < 1; r++) {
+                for (int r = 0; r < from.size() && total < 1 && !upperHalf(state); r++) {
                     if (!from.get(r).test(state)) continue;
+                    IBlockState target = to.get(r).of(state);
                     total = Math.min(1, total + share.get(r));
-                    targets.add(to.get(r));
+                    targets.add(target);
                     upTo.add(total);
-                    changes |= to.get(r) != state;
+                    changes |= target != state;
                 }
                 if (changes) conversions.put(state, new Step(targets, upTo, i));
                 if (gone != null && gone.test(state)) removals.putIfAbsent(state, i);
@@ -181,6 +218,42 @@ public final class BlockRules {
         path.remove(path.size() - 1);
         clear.add(state);
         return null;
+    }
+
+    /** The top half of a two-block plant or door (a 'half' property set to 'upper'). */
+    private static boolean upperHalf(IBlockState state) {
+        for (Map.Entry<IProperty<?>, Comparable<?>> e : state.getProperties().entrySet()) {
+            if (e.getKey().getName().equals("half") && valueName(e.getKey(), e.getValue()).equals("upper")) return true;
+        }
+        return false;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String valueName(IProperty property, Comparable value) {
+        return property.getName(value);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static IBlockState with(IBlockState state, IProperty property, Comparable value) {
+        return state.withProperty(property, value);
+    }
+
+    /** "facing=east,half=top" for a block -> its properties and values; null (with a warning) if one cannot be read. */
+    private static Map<IProperty<?>, Comparable<?>> properties(Block block, String list, String where) {
+        Map<IProperty<?>, Comparable<?>> out = new LinkedHashMap<>();
+        for (String pair : list.split(",")) {
+            String[] kv = pair.split("=");
+            IProperty<?> p = kv.length == 2 ? block.getBlockState().getProperty(kv[0].trim()) : null;
+            Comparable<?> value = p == null ? null : p.parseValue(kv[1].trim()).orNull();
+            if (value == null) {
+                List<String> known = new ArrayList<>();
+                for (IProperty<?> q : block.getBlockState().getProperties()) known.add(q.getName() + q.getAllowedValues());
+                SolarApocalypse.LOGGER.warn("{}: cannot read '{}' for {}, its properties: {}", where, pair, block.getRegistryName(), known);
+                return null;
+            }
+            out.put(p, value);
+        }
+        return out;
     }
 
     /** "30%" or "30" -> 0.3; -1 if unreadable. */
@@ -250,7 +323,7 @@ public final class BlockRules {
     private static Predicate<IBlockState> selectors(String[] entries, String where) {
         Predicate<IBlockState> any = null, none = null;
         for (String entry : entries) {
-            for (String raw : entry.split(",")) {
+            for (String raw : entry.split(",(?![^\\[]*\\])")) { // commas inside [...] separate properties
                 String s = raw.trim();
                 if (s.isEmpty()) continue;
                 boolean not = s.startsWith("!");
@@ -302,6 +375,19 @@ public final class BlockRules {
             }
             return state -> state.getMaterial() == m && !unbreakable(state);
         }
+        int open = s.indexOf('[');
+        if (open > 0 && s.endsWith("]")) {
+            Block block = block(s.substring(0, open).trim(), where);
+            Map<IProperty<?>, Comparable<?>> wanted = block == null ? null : properties(block, s.substring(open + 1, s.length() - 1), where);
+            if (wanted == null) return null;
+            return state -> {
+                if (state.getBlock() != block) return false;
+                for (Map.Entry<IProperty<?>, Comparable<?>> e : wanted.entrySet()) {
+                    if (!e.getValue().equals(state.getProperties().get(e.getKey()))) return false;
+                }
+                return true;
+            };
+        }
         String[] parts = s.split(":");
         if (parts.length == 2 && parts[1].equals("*")) {
             String mod = parts[0];
@@ -318,10 +404,24 @@ public final class BlockRules {
         return meta < 0 ? null : state -> state.getBlock() == block && block.getMetaFromState(state) == meta;
     }
 
+    /** "air", "mod:block", "mod:block:meta" or "mod:block[property=value,...]" (unset properties: the default's). */
     @SuppressWarnings("deprecation")
-    private static IBlockState target(String raw, String where) {
+    private static Target target(String raw, boolean preserve, String where) {
         String s = raw.trim();
-        if (s.equalsIgnoreCase("air")) return Blocks.AIR.getDefaultState();
+        if (s.equalsIgnoreCase("air")) return new Target(Blocks.AIR.getDefaultState(), Collections.emptySet(), false);
+        int open = s.indexOf('[');
+        if (open > 0 && s.endsWith("]")) {
+            Block block = block(s.substring(0, open).trim(), where);
+            Map<IProperty<?>, Comparable<?>> given = block == null ? null : properties(block, s.substring(open + 1, s.length() - 1), where);
+            if (given == null) return null;
+            IBlockState state = block.getDefaultState();
+            Set<String> names = new HashSet<>();
+            for (Map.Entry<IProperty<?>, Comparable<?>> e : given.entrySet()) {
+                state = with(state, e.getKey(), e.getValue());
+                names.add(e.getKey().getName());
+            }
+            return new Target(state, names, preserve);
+        }
         String[] parts = s.split(":");
         if (parts.length < 2 || parts.length > 3) {
             SolarApocalypse.LOGGER.warn("{}: cannot read target '{}'", where, s);
@@ -329,9 +429,12 @@ public final class BlockRules {
         }
         Block block = block(parts[0] + ":" + parts[1], where);
         if (block == null) return null;
-        if (parts.length == 2) return block.getDefaultState();
+        if (parts.length == 2) return new Target(block.getDefaultState(), Collections.emptySet(), preserve);
         int meta = meta(parts[2], where);
-        return meta < 0 ? null : block.getStateFromMeta(meta);
+        if (meta < 0) return null;
+        Set<String> all = new HashSet<>(); // metadata sets every property
+        for (IProperty<?> p : block.getBlockState().getProperties()) all.add(p.getName());
+        return new Target(block.getStateFromMeta(meta), all, preserve);
     }
 
     private static Block block(String id, String where) {

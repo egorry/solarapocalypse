@@ -6,7 +6,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Configurable phases (`config/solarapocalypse.cfg`): any number, lengths per phase or scaled, a safe phase 0.
 - Apocalypse clock that follows the sun (works with day-length mods) or counts ticks; optional pause while the server
-  is empty; `/time set` cannot rewind it.
+  is empty; nothing rewinds it.
 - Cubic Chunks worlds: erosion with a per-phase depth (or infinite), conversions of the surface layer, evaporation of
   water, lava and modded liquids; terrain loaded later catches up.
 - Depth counted from each column's own surface (computed from CubicWorldGen's generator, or recorded) or from a fixed Y.
@@ -20,10 +20,6 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   erosion); it looks, sounds and burns like fire but never spreads. Flammable blocks get ordinary fire. The mod is now
   needed on clients too.
 - Fire-immune mobs burn too, and direct sun burns at night as well, by default.
-### Fixed
-- Block changes never ran on servers whose own tick took longer than the time budget (singleplayer with the default 4 ms
-  budget): the budget now counts the apocalypse's own time.
-- With several infinite phases at different rates, blocks were removed at the first one's rate.
 - Phase announcements, all optional per phase: a chat message, a sound, and a splash title on screen with the message
   underneath (own font and flickering fire colours). `/solar announce` previews them.
 - Selectors can be combined with commas and excluded with `!` (`material:rock, !minecraft:cobblestone`); conversion
@@ -42,3 +38,17 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Phases are saved in number order in the config (phase_2 before phase_10).
 - New defaults: eleven phases over 22 days, from paths and burning grass to infinite erosion; water evaporates from
   phase 3, lava from phase 6; the sun burns by day only until phase 7; Fire Resistance protects from the sun.
+- Time skips count: sleeping, `/time add`, and `/time set` (as the skip forward to that time of day).
+- Block properties in selectors and targets (`minecraft:anvil[damage=0] -> minecraft:anvil[damage=1]`), and the
+  `preserveState` modifier, which keeps the block's facing and the like; modifiers stack
+  (`minecraft:stone_brick_stairs -> minecraft:stone_stairs @ 30% preserveState`).
+- What a changed block can no longer hold (plants and crops on new paths, torches, the top half of tall plants and
+  doors) pops off at once and drops nothing unless `blocks.dropItems`; tall plants and doors convert as a whole.
+- No solar fire diagonally next to flammable blocks either, nor next to ice and snow.
+- Phase 2 no longer burns 30 % of wool and carpets by default (phase 3 burns all of it).
+### Fixed
+- Block changes never ran on servers whose own tick took longer than the time budget (singleplayer with the default 4 ms
+  budget): the budget now counts the apocalypse's own time.
+- With several infinite phases at different rates, blocks were removed at the first one's rate.
+- Fire was put out and re-rolled at every phase start. `ignitePercent` is now the total alight (25 % then 50 % keeps
+  the first 25 %), and fire stays until its ground goes; only infinite phases redraw it on each layer.

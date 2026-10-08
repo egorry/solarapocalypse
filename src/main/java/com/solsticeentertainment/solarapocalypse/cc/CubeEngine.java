@@ -168,6 +168,7 @@ public final class CubeEngine {
         int minY = cy << 4;
         boolean needGround = SolarApocalypse.timeline().uses(Timeline.SURFACE);
         int topY = SolarApocalypse.topY(world);
+        boolean redrawFire = changes.redrawsFire(progress);
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         BitSet edited = state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
@@ -188,8 +189,9 @@ public final class CubeEngine {
                     int y = minY + ly;
                     if (SolarFire.is(from)) {
                         if (fireY == BlockChanges.NO_Y) fireY = y;
+                        else if (!redrawFire) continue;
                         else if (limited(edited, lz << 4 | lx)) return PARTIAL;
-                        else BlockChanges.apply(world, pos.setPos(x, y, z), from, AIR); // a second one is always stale
+                        else BlockChanges.apply(world, pos.setPos(x, y, z), from, AIR); // a second one is from an earlier layer
                         continue;
                     }
                     int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
@@ -207,23 +209,24 @@ public final class CubeEngine {
                         if (top < minY) openedBelow = true;
                     }
                 }
-                // Fire: removed when its epoch is over, placed on the surface once the phase's conversions are done.
+                // Fire: placed on the surface once the phase's conversions are done; in infinite phases removed when its
+                // layer is over. Fire that loses its ground goes with it (BlockChanges.apply).
                 IBlockState fire = null;
                 if (surfaceKnown && Coords.blockToCube(surface + 1) == cy) {
                     IBlockState below = blockAt(cubes, cx, cz, lx, surface, lz);
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
                         wake = Math.min(wake, changes.wake());
-                        if (fire != null && SolarFire.is(fire) && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
+                        if (fire != null && SolarFire.is(fire) && nearShunned(world, cubes, changes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
-                boolean keep = fire != null && SolarFire.is(fire) && fireY == surface + 1
-                        && SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire);
-                if (fireY != BlockChanges.NO_Y && !keep) {
+                boolean stale = fireY != BlockChanges.NO_Y && redrawFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1
+                        && SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire));
+                if (stale) {
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     BlockChanges.apply(world, pos.setPos(x, fireY, z), storage.get(lx, Coords.blockToLocal(fireY), lz), AIR);
                 }
-                if (fire != null && !keep) {
+                if (fire != null && (stale || fireY != surface + 1)) {
                     pos.setPos(x, surface + 1, z);
                     IBlockState there = world.getBlockState(pos); // loaded: the cube being processed
                     if (there.getMaterial() == Material.AIR) {
@@ -238,20 +241,29 @@ public final class CubeEngine {
     }
 
     /**
-     * Whether a loaded block beside or above a position burns. Solar fire is not placed there: it would take the space
-     * vanilla fire spreads into, and look odd next to a block that never catches.
+     * Whether a loaded block around a position (diagonals too) burns or melts (BlockChanges.shunsFire). Solar fire is not
+     * placed there: it would take the space vanilla fire spreads into, and look odd next to a block that never catches or
+     * never melts. The block it stands on only counts if it melts (a flammable one gets vanilla fire unless that is off).
      */
-    private static boolean nearFlammable(World world, ICubeProvider cubes, BlockPos.MutableBlockPos pos, int x, int y, int z) {
-        for (EnumFacing side : NEAR_FIRE) {
-            pos.setPos(x, y, z).move(side);
-            IBlockState s = blockAt(cubes, Coords.blockToCube(pos.getX()), Coords.blockToCube(pos.getZ()),
-                    Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
-            if (s != null && s.getMaterial() != Material.AIR && s.getBlock().isFlammable(world, pos, side.getOpposite())) return true;
+    private static boolean nearShunned(World world, ICubeProvider cubes, BlockChanges changes, BlockPos.MutableBlockPos pos,
+                                       int x, int y, int z) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    pos.setPos(x + dx, y + dy, z + dz);
+                    IBlockState s = blockAt(cubes, Coords.blockToCube(pos.getX()), Coords.blockToCube(pos.getZ()),
+                            Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
+                    if (s == null || s.getMaterial() == Material.AIR) continue;
+                    boolean ground = dx == 0 && dz == 0 && dy == -1;
+                    if (ground ? BlockChanges.melts(s) : changes.shunsFire(world, s, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }
-
-    private static final EnumFacing[] NEAR_FIRE = {EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, EnumFacing.UP};
 
     /** Whether a change at x/z must wait for the next tick (column limit, performance.maxBlockChangesPerTick); marks x/z if not. */
     private static boolean limited(BitSet edited, int xz) {

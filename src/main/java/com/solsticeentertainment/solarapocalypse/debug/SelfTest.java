@@ -15,11 +15,18 @@ import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
+import net.minecraft.block.BlockAnvil;
+import net.minecraft.block.BlockDoublePlant;
+import net.minecraft.block.BlockStairs;
+import net.minecraft.block.BlockTallGrass;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.passive.EntityPig;
 import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
@@ -75,6 +82,7 @@ public final class SelfTest {
                         CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
                 modelCheck();
                 rulesCheck();
+                settleCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
                 SolarConfig.phases[3].message = "&6The ground cracks"; // the phase 4 start log line carries it
@@ -86,36 +94,43 @@ public final class SelfTest {
                 if (!drained(600)) return;
                 census("after phase 1");
                 pigs("phase 1 (fire only)");
+                for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) pig.setEntityInvulnerable(true); // live through phase 3
+                jump(t.end(2) - 1, "end of phase 3 (fire: 5 % solar)");
+                break;
+            case 2:
+                if (!drained(3000)) return;
+                fire("end of phase 3");
                 // Entities stop ticking 300 ticks after the last player left, so hurt cooldowns never run out here:
                 // reset them and check one hit (phase 4: sun 4 + background 1, background reaches 3 blocks of cover).
                 for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) {
+                    pig.setEntityInvulnerable(false);
                     pig.setHealth(pig.getMaxHealth());
                     pig.extinguish();
                     pig.hurtResistantTime = 0;
                 }
                 jump(t.start(3) + 1, "start of phase 4");
                 break;
-            case 2:
+            case 3:
                 // the first hit only: with entities still ticking, hurt cooldowns can run out and let a second one in
                 if (firstHit[0] == 0 && sunPig.getHealth() < sunPig.getMaxHealth()) firstHit[0] = sunPig.getHealth();
                 if (firstHit[1] == 0 && roofPig.getHealth() < roofPig.getMaxHealth()) firstHit[1] = roofPig.getHealth();
                 if (ticks - waited < 25) return;
                 log("pigs after the first hit in phase 4 (expect sun 5, roof 9, deep 10): sun {}, roof {}, deep {}",
                         firstHit[0], firstHit[1], deepPig.getHealth());
-                jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar, 75 % of flammables)");
+                jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar in total, phase 3's 5 % kept; 75 % of flammables)");
                 break;
-            case 3:
+            case 4:
                 if (!drained(3000)) return;
                 fireCount = fire("end of phase 4");
                 stage++;
                 waited = ticks;
                 break;
-            case 4:
+            case 5:
                 if (ticks - waited < 200) return;
                 log("solar fire after 200 more ticks: {} (was {}; it must not spread or burn out)", fire("200 ticks later"), fireCount);
                 jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
                 break;
-            case 5:
+            case 6:
                 if (!drained(3000)) return;
                 fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
@@ -128,7 +143,7 @@ public final class SelfTest {
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
                 break;
-            case 6:
+            case 7:
                 maxChanges = Math.max(maxChanges, BlockChanges.changed - lastChanged);
                 lastChanged = BlockChanges.changed;
                 if (ticks - waited < 100) return;
@@ -137,10 +152,11 @@ public final class SelfTest {
                 SolarConfig.maxBlockChangesPerTick = 0;
                 // below what the SURFACE line (frozen during phase 6) leaves of the highest ground, so the plane has terrain to cut
                 planeY = highestGround() - (int) t.depthAt(t.start(5), Timeline.SURFACE) - 8;
+                if ((planeY & 15) == 0) planeY += 2; // on a cube's bottom the cube above it would be empty: a check of nothing
                 jump(t.reachTime(planeY, SolarApocalypse.topY(world), Timeline.TOP),
                         "phase 6 (TOP_Y line from Y " + SolarApocalypse.topY(world) + ") down to Y " + planeY);
                 break;
-            case 7:
+            case 8:
                 if (!drained(3000)) return;
                 long top = SolarApocalypse.topY(world) - (long) t.depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1;
                 lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
@@ -223,7 +239,8 @@ public final class SelfTest {
     private static void rulesCheck() {
         SolarConfig.Phase a = new SolarConfig.Phase(), b = new SolarConfig.Phase();
         a.convert = new String[]{"minecraft:dirt -> minecraft:sand", "minecraft:gravel -> minecraft:sand @ 30%",
-                "minecraft:gravel -> minecraft:clay @ 20"};
+                "minecraft:gravel -> minecraft:clay @ 20", "minecraft:stone_brick_stairs -> minecraft:stone_stairs preserveState",
+                "minecraft:anvil[ damage=0 ] -> minecraft:anvil[damage=1] @ 25% preserveState", "minecraft:double_plant -> minecraft:deadbush"};
         a.destroy = new String[]{"material:rock, !minecraft:cobblestone"};
         b.convert = new String[]{"minecraft:sand -> minecraft:dirt"};
         b.destroy = new String[0];
@@ -248,6 +265,38 @@ public final class SelfTest {
                         + " sand -> {} (dirt); TNT blacklisted for vanilla fire {} (true)", toSand, toClay, same,
                 r.destroyPhase(0, Blocks.STONE.getDefaultState()), r.destroyPhase(0, Blocks.COBBLESTONE.getDefaultState()),
                 d == null ? "none" : d, s == null ? "none" : s, r.noVanillaFire(Blocks.TNT.getDefaultState()));
+        IBlockState stairs = Blocks.STONE_BRICK_STAIRS.getDefaultState().withProperty(BlockStairs.FACING, EnumFacing.EAST)
+                .withProperty(BlockStairs.HALF, BlockStairs.EnumHalf.TOP);
+        IBlockState anvil = Blocks.ANVIL.getDefaultState().withProperty(BlockAnvil.FACING, EnumFacing.WEST);
+        IBlockState damaged = anvil.withProperty(BlockAnvil.DAMAGE, 1);
+        int hits = 0;
+        for (int i = 0; i < 10000; i++) if (r.convert(0, anvil).pick(i, 64, i * 7, anvil) == damaged) hits++;
+        IBlockState upper = Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER);
+        log("rules: stairs -> {} (stone stairs, facing east, half top), anvil facing west -> {} in {} of 10000 (~2500), top half of"
+                        + " a tall plant -> {} (none), bottom half -> {} (deadbush)", r.convert(0, stairs), damaged, hits,
+                r.convert(0, upper), r.convert(0, Blocks.DOUBLE_PLANT.getDefaultState()));
+    }
+
+    /** Turns grass under tall grass and under a sunflower into path: both pop off at once, and nothing drops. */
+    private static void settleCheck() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        BlockPos a = new BlockPos(spawn.getX() - 3, top(cubes, spawn.getX() - 3, spawn.getZ() - 3) + 1, spawn.getZ() - 3);
+        BlockPos b = new BlockPos(spawn.getX() - 5, top(cubes, spawn.getX() - 5, spawn.getZ() - 3) + 1, spawn.getZ() - 3);
+        IBlockState grass = Blocks.GRASS.getDefaultState(), path = Blocks.GRASS_PATH.getDefaultState();
+        world.setBlockState(a, grass, 18);
+        world.setBlockState(a.up(), Blocks.TALLGRASS.getDefaultState().withProperty(BlockTallGrass.TYPE, BlockTallGrass.EnumType.GRASS), 18);
+        world.setBlockState(b, grass, 18);
+        world.setBlockState(b.up(), Blocks.DOUBLE_PLANT.getDefaultState(), 18);
+        world.setBlockState(b.up(2), Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER), 18);
+        AxisAlignedBB box = new AxisAlignedBB(b).union(new AxisAlignedBB(a)).grow(4);
+        int before = world.getEntitiesWithinAABB(EntityItem.class, box).size();
+        BlockChanges.apply(world, a, grass, path);
+        BlockChanges.apply(world, b, grass, path);
+        log("settle: tall grass on new path -> {} (air), sunflower -> {} / {} (air, air), items dropped {} (0)",
+                world.getBlockState(a.up()).getBlock().getRegistryName(), world.getBlockState(b.up()).getBlock().getRegistryName(),
+                world.getBlockState(b.up(2)).getBlock().getRegistryName(),
+                world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
     }
 
     /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */

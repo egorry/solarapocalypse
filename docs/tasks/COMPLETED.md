@@ -2,6 +2,18 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 7 (2026-10-08)
+- Fixed (critical): fire was put out and redrawn at every phase start; outside infinite phases one roll now serves all
+  phases, so `ignitePercent` is the total alight and lit fire stays.
+- Time skips count: sleeping, `/time add`, and `/time set` (as the skip forward to that time of day); `maxSunJump`
+  caps instead of ignoring. Unit test `ApocalypseClockTest`.
+- Blocks that pop off a changed block (plants and crops on new paths, torches, top halves) go at once and drop nothing
+  unless `blocks.dropItems`; top halves of tall plants and doors follow their bottom half instead of converting alone.
+- Rule targets and selectors take block properties (`minecraft:anvil[damage=1]`); `preserveState` modifier; modifiers
+  stack (`-> target @ 30% preserveState`).
+- Solar fire also kept off diagonal neighbours and ice and snow.
+- Defaults: cloth and carpet no longer burn at 30 % in phase 2 (all of it in phase 3).
+
 ## Turn 6 (2026-10-08)
 - Fixed: the engine's time budget was a deadline from the tick's start, so a world tick longer than the budget left it
   no time (no block changes in the user's singleplayer test). Self-test stage with 12 ms slow world ticks.
