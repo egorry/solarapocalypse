@@ -58,7 +58,6 @@ public final class SolarConfig {
     // clock
     public static ClockMode clockMode;
     public static int ticksPerDay;
-    public static int maxSunJump;
     public static boolean progressWhileEmpty;
     // phases
     public static double safeDays;
@@ -80,6 +79,8 @@ public final class SolarConfig {
     public static boolean blockPhysics;
     public static String[] vanillaFireBlacklist;
     public static boolean nightDousesFire;
+    public static int skipBoostSeconds, skipMaxBlockChangesPerTick;
+    public static double skipTickBudgetMs;
     // evaporation
     public static EvaporationMode evaporationMode;
     public static double evaporationLayersPerDay;
@@ -122,8 +123,6 @@ public final class SolarConfig {
                 "setting the time of day back by less than 100 counts nothing). Stops while doDaylightCycle is false.\n" +
                 "TICKS: count server ticks; one day = ticksPerDay ticks.");
         ticksPerDay = c.getInt("ticksPerDay", cat, 24000, 1, Integer.MAX_VALUE, "TICKS mode: server ticks per apocalypse day.");
-        maxSunJump = c.getInt("maxSunJump", cat, 24000, 1, Integer.MAX_VALUE,
-                "SUN mode: the most a single time skip can add (a larger /time add counts as this much).");
         progressWhileEmpty = c.getBoolean("progressWhileEmpty", cat, false,
                 "true: time runs while no player is online and the changes are caught up when terrain loads.\n" +
                 "false: the apocalypse pauses while the server is empty.");
@@ -221,6 +220,12 @@ public final class SolarConfig {
         maxBlockChangesPerTick = c.getInt("maxBlockChangesPerTick", cat, 512, 0, Integer.MAX_VALUE,
                 "...and at most this many block changes per server tick, which caps what clients are sent and must redraw.\n" +
                 "0 = no limit.");
+        skipBoostSeconds = c.getInt("skipBoostSeconds", cat, 30, 0, 3600,
+                "After a /time set or /time add skip (not sleeping, which keeps the budget above), the engine catches up with the\n" +
+                "bigger budget below for this many seconds: faster, with some lag. 0 = no boost.");
+        skipTickBudgetMs = c.get(cat, "skipTickBudgetMs", 20.0, "Milliseconds per server tick during that boost.").getDouble();
+        skipMaxBlockChangesPerTick = c.getInt("skipMaxBlockChangesPerTick", cat, 2048, 0, Integer.MAX_VALUE,
+                "Block changes per server tick during that boost (0 = no limit).");
 
         cat = "splash";
         c.setCategoryComment(cat, "The splash title of a phase (phase_n.splash) on every player's screen. Text in a phase's message\n" +
@@ -309,12 +314,13 @@ public final class SolarConfig {
                 "excludes. Target: modid:name, modid:name:meta, modid:name[property=value,...] or air. Modifiers, in any order:\n" +
                 "@ <chance>%, and preserveState (keep the block's facing and other properties the target has too, unless the target\n" +
                 "sets them), e.g. minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState. The top half of a tall\n" +
-                "plant or door never converts by itself: it goes when its bottom half changes.\n" +
+                "plant or door never converts by itself: it goes when its bottom half changes. dimensions=-1 (or 0,-1; * = all, as\n" +
+                "without it) limits a rule to those dimensions; a rule scoped elsewhere does not hide an older one.\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
                 "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
-                "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
-                "phase with a rule for it wins).");
+                "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules\n" +
+                "still apply (per block, the latest phase with a rule for it wins).");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 1, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
                 "snow layers and the like on it). Converting a block to air makes the block below the new surface.\n" +
@@ -324,12 +330,13 @@ public final class SolarConfig {
                 "days: -1 = the rest of the phase's days (at once if none are left), 0 = at once. Infinite phases: at once.").getDouble();
         p.destroy = c.getStringList("destroy", cat, d.destroy,
                 "Selectors of blocks removed down to the phase's depth (erosion). * = every breakable block; !<selector>\n" +
-                "excludes (* and !minecraft:obsidian on two lines).");
+                "excludes (* and !minecraft:obsidian on two lines). dimensions=... limits an entry to those dimensions, as in convert.");
         p.evaporate = c.getStringList("evaporate", cat, d.evaporate,
                 "Liquids that evaporate from this phase on wherever the sun reaches them (see the evaporation section); a liquid\n" +
                 "goes from the first phase that lists it. Selectors as in convert (* = every liquid), plus fluid:<name> (Forge\n" +
                 "fluid name, e.g. fluid:water) and temperature<K, <=, >, >= (Forge fluid temperature in kelvin: water 300, lava\n" +
-                "1300). Example: material:water and !temperature<250 here, temperature<250 in a later phase for cold liquids.");
+                "1300). Example: material:water and !temperature<250 here, temperature<250 in a later phase for cold liquids.\n" +
+                "dimensions=... limits an entry to those dimensions, as in convert.");
         p.ignitePercent = c.get(cat, "ignitePercent", d.ignite,
                 "Percent of surface blocks alight with solar fire once the phase's conversions are done (chosen at random but\n" +
                 "fixed): looks, sounds and burns like fire but never spreads. A total: 25 then 50 in the next phase keeps the first\n" +
@@ -343,11 +350,12 @@ public final class SolarConfig {
         p.backgroundDamage = c.get(cat, "backgroundDamage", d.backgroundDamage,
                 "Damage per interval to mobs wherever sky light reaches (entities.backgroundMinSkyLight), sun or not.").getDouble();
         p.backgroundFireSeconds = c.getInt("backgroundFireSeconds", cat, 0, 0, 3600, "Seconds background heat sets mobs on fire.");
-        p.message = c.getString("message", cat, "", "Chat message to every player when the phase starts; empty = none.");
-        p.sound = c.getString("sound", cat, "",
+        p.message = c.getString("message", cat, "Phase " + n,
+                "Chat message to every player when the phase starts; empty = none. (Defaults are placeholders for testing.)");
+        p.sound = c.getString("sound", cat, "minecraft:entity.lightning.thunder",
                 "Sound played to every player when the phase starts: any sound name the client knows (from a sounds.json), e.g.\n" +
                 "minecraft:entity.lightning.thunder; empty = none.").trim();
-        p.splash = c.getString("splash", cat, "",
+        p.splash = c.getString("splash", cat, "Phase " + number(n),
                 "Title shown big on every player's screen when the phase starts, with the message small underneath (see the\n" +
                 "splash section); empty = none.");
         return p;
@@ -377,7 +385,7 @@ public final class SolarConfig {
                         "material:leaves -> air", "material:gourd -> air", "material:web -> air", "material:vine -> air",
                         "material:ice -> air", "material:packed_ice -> air", "material:cactus -> air"},
                 {"material:wood -> air", "minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"},
-                {"minecraft:sand -> solarapocalypse:vitrified_sand"},
+                {"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"},
                 {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"}};
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
@@ -436,6 +444,14 @@ public final class SolarConfig {
         StringBuffer out = new StringBuffer();
         while (m.find()) m.appendReplacement(out, String.format("%12s", m.group()).replace(' ', '0'));
         return m.appendTail(out).toString();
+    }
+
+    private static final String[] NUMBERS = {"Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+            "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty"};
+
+    /** 1 -> "One" (up to twenty, then digits), for the placeholder splash titles. */
+    private static String number(int n) {
+        return n < NUMBERS.length ? NUMBERS[n] : String.valueOf(n);
     }
 
     private static int color(Configuration c, String cat, String key, String def, String comment) {

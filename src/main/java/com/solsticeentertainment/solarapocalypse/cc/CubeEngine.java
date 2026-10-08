@@ -25,6 +25,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -102,6 +103,14 @@ public final class CubeEngine {
             SolarApocalypse.LOGGER.warn("Cube {} loaded while the apocalypse was changing blocks (reported once)",
                     event.getCube().getCoords(), new Throwable("cube load during a block change"));
         }
+    }
+
+    /** A block a player (or wand, enderman...) placed changes on the engine's next pass, so placing cannot hold it off. */
+    @SubscribeEvent
+    public static void onPlace(BlockEvent.EntityPlaceEvent event) {
+        World world = event.getWorld();
+        if (world.isRemote || !SolarApocalypse.isActive(world) || !CubicSky.isCubic(world)) return;
+        state(world).queue.add(CubePos.fromBlockCoords(event.getPos()));
     }
 
     @SubscribeEvent

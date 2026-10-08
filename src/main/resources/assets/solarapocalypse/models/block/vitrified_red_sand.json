@@ -1,0 +1,6 @@
+{
+    "parent": "block/cube_all",
+    "textures": {
+        "all": "solarapocalypse:blocks/vitrified_red_sand"
+    }
+}

@@ -2,6 +2,16 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 9 (2026-10-09)
+- The user's working rules in CLAUDE.md (file everything, disagree openly, check before surprises, few-word references).
+- `dimensions=` scope for convert, destroy and evaporate entries (filter first, no shadowing); self-test check.
+- Placeholder announcements per phase; each crossed phase announced in turn; late joiners get the running phase's.
+- `maxSunJump` removed; skip boost after `/time set` and `/time add`; dying in one's sleep in infinite phases.
+- Placed blocks queue their cube.
+- Red vitrified sand (variant property, drops red sand; default rule with preserveState).
+- Docs: decisions answered, TODO reordered (world-gen preset validation last), webs to OUTOFSCOPE, the hold-the-clock
+  idea dropped, non-falling gravel and sand filed.
+
 ## Turn 8 (2026-10-08)
 - Fixed: crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block callback loaded a cube mid-pass;
   vanilla fire is placed only where its six neighbours are loaded; the first mid-pass cube load is logged once.

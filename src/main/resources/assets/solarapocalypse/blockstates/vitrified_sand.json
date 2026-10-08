@@ -1,5 +1,6 @@
 {
     "variants": {
-        "normal": { "model": "solarapocalypse:vitrified_sand" }
+        "variant=sand": { "model": "solarapocalypse:vitrified_sand" },
+        "variant=red_sand": { "model": "solarapocalypse:vitrified_red_sand" }
     }
 }

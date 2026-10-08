@@ -3,11 +3,16 @@ package com.solsticeentertainment.solarapocalypse;
 import com.solsticeentertainment.solarapocalypse.client.SplashOverlay;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.SPacketCustomSound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.text.TextComponentString;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.network.ByteBufUtils;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -16,7 +21,17 @@ import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 
-/** Phase starts: one log line, and from the phase's config a chat message, a sound and a splash title for every player. */
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Phase starts: one log line, and from the phase's config a chat message, a sound and a splash title for every player;
+ * several phases crossed at once are announced one after another; a player who joins later gets the running phase's.
+ */
 public final class Announcer {
 
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(Tags.MOD_ID);
@@ -25,18 +40,67 @@ public final class Announcer {
 
     public static void register() {
         CHANNEL.registerMessage(SplashHandler.class, Splash.class, 0, Side.CLIENT);
+        MinecraftForge.EVENT_BUS.register(Announcer.class);
     }
 
-    /** A phase (0-based) has just started. */
-    public static void phaseStarted(MinecraftServer server, int phase, long progress) {
-        SolarConfig.Phase p = SolarConfig.phases[phase];
-        SolarApocalypse.LOGGER.info("Solar apocalypse phase {} begins on day {}{}", phase + 1,
-                String.format("%.2f", progress / (double) Timeline.DAY), p.message.isEmpty() ? "" : ": " + p.message);
-        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) announce(player, phase);
+    /** Phases still to announce to everyone, one after another (a skip can cross several). */
+    private static final Deque<Integer> QUEUE = new ArrayDeque<>();
+    private static int wait;
+    /** Players who just joined, ticks until they get the running phase's announcement if they missed it. */
+    private static final Map<UUID, Integer> JOINED = new HashMap<>();
+    private static final String SEEN = Tags.MOD_ID + ":announcedPhase";
+
+    /** Phases first..last (0-based) have just started, in order; each is announced once the previous splash is over. */
+    public static void phasesStarted(int first, int last, long progress) {
+        Timeline timeline = SolarApocalypse.timeline();
+        for (int phase = first; phase <= last; phase++) {
+            SolarConfig.Phase p = SolarConfig.phases[phase];
+            long day = phase == last ? progress : timeline.start(phase);
+            SolarApocalypse.LOGGER.info("Solar apocalypse phase {} begins on day {}{}", phase + 1,
+                    String.format("%.2f", day / (double) Timeline.DAY), p.message.isEmpty() ? "" : ": " + p.message);
+            QUEUE.add(phase);
+        }
+    }
+
+    /** Every server tick: the next queued phase announcement, and those owed to players who joined. */
+    public static void tick(MinecraftServer server) {
+        if (wait > 0) wait--;
+        else if (!QUEUE.isEmpty()) {
+            int phase = QUEUE.poll();
+            for (EntityPlayerMP player : server.getPlayerList().getPlayers()) announce(player, phase);
+            wait = SolarConfig.splashFadeInTicks + SolarConfig.splashStayTicks + SolarConfig.splashFadeOutTicks;
+        }
+        for (Iterator<Map.Entry<UUID, Integer>> it = JOINED.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<UUID, Integer> e = it.next();
+            if (e.getValue() > 0) {
+                e.setValue(e.getValue() - 1);
+                continue;
+            }
+            it.remove();
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(e.getKey());
+            int phase = SolarApocalypse.timeline().phaseAt(ApocalypseClock.progress());
+            if (player != null && phase >= 0 && seen(player).getInteger(SEEN) < phase + 1) announce(player, phase);
+        }
+    }
+
+    /** A player who missed the running phase's announcement (offline when it started) gets it shortly after joining. */
+    @SubscribeEvent
+    public static void onJoin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.player instanceof EntityPlayerMP) JOINED.put(event.player.getUniqueID(), 60); // once the client shows the world
+    }
+
+    /** The player's persisted data, which survives death; holds the last phase (1-based) announced to them. */
+    private static NBTTagCompound seen(EntityPlayerMP player) {
+        NBTTagCompound data = player.getEntityData();
+        NBTTagCompound persisted = data.getCompoundTag(EntityPlayer.PERSISTED_NBT_TAG);
+        data.setTag(EntityPlayer.PERSISTED_NBT_TAG, persisted);
+        return persisted;
     }
 
     /** Sends a phase's message, sound and splash to one player (also /solar announce). */
     public static void announce(EntityPlayerMP player, int phase) {
+        NBTTagCompound seen = seen(player);
+        seen.setInteger(SEEN, Math.max(seen.getInteger(SEEN), phase + 1));
         SolarConfig.Phase p = SolarConfig.phases[phase];
         if (!p.message.isEmpty()) player.sendMessage(new TextComponentString(format(p.message)));
         if (!p.sound.isEmpty()) {

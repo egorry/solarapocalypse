@@ -10,6 +10,21 @@
 - "Commit" means commit and push. Commit and push at the end of every turn (and freely in between). Ask the user
   before anything else in git (deleting, rebasing, branching, force-pushing...).
 - Only Cubic Chunks (and CubicWorldGen) are soft dependencies; nothing is tailored to the user's modpack.
+
+## Working with the user (their rules)
+- Every word the user writes is deliberate. File every request, question, decision, priority and observation somewhere
+  visible, down to the detail: TODO.md (with its "Waiting for the user's decision" section), COMPLETED.md, IDEAS.md,
+  OUTOFSCOPE.md, SPEC.md, CHANGELOG.md, or a direct answer in the reply. Tell the user briefly where each item went.
+- Suggestions the user relays from elsewhere ("Claude suggests...") are the user's own: file them the same way.
+- Disagreeing is fine, silently is not: never drop, narrow, reinterpret or park an ask without saying so and why. Put
+  open points in TODO.md "Waiting for the user's decision" with your view, and let the user decide.
+- Check with the user before doing something they would not expect (a changed default, a behaviour they did not ask
+  for). An approval covers that case only.
+- When referring back to an earlier item, name it in a few words ("the night dousing on/off plan"), never only "your
+  plan" or a bare number.
+- Priorities: the user's where given, otherwise Claude's with the reason, labelled in TODO.md. Cubic Chunks items before
+  vanilla-world items. Do what fits comfortably in a turn, not everything at once; keep it simple within reason.
+- Before a dev run that can overwrite the user's files (configs, logs), copy them aside and restore them afterwards.
 - The user's CurseForge instances may be read, never modified. Target pack: `C:\Users\Solstice\curseforge\minecraft\Instances\Cubic Chunks`.
 - Sibling projects `../SRPCCC` and `../SolsticeCCPatches` share the setup and research material (CC 0.0.1271 decomp:
   `../SRPCCC/research/decomp/CubicChunks`, CC source: `../SRPCCC/research/repos/CubicChunks`, CWG:

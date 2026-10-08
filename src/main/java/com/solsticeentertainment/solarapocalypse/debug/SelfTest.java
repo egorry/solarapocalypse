@@ -18,6 +18,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.BlockAnvil;
 import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoublePlant;
+import net.minecraft.block.BlockSand;
 import net.minecraft.block.BlockStairs;
 import net.minecraft.block.BlockTallGrass;
 import net.minecraft.block.BlockTorch;
@@ -277,7 +278,25 @@ public final class SelfTest {
         b.destroy = new String[0];
         a.evaporate = new String[]{"material:water, !temperature>=1000"};
         b.evaporate = new String[]{"fluid:lava"};
-        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{a, b});
+        a.convert = append(a.convert, "minecraft:glowstone -> minecraft:cobblestone");
+        b.convert = append(b.convert, "minecraft:glowstone -> minecraft:magma dimensions=-1");
+        b.destroy = new String[]{"minecraft:soul_sand dimensions=0, -1"};
+        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{a, b}, 0), nether = BlockRules.compile(new SolarConfig.Phase[]{a, b}, -1),
+                end = BlockRules.compile(new SolarConfig.Phase[]{a, b}, 1);
+        IBlockState glowstone = Blocks.GLOWSTONE.getDefaultState(), soulSand = Blocks.SOUL_SAND.getDefaultState();
+        log("rules, dimensions: glowstone in phase 2 -> {} in the overworld (cobblestone: the Nether-only rule does not shadow"
+                        + " phase 1's), {} in the Nether (magma); soul sand destroyed in phase {} overworld (1), {} Nether (1), {} End (-1)",
+                r.convert(1, glowstone), nether.convert(1, glowstone), r.destroyPhase(1, soulSand), nether.destroyPhase(1, soulSand),
+                end.destroyPhase(1, soulSand));
+        SolarConfig.Phase melt = new SolarConfig.Phase();
+        melt.convert = new String[]{"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"};
+        melt.destroy = new String[0];
+        melt.evaporate = new String[0];
+        IBlockState redSand = Blocks.SAND.getDefaultState().withProperty(BlockSand.VARIANT, BlockSand.EnumType.RED_SAND);
+        BlockRules.Step glass = BlockRules.compile(new SolarConfig.Phase[]{melt}, 0).convert(0, redSand);
+        IBlockState vitrified = glass == null ? null : glass.pick(0, 64, 0, redSand);
+        log("rules: red sand -> {} (vitrified_sand, variant red_sand), which drops sand meta {} (1)", vitrified,
+                vitrified == null ? -1 : vitrified.getBlock().damageDropped(vitrified));
         log("rules: evaporation from phase water {} (expect 0), flowing water {} (0), lava {} (1), flowing lava {} (1), stone {} (-1)",
                 r.evaporationPhase(Blocks.WATER.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_WATER.getDefaultState()),
                 r.evaporationPhase(Blocks.LAVA.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_LAVA.getDefaultState()),
@@ -306,6 +325,12 @@ public final class SelfTest {
         log("rules: stairs -> {} (stone stairs, facing east, half top), anvil facing west -> {} in {} of 10000 (~2500), top half of"
                         + " a tall plant -> {} (none), bottom half -> {} (deadbush)", r.convert(0, stairs), damaged, hits,
                 r.convert(0, upper), r.convert(0, Blocks.DOUBLE_PLANT.getDefaultState()));
+    }
+
+    private static String[] append(String[] list, String entry) {
+        String[] out = java.util.Arrays.copyOf(list, list.length + 1);
+        out[list.length] = entry;
+        return out;
     }
 
     /** Turns grass under tall grass and under a sunflower into path: both pop off at once, and nothing drops. */

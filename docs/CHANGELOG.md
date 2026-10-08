@@ -55,6 +55,15 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Blocks hanging on the side of a changed block (wall torches, ladders) pop off quietly too.
 - A plant a rule makes where vanilla cannot keep it (a dead bush on grass) is removed at once, instead of popping off
   later and dropping sticks.
+- `dimensions=` on convert, destroy and evaporate entries limits them to some dimensions.
+- Placeholder phase announcements by default ("Phase 1", thunder, "Phase One"), for testing.
+- A skip across several phase starts announces each phase in turn; players who join later get the running phase's
+  announcement.
+- `/time add` counts in full (no `maxSunJump` any more); after `/time set` or `/time add` the engine catches up faster
+  for 30 s (`performance.skip*`); sleeping keeps the normal budget.
+- Sleeping (or skipping time) where an infinite phase's erosion passes kills the player.
+- Blocks players place change on the engine's next pass, instead of on their cube's next scheduled look.
+- Red vitrified sand from red sand (drops red sand).
 ### Fixed
 - Crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block change loaded a neighbouring cube.
 - A single cube with many slow changes (lighting after trees burn) could overrun the tick budget (one 188 ms tick seen);

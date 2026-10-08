@@ -1,3 +1,4 @@
 death.attack.solarapocalypse.sun=%1$s was scorched by the sun
 tile.solarapocalypse.solar_fire.name=Solar Fire
-tile.solarapocalypse.vitrified_sand.name=Vitrified Sand
+tile.solarapocalypse.vitrified_sand.sand.name=Vitrified Sand
+tile.solarapocalypse.vitrified_sand.red_sand.name=Vitrified Red Sand

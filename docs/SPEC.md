@@ -12,8 +12,13 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
 - `clock.mode = SUN` (default) adds the forward movement of the overworld's `worldTime`: a day lasts as long as the sun
   takes, so any day-length mod is followed. Skipped time counts: sleeping and `/time add` as they move the clock,
   `/time set` (which sets the time back to that day's value) as the skip forward to that time of day; setting the time of
-  day back by less than 100 counts nothing (a day-length mod such as Longer Days steps the time back by one each tick); one skip adds at
-  most `clock.maxSunJump` (a day). The engine then catches the loaded terrain up. It stops while `doDaylightCycle` is
+  day back by less than 100 counts nothing (a day-length mod such as Longer Days steps the time back by one each tick); `/time add` counts
+  in full. The engine then catches the loaded terrain up: after sleeping at the normal lag-safe budget; after a
+  `/time set` or `/time add`, for `performance.skipBoostSeconds` (30) with `skipTickBudgetMs` (20) and
+  `skipMaxBlockChangesPerTick` (2048), faster with some lag. A big skip in an infinite phase leaves a large backlog
+  (at 200 layers a day a night's sleep is about 90 layers per loaded column), which the engine works off over the
+  following minutes. Players whose ground (bed or the block under them) the erosion of an infinite phase took during
+  a skip die ("scorched by the sun"), checked once per skip; creative and spectator players are spared. It stops while `doDaylightCycle` is
   false. `TICKS` counts server ticks (`clock.ticksPerDay` per day).
 - `clock.progressWhileEmpty = false` pauses while nobody is online; `true` keeps counting and terrain catches up on load.
 - Every "days" setting is in apocalypse days, whose length the clock mode defines: in `TICKS` mode one day is
@@ -92,18 +97,25 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    phases one roll serves every phase, so the percent is the total alight: 25 % then 50 % keeps the first 25 % and
    lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases fire is
    tagged with its layer and redrawn on every new layer. Punching the block under it puts it out (it comes back on the
-   cube's next look). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
+   cube's next look). Vanilla fire is left to vanilla (it spreads and burns out). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
    between time of day 12000 and 14000, and lights the same spots again between 23000 and 1000; no new fire (solar or
    vanilla) is lit at night, vanilla fire already burning is left to vanilla. It reads the world's time of day, so
    sleeping and `/time set` take effect on the next look at each cube (in `TICKS` clock mode, when the cube's next look
-   is due). No solar fire goes next to (diagonals too) a block that can burn, nor next to ice or snow (or on snow): it
+   is due). After sleeping (to time of day 0) about half the spots light again on the next look and the rest within the
+   next 1000 ticks (50 s); while players sleep no fire is visible anyway. No solar fire goes next to (diagonals too) a block that can burn, nor next to ice or snow (or on snow): it
    would take the space vanilla fire spreads into, or look odd next to wood that never catches (fire spread off) or ice
    that never melts. Those positions just stay empty (checked on each look at the cube). Ice and snow farther away melt
    as vanilla has them (ice at block light 9+, about 6 blocks from fire; snow at 12+, about 3 blocks).
 
-- **Vitrified sand** (`solarapocalypse:vitrified_sand`): sand the sun melted in place, a rough, cloudy glass (translucent,
-  culls against itself, sand-coloured on maps; mobs do not spawn on it, as on glass). Breaking it drops one sand; silk
-  touch keeps the block. Placeholder texture until the user's own.
+- **Vitrified sand** (`solarapocalypse:vitrified_sand`, `variant` sand or red_sand like vanilla sand): sand the sun
+  melted in place, a rough, cloudy glass (translucent, culls against itself, sand-coloured on maps; mobs do not spawn on
+  it, as on glass). Breaking it drops one sand of its variant; silk touch keeps the block. Placeholder textures.
+- **Dimensions**: any convert, destroy or evaporate entry can end with `dimensions=-1` (or `dimensions=0,-1`;
+  `dimensions=*` or nothing = every dimension in `world.dimensions`). Entries are filtered by dimension first, then the
+  usual phase, CARRY and rule-order logic runs, so a rule scoped elsewhere never shadows an older rule, and there is no
+  hidden priority: with `glowstone -> magma dimensions=-1` before `glowstone -> cobblestone`, Nether glowstone becomes
+  magma and elsewhere cobblestone. Intrinsic changes (sponges drying, masonry cracking) fit `*`; environmental ones
+  (netherrack to magma) a dimension.
 - Selectors: `modid:name`, `modid:name:meta`, `modid:name[property=value,...]`, `modid:*`, `#oreDictName`, `material:<name>`, `*`. Wildcards skip
   unbreakable blocks. Several can be combined with commas, and `!` excludes: `material:rock, !minecraft:cobblestone`
   (a destroy list counts as one combined selector). Exclusions apply to the list or rule they are in, not to rules
@@ -119,18 +131,20 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   makes where it cannot live (a dead bush on grass or path; vanilla keeps dead bushes on sand, dirt and hardened clay
   only) is removed at once instead of popping off later with drops. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
   off (Forge's `restoringBlockSnapshots` switch is set during the change).
-- Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to
+- Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to Every phase announces itself with placeholder defaults for testing: message "Phase n", the thunder sound,
+  splash "Phase One" (the number as a word).
   paths. 2: 30 % of paths to dirt, 30 % of snow burns, TNT goes; 25 % fire.
   3: the rest of those, wool and carpets, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
   4 a day from sea level); 50 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
-  evaporate (`*, !material:lava`); 75 % fire. 5: sand melts to vitrified sand; 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
+  evaporate (`*, !material:lava`); 75 % fire. 5: sand melts to vitrified sand (red sand to red vitrified sand); 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
   7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 90-95 %. 11: infinite erosion at 200 layers a
   day (one every 6 s); 100 %. Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
   phase 7; heat 0.25 from phase 4 rising to 4; Fire Resistance protects from the sun, not the heat. Fire percentages
   are the same for solar fire and vanilla fire on flammables.
 
 ## 4. Engine (Cubic Chunks worlds)
-- Cubes are queued on load (new and reloaded: the retroactive part), on phase starts, on `/solar` time changes and
+- Cubes are queued on load (new and reloaded: the retroactive part), when a player (or a wand, an enderman...) places
+  a block in them (so placing cannot hold the apocalypse off), on phase starts, on `/solar` time changes and
   reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
   1/20 day, or per layer in an infinite phase, so erosion and its fire move layer by layer). Queued cubes are processed
   once ready (populated, lit, surface-tracked), top-down per x/z. A block's own callbacks (vanilla fire placed, a block
@@ -200,5 +214,7 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   1802), unchanged after 200 ticks; with `nightDousesFire`: 0 at midnight, 4.9 % half way through the sunset (half of
   9.9 %), 9.9 % again the next morning; in the infinite phase 14.0-14.5 % (15 % asked), only the current layer's fire left;
   `TOP_Y` line of phase 6 at Y 26-45: 0 of 13-230 k positions above it still hold a block.
+- In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
+  up to the infinite one can be watched.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and
   burning in a client.

@@ -114,7 +114,12 @@ public final class BlockRules {
 
     private BlockRules() {}
 
-    public static BlockRules compile(SolarConfig.Phase[] phases) {
+    /**
+     * The rules for one dimension: an entry with dimensions=... (e.g. dimensions=-1 or dimensions=0,-1; * = all, as without
+     * it) only exists in those dimensions. Filtering comes first, so a rule scoped elsewhere never shadows an older rule;
+     * phases, CARRY and rule order then work as usual.
+     */
+    public static BlockRules compile(SolarConfig.Phase[] phases, int dimension) {
         BlockRules rules = new BlockRules();
         List<IBlockState> states = new ArrayList<>();
         for (Block block : ForgeRegistries.BLOCKS) states.addAll(block.getBlockState().getValidStates());
@@ -123,7 +128,7 @@ public final class BlockRules {
             List<Predicate<IBlockState>> from = new ArrayList<>();
             List<Target> to = new ArrayList<>();
             List<Double> share = new ArrayList<>();
-            for (String raw : phases[i].convert) {
+            for (String raw : scoped(phases[i].convert, dimension)) {
                 String line = raw.replaceAll("\\s+(?=[^\\[\\]]*\\])", ""); // no spaces inside [...]
                 int arrow = line.indexOf("->");
                 if (arrow < 0) {
@@ -146,8 +151,8 @@ public final class BlockRules {
                 to.add(target);
                 share.add(chance);
             }
-            Predicate<IBlockState> gone = selectors(phases[i].destroy, where);
-            Predicate<IBlockState> dry = selectors(phases[i].evaporate, where);
+            Predicate<IBlockState> gone = selectors(scoped(phases[i].destroy, dimension), where);
+            Predicate<IBlockState> dry = selectors(scoped(phases[i].evaporate, dimension), where);
             boolean carryConvert = SolarConfig.convertRuleMode == SolarConfig.RuleMode.CARRY && i > 0;
             boolean carryDestroy = SolarConfig.destroyRuleMode == SolarConfig.RuleMode.CARRY && i > 0;
             Map<IBlockState, Step> conversions = carryConvert ? new IdentityHashMap<>(rules.convert.get(i - 1)) : new IdentityHashMap<>();
@@ -254,6 +259,28 @@ public final class BlockRules {
             out.put(p, value);
         }
         return out;
+    }
+
+    private static final Pattern DIMENSIONS = Pattern.compile("(?i)\\s*\\bdimensions\\s*=\\s*(\\*|-?\\d+(?:\\s*,\\s*-?\\d+)*)");
+
+    /** The entries that apply in a dimension, without their dimensions=... modifier. */
+    private static String[] scoped(String[] entries, int dimension) {
+        List<String> out = new ArrayList<>();
+        for (String entry : entries) {
+            Matcher m = DIMENSIONS.matcher(entry);
+            if (!m.find()) {
+                out.add(entry);
+                continue;
+            }
+            String rest = entry.substring(0, m.start()) + " " + entry.substring(m.end());
+            for (String d : m.group(1).split(",")) {
+                if (d.trim().equals("*") || Integer.parseInt(d.trim()) == dimension) {
+                    out.add(rest.trim());
+                    break;
+                }
+            }
+        }
+        return out.toArray(new String[0]);
     }
 
     /** "30%" or "30" -> 0.3; -1 if unreadable. */

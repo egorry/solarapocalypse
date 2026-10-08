@@ -2,7 +2,11 @@ package com.solsticeentertainment.solarapocalypse;
 
 import com.solsticeentertainment.solarapocalypse.cc.CubeEngine;
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
+import net.minecraft.block.material.Material;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
@@ -24,6 +28,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -36,7 +41,9 @@ public class SolarApocalypse {
     private static final boolean CUBIC_CHUNKS = Loader.isModLoaded("cubicchunks");
 
     private static Timeline timeline;
-    private static BlockRules rules;
+    private static final Map<Integer, BlockRules> RULES = new HashMap<>(); // per dimension (rules can be scoped)
+    private static int boostUntil = Integer.MIN_VALUE; // server tick until which a /time skip catches up faster
+    private static boolean boost;
     private static final Map<World, BlockChanges> CHANGES = new WeakHashMap<>();
     private static int lastPhase = Integer.MIN_VALUE;
     private static long budgetNanos;
@@ -101,7 +108,7 @@ public class SolarApocalypse {
 
     private static void rebuild() {
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
-        rules = BlockRules.compile(SolarConfig.phases);
+        RULES.clear();
         summarize();
         CHANGES.clear();
         if (CUBIC_CHUNKS) CubicSky.reset();
@@ -128,7 +135,8 @@ public class SolarApocalypse {
                             + " states), {} liquid states start evaporating",
                     i + 1, String.format("%.2f", timeline.start(i) / (double) Timeline.DAY), String.format("%.2f", timeline.end(i) / (double) Timeline.DAY),
                     p.depth == SolarConfig.INFINITE ? "infinite" : String.valueOf(p.depth), line == Timeline.TOP ? "TOP_Y" : "SURFACE",
-                    layerTime(i), p.convert.length, rules.convertCount(i), p.destroy.length, rules.destroyCount(i), rules.evaporateCount(i));
+                    layerTime(i), p.convert.length, rules(0).convertCount(i), p.destroy.length, rules(0).destroyCount(i),
+                    rules(0).evaporateCount(i));
         }
     }
 
@@ -162,7 +170,39 @@ public class SolarApocalypse {
     }
 
     public static BlockChanges changes(World world) {
-        return CHANGES.computeIfAbsent(world, w -> new BlockChanges(timeline, rules, evaporationTopY(w)));
+        return CHANGES.computeIfAbsent(world, w -> new BlockChanges(timeline, rules(w.provider.getDimension()), evaporationTopY(w)));
+    }
+
+    /** The block rules of a dimension (entries scoped with dimensions=... apply only where they say), compiled on first use. */
+    public static BlockRules rules(int dimension) {
+        return RULES.computeIfAbsent(dimension, d -> BlockRules.compile(SolarConfig.phases, d));
+    }
+
+    /**
+     * The clock skipped ahead (sleeping, /time set, /time add; ApocalypseClock). The engine catches up on its own; after a
+     * /time command with the bigger performance.skip* budget for a while. Players whose ground an infinite phase's erosion
+     * took during the skip die in their sleep.
+     */
+    static void skipped(long from, long to, boolean command) {
+        MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
+        if (command && SolarConfig.skipBoostSeconds > 0) boostUntil = server.getTickCounter() + SolarConfig.skipBoostSeconds * 20;
+        LOGGER.info("Time skip of {} days ({}){}", String.format("%.2f", (to - from) / (double) Timeline.DAY), command ? "/time" : "sleep",
+                command && SolarConfig.skipBoostSeconds > 0 ? ", catching up faster for " + SolarConfig.skipBoostSeconds + " s" : "");
+        int phase = timeline.phaseAt(to);
+        if (phase < 0 || !timeline.infinite(phase)) return;
+        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+            World world = player.world;
+            if (!isActive(world) || !isCubic(world) || player.isCreative() || player.isSpectator()) continue;
+            BlockPos ground = new BlockPos(player.posX, player.posY - 0.5, player.posZ); // the block (or bed) they are on
+            if (!world.isBlockLoaded(ground)) continue;
+            IBlockState state = world.getBlockState(ground);
+            int surface = CubeEngine.groundAt(world, ground.getX(), ground.getZ());
+            IBlockState after = changes(world).evaluate(state, ground, surface, topY(world), BlockChanges.NO_Y, Sky.UNKNOWN, to);
+            if (state.getMaterial() != Material.AIR && after.getMaterial() == Material.AIR) {
+                LOGGER.info("{} slept where the erosion passed and dies", player.getName());
+                player.attackEntityFrom(SunDamage.SUN, Float.MAX_VALUE);
+            }
+        }
     }
 
     /** world.topY, resolving 'auto'. */
@@ -181,7 +221,7 @@ public class SolarApocalypse {
     public static void onFluidSource(BlockEvent.CreateFluidSourceEvent event) {
         World world = event.getWorld();
         if (world.isRemote || !SolarConfig.blockPhysics || !isActive(world)) return;
-        int phase = rules.evaporationPhase(event.getState());
+        int phase = rules(world.provider.getDimension()).evaporationPhase(event.getState());
         if (phase >= 0 && ApocalypseClock.progress() >= timeline.start(phase)) event.setResult(Event.Result.DENY);
     }
 
@@ -198,9 +238,10 @@ public class SolarApocalypse {
         return CubeEngine.nanos + pendingNanos - engineNanos < budgetNanos && mayChange();
     }
 
-    /** Whether performance.maxBlockChangesPerTick allows another change in this tick. */
+    /** Whether performance.maxBlockChangesPerTick (skipMaxBlockChangesPerTick right after a /time skip) allows another change. */
     public static boolean mayChange() {
-        return SolarConfig.maxBlockChangesPerTick <= 0 || BlockChanges.changed - tickStartChanges < SolarConfig.maxBlockChangesPerTick;
+        int cap = boost ? SolarConfig.skipMaxBlockChangesPerTick : SolarConfig.maxBlockChangesPerTick;
+        return cap <= 0 || BlockChanges.changed - tickStartChanges < cap;
     }
 
     @SubscribeEvent
@@ -220,16 +261,19 @@ public class SolarApocalypse {
         tickStartChanges = BlockChanges.changed;
         double freeMs = Math.max(0, 50 - (averageMs - engineMs));
         double budgetMs = Math.max(MIN_BUDGET_MS, Math.min(SolarConfig.tickBudgetMs, SolarConfig.freeTickShare * freeMs));
+        boost = server.getTickCounter() < boostUntil;
+        if (boost) budgetMs = Math.max(budgetMs, SolarConfig.skipTickBudgetMs);
         budgetNanos = (long) (budgetMs * 1.0E6);
         long progress = ApocalypseClock.progress();
         int phase = timeline.phaseAt(progress);
         if (phase != lastPhase) {
             if (lastPhase != Integer.MIN_VALUE) {
                 if (phase < 0) LOGGER.info("The sun is calm again");
-                else Announcer.phaseStarted(server, phase, progress);
+                else Announcer.phasesStarted(phase > lastPhase ? Math.max(lastPhase + 1, 0) : phase, phase, progress);
                 requeueAll();
             }
             lastPhase = phase;
         }
+        Announcer.tick(server);
     }
 }
