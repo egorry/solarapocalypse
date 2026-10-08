@@ -45,8 +45,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - What a changed block can no longer hold (plants and crops on new paths, torches, the top half of tall plants and
   doors) pops off at once and drops nothing unless `blocks.dropItems`; tall plants and doors convert as a whole.
 - No solar fire diagonally next to flammable blocks either, nor next to ice and snow.
+- Setting the time back by less than 1000 in the time of day (e.g. 23600 to 23500) no longer counts as a day skipped.
 - Phase 2 no longer burns 30 % of wool and carpets by default (phase 3 burns all of it).
+- `blocks.nightDousesFire` (default false): night puts the sun's fire out, spot by spot over the sunset, and lights the
+  same spots again over the sunrise.
+- Infinite phases look at each cube every layer instead of every 1/20 day, so erosion and its fire move layer by layer.
+- Vitrified sand: sand melted in place by the sun (phase 5 by default, instead of glass); breaks back into sand.
+- The config file is tidied on every load: sections in number order, keys from older versions dropped.
+- Blocks hanging on the side of a changed block (wall torches, ladders) pop off quietly too.
+- A plant a rule makes where vanilla cannot keep it (a dead bush on grass) is removed at once, instead of popping off
+  later and dropping sticks.
 ### Fixed
+- Crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block change loaded a neighbouring cube.
+- A single cube with many slow changes (lighting after trees burn) could overrun the tick budget (one 188 ms tick seen);
+  the budget is now checked before every change.
+- Solar fire went out when its ground turned into glass or a path; it now stands on anything that blocks movement.
 - Block changes never ran on servers whose own tick took longer than the time budget (singleplayer with the default 4 ms
   budget): the budget now counts the apocalypse's own time.
 - With several infinite phases at different rates, blocks were removed at the first one's rate.

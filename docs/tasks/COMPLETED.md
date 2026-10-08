@@ -2,6 +2,20 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 8 (2026-10-08)
+- Fixed: crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block callback loaded a cube mid-pass;
+  vanilla fire is placed only where its six neighbours are loaded; the first mid-pass cube load is logged once.
+- `blocks.nightDousesFire`: fire goes out spot by spot over the sunset, same spots relight over the sunrise.
+- Infinite phases look at cubes every layer (was every 1/20 day).
+- Vitrified sand block (drops sand), default phase 5 rule; placeholder texture.
+- Blocks hanging on the side of a changed block (wall torches, ladders) pop off quietly too, not only those on top.
+- Audit fixes: solar fire kept off flammable neighbours again with fire spread off; plants made where they cannot live
+  are removed at once (no later drops); the time set-back guard reads the time of day; config rewritten on load (order,
+  unused keys dropped); open decisions listed in TODO.md; time budget checked before every change inside a cube; solar
+  fire stands on any ground that blocks movement and goes only with it; set-back guard 100; dev script keeps the
+  previous logs.
+- Audit of the previous prompt's asks against the repo (workflow), gaps reported to the user.
+
 ## Turn 7 (2026-10-08)
 - Fixed (critical): fire was put out and redrawn at every phase start; outside infinite phases one roll now serves all
   phases, so `ignitePercent` is the total alight and lit fire stays.

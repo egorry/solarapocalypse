@@ -1,5 +1,6 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
@@ -108,6 +109,7 @@ public final class BlockChanges {
      * Fire comes after the phase's conversions (none while the surface block still has a conversion pending). Outside
      * infinite phases one roll serves every phase, so a phase's percent is the total alight (25 % then 50 % keeps the
      * first 25 %) and lit fire is left alone. In an infinite phase fire is tagged with its layer and redrawn on each one.
+     * With blocks.nightDousesFire there is no fire at night (see dark).
      */
     public IBlockState fire(World world, BlockPos surfacePos, IBlockState surface, long progress) {
         wake = NEVER;
@@ -125,32 +127,68 @@ public final class BlockChanges {
         boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
         double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
         if (Timeline.hash(x, y, z, infinite ? FIRE_SALT + epoch : TOTAL_FIRE_SALT) * 100 >= percent) return null;
-        if (!flammable && !surface.isTopSolid()) return null;
+        if (!flammable && !surface.getMaterial().blocksMovement()) return null; // paths, glass, slabs too; not liquids
         long due = infinite ? progress : spread(timeline.convertStart(phase), timeline.convertSpread(phase), x, y, z, FIRE_SALT - epoch);
         if (progress < due) {
             later(due);
             return null;
         }
+        if (SolarConfig.nightDousesFire && dark(world, x, y, z, progress)) return null;
         return flammable ? Blocks.FIRE.getDefaultState() : SolarFire.forEpoch(epoch);
+    }
+
+    /** Time of day: sunset starts, sunrise starts; each spot's fire goes out (comes back) within FADE of them. */
+    private static final long DUSK = 12000, DAWN = 23000, FADE = 2000;
+    private static final int NIGHT_SALT = 0x419E7000;
+
+    /**
+     * Whether night has put out a spot's fire (blocks.nightDousesFire): each spot goes dark at its own moment over the
+     * sunset and lights again (the same spot) at its own moment over the sunrise, from the world's time of day.
+     */
+    private boolean dark(World world, int x, int y, int z, long progress) {
+        long sinceDusk = Math.floorMod(world.getWorldTime() - DUSK, Timeline.DAY);
+        long out = (long) (Timeline.hash(x, y, z, NIGHT_SALT) * FADE);
+        long back = DAWN - DUSK + (long) (Timeline.hash(x, y, z, NIGHT_SALT + 1) * FADE);
+        boolean dark = sinceDusk >= out && sinceDusk < back;
+        long ticks = sinceDusk < out ? out - sinceDusk : dark ? back - sinceDusk : Timeline.DAY - sinceDusk + out;
+        // progress follows the sun one to one in SUN mode; in TICKS mode it runs at its own rate
+        double perTick = SolarConfig.clockMode == SolarConfig.ClockMode.SUN ? 1 : (double) Timeline.DAY / SolarConfig.ticksPerDay;
+        later(progress + (long) Math.ceil(ticks * perTick));
+        return dark;
     }
 
     private static final int FIRE_SALT = 1 << 20, TOTAL_FIRE_SALT = 0x7F1E0000;
 
-    /** Whether fire follows the layer (infinite phases: redrawn on each one); otherwise fire, once lit, is left alone. */
+    /** Whether fire follows the layer (infinite phases: redrawn on each one). */
     public boolean redrawsFire(long progress) {
         int phase = timeline.phaseAt(progress);
         return phase >= 0 && timeline.infinite(phase);
     }
 
     /**
-     * Whether a block next to a spot keeps solar fire off it: vanilla fire from the sun could burn it (it would spread
-     * there), or fire would melt it.
+     * Whether solar fire that should not be there now is removed: in infinite phases (the layer moved on), and with
+     * blocks.nightDousesFire (night). Otherwise fire, once lit, is left alone.
      */
-    public boolean shunsFire(World world, IBlockState state, BlockPos pos, EnumFacing towardFire) {
-        return melts(state) || burns(world, state, pos, towardFire);
+    public boolean managesFire(long progress) {
+        return SolarConfig.nightDousesFire || redrawsFire(progress);
     }
 
-    /** Ice and snow: fire next to them looks wrong (vanilla melts them near light above 11, about 3 blocks from fire). */
+    /** The shortest gap between two looks at a cube: MIN_WAKE, or a layer's time in an infinite phase (fire per layer). */
+    public long minWake(long progress) {
+        int phase = timeline.phaseAt(progress);
+        double perDay = phase < 0 || !timeline.infinite(phase) ? 0 : timeline.layersPerDay(phase);
+        return perDay <= 0 ? MIN_WAKE : Math.max(1, Math.min(MIN_WAKE, (long) (Timeline.DAY / perDay)));
+    }
+
+    /**
+     * Whether a block next to a spot keeps solar fire off it: it can burn (vanilla fire would spread there, or with fire
+     * spread off it would look odd to have fire against wood that never catches), or fire would melt it.
+     */
+    public static boolean shunsFire(World world, IBlockState state, BlockPos pos, EnumFacing towardFire) {
+        return melts(state) || state.getBlock().isFlammable(world, pos, towardFire);
+    }
+
+    /** Ice and snow: fire next to them looks wrong (vanilla melts ice near block light 9+, snow 12+: up to 6 and 3 blocks). */
     public static boolean melts(IBlockState state) {
         Material m = state.getMaterial();
         return m == Material.ICE || m == Material.PACKED_ICE || m == Material.SNOW || m == Material.CRAFTED_SNOW;
@@ -204,7 +242,7 @@ public final class BlockChanges {
     }
 
     /**
-     * Writes a change: no neighbour updates unless blocks.blockPhysics (but see settleAbove), no drops unless
+     * Writes a change: no neighbour updates unless blocks.blockPhysics (but see settle), no drops unless
      * blocks.dropItems, also from blocks that pop off. Every change the apocalypse makes goes through here (counted for
      * performance.maxBlockChangesPerTick).
      */
@@ -215,7 +253,12 @@ public final class BlockChanges {
         world.restoringBlockSnapshots |= !SolarConfig.dropItems; // Forge's no-drops switch (used when it restores blocks)
         try {
             world.setBlockState(pos, to, SolarConfig.blockPhysics ? 3 : 2 | 16);
-            if (!SolarConfig.blockPhysics) settleAbove(world, pos, to);
+            if (to.getBlock() instanceof BlockBush && world.isBlockLoaded(pos.down()) && !((BlockBush) to.getBlock()).canBlockStay(world, pos, to)) {
+                // a plant made where it cannot live (a dead bush on grass) would pop off on its next random tick, with drops
+                world.setBlockState(pos, AIR, SolarConfig.blockPhysics ? 3 : 2 | 16);
+                to = AIR;
+            }
+            if (!SolarConfig.blockPhysics) settle(world, pos, to);
         } finally {
             world.restoringBlockSnapshots = restoring;
         }
@@ -225,19 +268,28 @@ public final class BlockChanges {
     }
 
     /**
-     * Without block physics the block above still gets its neighbour update, so what the new block cannot hold pops off
-     * now instead of on a later random tick (plants and crops on paths, torches, the top half of tall plants and doors);
-     * sand and gravel do not fall and liquids do not flow.
+     * Without block physics, what sits on top of or hangs on the side of a changed block still gets its neighbour update,
+     * so what the new block cannot hold pops off now instead of later, with drops (plants and crops on paths, torches on
+     * top or on the side, the top half of tall plants and doors, ladders, fire). Full blocks, sand and gravel, and liquids
+     * are not told: nothing falls or flows.
      */
-    private static void settleAbove(World world, BlockPos pos, IBlockState to) {
-        BlockPos up = pos.up();
-        if (!world.isBlockLoaded(up)) return;
-        for (EnumFacing side : EnumFacing.values()) {
-            if (!world.isBlockLoaded(up.offset(side))) return; // its update may look around: generate nothing
+    private static void settle(World world, BlockPos pos, IBlockState to) {
+        for (EnumFacing side : SETTLE) {
+            BlockPos n = pos.offset(side);
+            if (!world.isBlockLoaded(n)) continue;
+            IBlockState state = world.getBlockState(n);
+            if (state.getMaterial() == Material.AIR || state.isFullCube() || state.getBlock() instanceof BlockFalling
+                    || BlockRules.isLiquid(state) || !aroundLoaded(world, n)) continue;
+            state.neighborChanged(world, n, to.getBlock(), pos);
         }
-        IBlockState above = world.getBlockState(up);
-        if (above.getMaterial() == Material.AIR || above.getBlock() instanceof BlockFalling || BlockRules.isLiquid(above)) return;
-        above.neighborChanged(world, up, to.getBlock(), pos);
+    }
+
+    private static final EnumFacing[] SETTLE = {EnumFacing.UP, EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST};
+
+    /** Whether a block's six neighbours are loaded (its update may look at them: generate nothing). */
+    private static boolean aroundLoaded(World world, BlockPos pos) {
+        for (EnumFacing side : EnumFacing.values()) if (!world.isBlockLoaded(pos.offset(side))) return false;
+        return true;
     }
 
     /** The surface that conversions measure from: blocks movement or is liquid (leaves, glass and water count; plants do not). */

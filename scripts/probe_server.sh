@@ -5,6 +5,8 @@
 cd "$(dirname "$0")/.." && mkdir -p research
 TAG=${1:-run}
 MODE=${2:-probe}
+# keep the previous run's logs (they may be the user's play session): research/ is git-ignored
+for f in latest.log debug.log; do [ -f run/logs/$f ] && cp run/logs/$f research/before_${MODE}_${TAG}_$f; done
 rm -rf run/world_cubic run/logs/latest.log
 # the self-test's own config: the engine is checked against fixed phases, whatever the defaults or run/config say
 [ "$MODE" = selftest ] && cp scripts/selftest.cfg run/config/solarapocalypse-selftest.cfg

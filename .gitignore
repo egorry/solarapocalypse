@@ -27,6 +27,7 @@ run
 # local research material (decompiled third-party code, jars, probe logs)
 research
 
-# the user's prompt scratch file and in-game test logs
+# the user's prompt scratch files and in-game test logs
 prompt.txt
+old-prompt.txt
 test_log_files

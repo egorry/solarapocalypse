@@ -16,9 +16,11 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.BlockAnvil;
+import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoublePlant;
 import net.minecraft.block.BlockStairs;
 import net.minecraft.block.BlockTallGrass;
+import net.minecraft.block.BlockTorch;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.item.EntityItem;
@@ -128,9 +130,26 @@ public final class SelfTest {
             case 5:
                 if (ticks - waited < 200) return;
                 log("solar fire after 200 more ticks: {} (was {}; it must not spread or burn out)", fire("200 ticks later"), fireCount);
-                jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
+                SolarConfig.nightDousesFire = true;
+                timeOfDay(18000, 0, "midnight, blocks.nightDousesFire on");
                 break;
             case 6:
+                if (!drained(3000)) return;
+                fire("midnight (expect no solar fire)");
+                timeOfDay(13000, 0, "sunset half way: fires go out between 12000 and 14000");
+                break;
+            case 7:
+                if (!drained(3000)) return;
+                fire("time of day 13000 (expect about half of 10 %)");
+                timeOfDay(2000, 1, "next morning: fires come back between 23000 and 1000");
+                break;
+            case 8:
+                if (!drained(3000)) return;
+                fire("morning (expect 10 % again)");
+                SolarConfig.nightDousesFire = false;
+                jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
+                break;
+            case 9:
                 if (!drained(3000)) return;
                 fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
@@ -143,7 +162,7 @@ public final class SelfTest {
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
                 break;
-            case 7:
+            case 10:
                 maxChanges = Math.max(maxChanges, BlockChanges.changed - lastChanged);
                 lastChanged = BlockChanges.changed;
                 if (ticks - waited < 100) return;
@@ -156,7 +175,7 @@ public final class SelfTest {
                 jump(t.reachTime(planeY, SolarApocalypse.topY(world), Timeline.TOP),
                         "phase 6 (TOP_Y line from Y " + SolarApocalypse.topY(world) + ") down to Y " + planeY);
                 break;
-            case 8:
+            case 11:
                 if (!drained(3000)) return;
                 long top = SolarApocalypse.topY(world) - (long) t.depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1;
                 lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
@@ -172,6 +191,18 @@ public final class SelfTest {
         SolarApocalypse.requeueAll();
         log("--- jump to {} (day {}, depth {} layers), {} cubes queued", what, String.format("%.2f", progress / (double) Timeline.DAY),
                 (long) SolarApocalypse.timeline().depthAt(progress, Timeline.SURFACE), CubeEngine.queued(world));
+        engineNanos = CubeEngine.nanos;
+        engineCubes = CubeEngine.cubesProcessed;
+        engineBlocks = BlockChanges.changed;
+        waited = ticks;
+        stage++;
+    }
+
+    /** Sets the overworld's time of day (days ahead) and queues every loaded cube (the clock stands still: no players). */
+    private static void timeOfDay(long timeOfDay, int daysAhead, String what) {
+        world.setWorldTime((world.getWorldTime() / Timeline.DAY + daysAhead) * Timeline.DAY + timeOfDay);
+        SolarApocalypse.requeueAll();
+        log("--- time of day {} ({}), {} cubes queued", timeOfDay, what, CubeEngine.queued(world));
         engineNanos = CubeEngine.nanos;
         engineCubes = CubeEngine.cubesProcessed;
         engineBlocks = BlockChanges.changed;
@@ -281,21 +312,40 @@ public final class SelfTest {
     private static void settleCheck() {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
-        BlockPos a = new BlockPos(spawn.getX() - 3, top(cubes, spawn.getX() - 3, spawn.getZ() - 3) + 1, spawn.getZ() - 3);
-        BlockPos b = new BlockPos(spawn.getX() - 5, top(cubes, spawn.getX() - 5, spawn.getZ() - 3) + 1, spawn.getZ() - 3);
+        int y = Integer.MIN_VALUE; // in open air above the terrain, so every neighbour is air
+        for (int dx = -8; dx <= -2; dx++) y = Math.max(y, top(cubes, spawn.getX() + dx, spawn.getZ() - 3) + 6);
+        BlockPos a = new BlockPos(spawn.getX() - 3, y, spawn.getZ() - 3);
+        BlockPos b = new BlockPos(spawn.getX() - 5, y, spawn.getZ() - 3);
         IBlockState grass = Blocks.GRASS.getDefaultState(), path = Blocks.GRASS_PATH.getDefaultState();
         world.setBlockState(a, grass, 18);
         world.setBlockState(a.up(), Blocks.TALLGRASS.getDefaultState().withProperty(BlockTallGrass.TYPE, BlockTallGrass.EnumType.GRASS), 18);
         world.setBlockState(b, grass, 18);
         world.setBlockState(b.up(), Blocks.DOUBLE_PLANT.getDefaultState(), 18);
         world.setBlockState(b.up(2), Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER), 18);
-        AxisAlignedBB box = new AxisAlignedBB(b).union(new AxisAlignedBB(a)).grow(4);
+        // a wall torch on the side of the grass that becomes path (a path's sides hold nothing)
+        world.setBlockState(a.east(), Blocks.TORCH.getDefaultState().withProperty(BlockTorch.FACING, EnumFacing.EAST), 18);
+        BlockPos c = new BlockPos(spawn.getX() - 7, y, spawn.getZ() - 3);
+        IBlockState farmland = Blocks.FARMLAND.getDefaultState();
+        world.setBlockState(c, farmland, 18);
+        world.setBlockState(c.up(), Blocks.WHEAT.getDefaultState().withProperty(BlockCrops.AGE, 7), 18); // ripe: drops for sure
+        BlockPos d = new BlockPos(spawn.getX() - 9, y, spawn.getZ() - 3); // tall grass on grass converted to a dead bush
+        IBlockState lower = Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.VARIANT, BlockDoublePlant.EnumPlantType.GRASS);
+        world.setBlockState(d, grass, 18);
+        world.setBlockState(d.up(), lower, 18);
+        world.setBlockState(d.up(2), lower.withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER), 18);
+        AxisAlignedBB box = new AxisAlignedBB(b).union(new AxisAlignedBB(a)).union(new AxisAlignedBB(d)).grow(4);
         int before = world.getEntitiesWithinAABB(EntityItem.class, box).size();
         BlockChanges.apply(world, a, grass, path);
         BlockChanges.apply(world, b, grass, path);
-        log("settle: tall grass on new path -> {} (air), sunflower -> {} / {} (air, air), items dropped {} (0)",
+        BlockChanges.apply(world, c, farmland, path);
+        BlockChanges.apply(world, d.up(), lower, Blocks.DEADBUSH.getDefaultState());
+        log("settle: tall grass on new path -> {} (air), sunflower -> {} / {} (air, air), wall torch on its side -> {} (air),"
+                        + " ripe wheat on farmland turned to path -> {} (air), double tall grass on grass -> dead bush: {} / {} (air: a"
+                        + " dead bush cannot stay on grass, air), items dropped {} (0)",
                 world.getBlockState(a.up()).getBlock().getRegistryName(), world.getBlockState(b.up()).getBlock().getRegistryName(),
-                world.getBlockState(b.up(2)).getBlock().getRegistryName(),
+                world.getBlockState(b.up(2)).getBlock().getRegistryName(), world.getBlockState(a.east()).getBlock().getRegistryName(),
+                world.getBlockState(c.up()).getBlock().getRegistryName(), world.getBlockState(d.up()).getBlock().getRegistryName(),
+                world.getBlockState(d.up(2)).getBlock().getRegistryName(),
                 world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
     }
 

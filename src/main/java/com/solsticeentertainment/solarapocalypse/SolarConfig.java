@@ -2,9 +2,11 @@ package com.solsticeentertainment.solarapocalypse;
 
 import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -77,6 +79,7 @@ public final class SolarConfig {
     public static boolean dropItems;
     public static boolean blockPhysics;
     public static String[] vanillaFireBlacklist;
+    public static boolean nightDousesFire;
     // evaporation
     public static EvaporationMode evaporationMode;
     public static double evaporationLayersPerDay;
@@ -107,7 +110,7 @@ public final class SolarConfig {
     }
 
     public static void load() {
-        Configuration c = new Configuration(file);
+        Tracked c = new Tracked(file);
         numberedCategoriesInOrder(c);
         c.load();
 
@@ -116,7 +119,7 @@ public final class SolarConfig {
         clockMode = enumValue(c, cat, "mode", ClockMode.SUN,
                 "SUN: count the overworld's sun clock (worldTime) moving forward, so a day lasts as long as the sun takes, with any\n" +
                 "day-length mod. Skipped time counts: sleeping, /time add, and /time set (as the skip forward to that time of day;\n" +
-                "setting the time back by less than 1000 counts nothing). Stops while doDaylightCycle is false.\n" +
+                "setting the time of day back by less than 100 counts nothing). Stops while doDaylightCycle is false.\n" +
                 "TICKS: count server ticks; one day = ticksPerDay ticks.");
         ticksPerDay = c.getInt("ticksPerDay", cat, 24000, 1, Integer.MAX_VALUE, "TICKS mode: server ticks per apocalypse day.");
         maxSunJump = c.getInt("maxSunJump", cat, 24000, 1, Integer.MAX_VALUE,
@@ -171,7 +174,9 @@ public final class SolarConfig {
 
         cat = "blocks";
         c.setCategoryComment(cat, "How block changes are applied.");
-        dropItems = c.getBoolean("dropItems", cat, false, "Destroyed blocks drop their items. Container contents never drop when false.");
+        dropItems = c.getBoolean("dropItems", cat, false,
+                "Destroyed blocks drop their items, and so do blocks that pop off a changed block (plants, crops, torches...).\n" +
+                "Container contents never drop when false.");
         blockPhysics = c.getBoolean("blockPhysics", cat, false,
                 "Changes notify neighbours: sand and gravel fall, liquids flow into removed space. In Cubic Chunks this can\n" +
                 "generate neighbouring cubes at cube edges.");
@@ -179,6 +184,10 @@ public final class SolarConfig {
                 "Flammable blocks that never get vanilla fire from the sun (selectors, as in the phases' destroy lists); they are\n" +
                 "treated like other blocks (solar fire, which never lights anything). With the gamerule doFireTick false no block\n" +
                 "gets vanilla fire.");
+        nightDousesFire = c.getBoolean("nightDousesFire", cat, false,
+                "true: night puts the sun's fire out. Each solar fire goes out at its own moment over the sunset (time of day\n" +
+                "12000-14000) and the same spots light again over the sunrise (23000-1000); no new fire is lit at night (vanilla\n" +
+                "fire already burning is left to vanilla). false: fire, once lit, stays (infinite phases redraw it on every layer).");
 
         cat = "evaporation";
         c.setCategoryComment(cat, "How sun-exposed liquids vanish. Which liquids, from which phase: each phase's evaporate list.");
@@ -230,7 +239,43 @@ public final class SolarConfig {
         phases = new Phase[count];
         for (int i = 0; i < count; i++) phases[i] = loadPhase(c, i + 1);
 
-        if (c.hasChanged()) c.save();
+        c.dropUnused();
+        c.save(); // also puts an older file's sections in order
+    }
+
+    /** Remembers the keys the mod reads, so keys an older version wrote can be dropped. */
+    private static final class Tracked extends Configuration {
+        private final Set<String> read = new HashSet<>();
+
+        Tracked(File file) {
+            super(file);
+        }
+
+        @Override
+        public Property get(String category, String key, String defaultValue, String comment, Property.Type type) {
+            read.add(category + '|' + key);
+            return super.get(category, key, defaultValue, comment, type);
+        }
+
+        @Override
+        public Property get(String category, String key, String[] defaultValues, String comment, Property.Type type) {
+            read.add(category + '|' + key);
+            return super.get(category, key, defaultValues, comment, type);
+        }
+
+        /** Drops keys no longer read from the sections that are (sections for phases above phases.count are kept). */
+        void dropUnused() {
+            Set<String> sections = new HashSet<>();
+            for (String k : read) sections.add(k.substring(0, k.indexOf('|')));
+            for (String name : sections) {
+                ConfigCategory category = getCategory(name);
+                for (String key : new ArrayList<>(category.keySet())) {
+                    if (read.contains(name + '|' + key)) continue;
+                    category.remove(key);
+                    SolarApocalypse.LOGGER.info("Config: dropped {}.{}, no longer used", name, key);
+                }
+            }
+        }
     }
 
     private static Phase loadPhase(Configuration c, int n) {
@@ -267,7 +312,8 @@ public final class SolarConfig {
                 "plant or door never converts by itself: it goes when its bottom half changes.\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
-                "but fixed per block. phases.convertRuleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
+                "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
+                "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules still apply (per block, the latest\n" +
                 "phase with a rule for it wins).");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 1, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
@@ -309,7 +355,7 @@ public final class SolarConfig {
 
     /**
      * Defaults for a fresh config: eleven phases. Plants, snow and cloth burn first (some by chance), wood and leaves
-     * next, the ground degrades (dirt, gravel, sand, glass; stone cracks), then erosion: a few layers at one a day, and
+     * next, the ground degrades (dirt, gravel, sand, vitrified sand; stone cracks), then erosion: a few layers at one a day, and
      * from phase 11 infinite at 200 layers a day. Phases above 11 are empty.
      */
     private static final class Defaults {
@@ -331,7 +377,7 @@ public final class SolarConfig {
                         "material:leaves -> air", "material:gourd -> air", "material:web -> air", "material:vine -> air",
                         "material:ice -> air", "material:packed_ice -> air", "material:cactus -> air"},
                 {"material:wood -> air", "minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"},
-                {"minecraft:sand -> minecraft:glass"},
+                {"minecraft:sand -> solarapocalypse:vitrified_sand"},
                 {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"}};
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};

@@ -53,6 +53,12 @@ public final class SolarFire extends BlockFire {
         // no portal lighting, no scheduled tick
     }
 
+    /** Goes only with its ground: anything that blocks movement holds it (vanilla fire also needs a solid top face). */
+    @Override
+    public void neighborChanged(IBlockState state, World world, BlockPos pos, Block block, BlockPos from) {
+        if (!world.getBlockState(pos.down()).getMaterial().blocksMovement()) world.setBlockToAir(pos);
+    }
+
     @Override
     public boolean requiresUpdates() {
         return false;

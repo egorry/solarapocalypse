@@ -89,10 +89,19 @@ public final class CubeEngine {
     /** Totals since server start, for /solar status and tests. */
     public static long nanos, cubesProcessed;
 
+    private static boolean processing, loadDuringProcessingReported;
+    private static long cubeStart;
+
     @SubscribeEvent
     public static void onCubeLoad(CubeEvent.Load event) {
         World world = event.getWorld();
-        if (!world.isRemote && SolarApocalypse.isActive(world)) state(world).queue.add(event.getCube().getCoords());
+        if (world.isRemote || !SolarApocalypse.isActive(world)) return;
+        state(world).queue.add(event.getCube().getCoords());
+        if (processing && !loadDuringProcessingReported) {
+            loadDuringProcessingReported = true; // once per game: names the block callback that read an unloaded neighbour
+            SolarApocalypse.LOGGER.warn("Cube {} loaded while the apocalypse was changing blocks (reported once)",
+                    event.getCube().getCoords(), new Throwable("cube load during a block change"));
+        }
     }
 
     @SubscribeEvent
@@ -132,7 +141,10 @@ public final class CubeEngine {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockChanges changes = SolarApocalypse.changes(world);
         List<CubePos> later = new ArrayList<>();
-        for (Iterator<CubePos> it = state.queue.iterator(); it.hasNext() && SolarApocalypse.hasBudget(); ) {
+        long minWake = changes.minWake(progress);
+        while (!state.queue.isEmpty() && SolarApocalypse.hasBudget()) {
+            // no iterator held across process(): a block's own callbacks can load a cube, which queues it (onCubeLoad)
+            Iterator<CubePos> it = state.queue.iterator();
             CubePos pos = it.next();
             it.remove();
             ICube cube = cubes.getLoadedCube(pos);
@@ -141,13 +153,20 @@ public final class CubeEngine {
                 state.notReady.add(pos);
                 continue;
             }
-            long t0 = System.nanoTime();
-            long wake = process(world, cubes, cube, changes, progress, state, later);
+            long t0 = cubeStart = System.nanoTime();
+            processing = true;
+            long wake;
+            try {
+                wake = process(world, cubes, cube, changes, progress, state, later);
+            } finally {
+                processing = false;
+            }
             nanos += System.nanoTime() - t0;
             cubesProcessed++;
             if (wake == PARTIAL) later.add(pos);
-            // ponytail: one look per cube per MIN_WAKE at most (spread conversions land in batches); per-block timers if that shows
-            else if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, progress + BlockChanges.MIN_WAKE));
+            // ponytail: one look per cube per MIN_WAKE (a layer in infinite phases) at most: spread conversions land in
+            // batches; per-block timers if that shows
+            else if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, progress + minWake));
         }
         state.queue.addAll(later);
     }
@@ -168,7 +187,7 @@ public final class CubeEngine {
         int minY = cy << 4;
         boolean needGround = SolarApocalypse.timeline().uses(Timeline.SURFACE);
         int topY = SolarApocalypse.topY(world);
-        boolean redrawFire = changes.redrawsFire(progress);
+        boolean redrawFire = changes.redrawsFire(progress), manageFire = changes.managesFire(progress);
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         BitSet edited = state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
@@ -189,7 +208,7 @@ public final class CubeEngine {
                     int y = minY + ly;
                     if (SolarFire.is(from)) {
                         if (fireY == BlockChanges.NO_Y) fireY = y;
-                        else if (!redrawFire) continue;
+                        else if (!manageFire) continue;
                         else if (limited(edited, lz << 4 | lx)) return PARTIAL;
                         else BlockChanges.apply(world, pos.setPos(x, y, z), from, AIR); // a second one is from an earlier layer
                         continue;
@@ -209,19 +228,19 @@ public final class CubeEngine {
                         if (top < minY) openedBelow = true;
                     }
                 }
-                // Fire: placed on the surface once the phase's conversions are done; in infinite phases removed when its
-                // layer is over. Fire that loses its ground goes with it (BlockChanges.apply).
+                // Fire: placed on the surface once the phase's conversions are done; removed when its layer is over
+                // (infinite phases) or at night (blocks.nightDousesFire). Fire that loses its ground goes with it.
                 IBlockState fire = null;
                 if (surfaceKnown && Coords.blockToCube(surface + 1) == cy) {
                     IBlockState below = blockAt(cubes, cx, cz, lx, surface, lz);
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
                         wake = Math.min(wake, changes.wake());
-                        if (fire != null && SolarFire.is(fire) && nearShunned(world, cubes, changes, pos, x, surface + 1, z)) fire = null;
+                        if (fire != null && SolarFire.is(fire) && nearShunned(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
-                boolean stale = fireY != BlockChanges.NO_Y && redrawFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1
-                        && SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire));
+                boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1
+                        && (!redrawFire || SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire)));
                 if (stale) {
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     BlockChanges.apply(world, pos.setPos(x, fireY, z), storage.get(lx, Coords.blockToLocal(fireY), lz), AIR);
@@ -229,7 +248,8 @@ public final class CubeEngine {
                 if (fire != null && (stale || fireY != surface + 1)) {
                     pos.setPos(x, surface + 1, z);
                     IBlockState there = world.getBlockState(pos); // loaded: the cube being processed
-                    if (there.getMaterial() == Material.AIR) {
+                    // vanilla fire looks at its six neighbours when placed: only where they are loaded
+                    if (there.getMaterial() == Material.AIR && (SolarFire.is(fire) || neighboursLoaded(cubes, pos))) {
                         if (limited(edited, lz << 4 | lx)) return PARTIAL;
                         BlockChanges.apply(world, pos, there, fire);
                     }
@@ -243,10 +263,10 @@ public final class CubeEngine {
     /**
      * Whether a loaded block around a position (diagonals too) burns or melts (BlockChanges.shunsFire). Solar fire is not
      * placed there: it would take the space vanilla fire spreads into, and look odd next to a block that never catches or
-     * never melts. The block it stands on only counts if it melts (a flammable one gets vanilla fire unless that is off).
+     * never melts. The block it stands on only counts if it melts (a flammable one gets vanilla fire, or solar fire on top
+     * when vanilla fire is off for it).
      */
-    private static boolean nearShunned(World world, ICubeProvider cubes, BlockChanges changes, BlockPos.MutableBlockPos pos,
-                                       int x, int y, int z) {
+    private static boolean nearShunned(World world, ICubeProvider cubes, BlockPos.MutableBlockPos pos, int x, int y, int z) {
         for (int dy = -1; dy <= 1; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
@@ -256,7 +276,7 @@ public final class CubeEngine {
                             Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
                     if (s == null || s.getMaterial() == Material.AIR) continue;
                     boolean ground = dx == 0 && dz == 0 && dy == -1;
-                    if (ground ? BlockChanges.melts(s) : changes.shunsFire(world, s, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) {
+                    if (ground ? BlockChanges.melts(s) : BlockChanges.shunsFire(world, s, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) {
                         return true;
                     }
                 }
@@ -265,9 +285,23 @@ public final class CubeEngine {
         return false;
     }
 
-    /** Whether a change at x/z must wait for the next tick (column limit, performance.maxBlockChangesPerTick); marks x/z if not. */
+    private static boolean neighboursLoaded(ICubeProvider cubes, BlockPos pos) {
+        for (EnumFacing side : EnumFacing.values()) {
+            BlockPos n = pos.offset(side);
+            if (cubes.getLoadedCube(Coords.blockToCube(n.getX()), Coords.blockToCube(n.getY()), Coords.blockToCube(n.getZ())) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether a change at x/z must wait for the next tick (time budget, performance.maxBlockChangesPerTick, column limit);
+     * marks x/z if not. The budget is checked here too, so one cube with many slow changes (lighting) cannot overrun it.
+     */
     private static boolean limited(BitSet edited, int xz) {
-        if (!SolarApocalypse.mayChange() || !edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
+        if (!SolarApocalypse.hasBudget(System.nanoTime() - cubeStart)) return true;
+        if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
         edited.set(xz);
         return false;
     }

@@ -58,8 +58,10 @@ public class SolarApocalypse {
         MinecraftForge.EVENT_BUS.register(ApocalypseClock.class);
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
         MinecraftForge.EVENT_BUS.register(SolarFire.class);
+        MinecraftForge.EVENT_BUS.register(VitrifiedSand.class);
         Announcer.register();
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
+        if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.VitrifiedSandModel.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
     }
@@ -188,7 +190,12 @@ public class SolarApocalypse {
      * after the world's own tick, so this is time spent, not a deadline from the tick's start.
      */
     public static boolean hasBudget() {
-        return CubeEngine.nanos - engineNanos < budgetNanos && mayChange();
+        return hasBudget(0);
+    }
+
+    /** hasBudget, counting engine time not yet added to CubeEngine.nanos (the cube being processed). */
+    public static boolean hasBudget(long pendingNanos) {
+        return CubeEngine.nanos + pendingNanos - engineNanos < budgetNanos && mayChange();
     }
 
     /** Whether performance.maxBlockChangesPerTick allows another change in this tick. */

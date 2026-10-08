@@ -20,9 +20,9 @@ automatically) has the working rules; this file points at everything else. Curre
 
 ## Code (`src/main/java/com/solsticeentertainment/solarapocalypse/`)
 - Package root: mod wiring (`SolarApocalypse`), config (`SolarConfig`), time (`ApocalypseClock`, `Timeline`), block
-  rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun, heat and fire (`Sky`, `SunDamage`, `SolarFire`),
+  rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun, heat and fire (`Sky`, `SunDamage`, `SolarFire`), the vitrified sand block (`VitrifiedSand`),
   phase announcements and the network channel (`Announcer`), `/solar` (`SolarCommand`). No Cubic Chunks classes here.
-- `client/`: client-only rendering (the phase splash); never loaded on a dedicated server.
+- `client/`: client-only rendering (the phase splash, the vitrified sand item model); never loaded on a dedicated server.
 - `cc/`: everything that touches Cubic Chunks or CubicWorldGen classes; only loaded when they are installed.
 - `debug/`: dev-only checks run by `scripts/probe_server.sh`.
 - `src/test/`: unit tests.

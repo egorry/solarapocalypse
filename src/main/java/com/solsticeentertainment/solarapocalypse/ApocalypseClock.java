@@ -85,16 +85,19 @@ public final class ApocalypseClock extends WorldSavedData {
         markDirty();
     }
 
-    /** Steps back smaller than this count nothing (a day-length mod could step the time back a little). */
-    static final long MIN_SET_BACK = 1000;
+    /** Setting the time of day back by less than this counts nothing (a day-length mod could step the time back a little). */
+    static final long MIN_SET_BACK = 100;
 
     /**
      * Progress for a step of worldTime: forward as is, at most maxJump; a step back (/time set day) counts as the skip
-     * forward to that time of day, unless it is smaller than MIN_SET_BACK.
+     * forward to that time of day, unless it sets the time of day back by less than MIN_SET_BACK.
      */
     static long sunDelta(long previous, long now, long maxJump) {
         long delta = now - previous;
-        if (delta < 0) delta = delta > -MIN_SET_BACK ? 0 : Math.floorMod(delta, Timeline.DAY);
+        if (delta < 0) {
+            long forward = Math.floorMod(delta, Timeline.DAY);
+            delta = forward > Timeline.DAY - MIN_SET_BACK ? 0 : forward;
+        }
         return Math.min(delta, maxJump);
     }
 

@@ -7,8 +7,6 @@
 - **Vanilla fire** placed on flammable blocks is left to vanilla (it spreads and burns out). Solar fire stays until its
   ground goes, or in infinite phases until its layer is over. Solar fire a player puts out comes back the next time the
   sun looks at that cube.
-- **Ice and snow farther from solar fire** melt as vanilla has them (block light above 11, about 3 blocks from fire);
-  only fire right next to them (diagonals too) is kept away.
 - **Never-generated terrain in Cubic Chunks** counts as air. Without the CubicWorldGen model, a column's surface is only
   known once its top has been loaded; deep areas under never-seen surfaces wait (no erosion, no sun) until then.
 - **CubicWorldGen presets with cube areas, or terrain floating more than 64 blocks above the rest**: no surface model;
@@ -19,6 +17,8 @@
   per tick; not fixed here.
 - **Fire seconds are whole seconds**: Minecraft's `setFire` takes seconds; fractions would need an access transformer
   for little gain (damage amounts are decimals).
+- **Per-dimension phase lists** (the user's decision): convert, destroy and evaporate lists are the same in every
+  dimension listed in `world.dimensions`.
 - **Announcements** reach the players online when a phase starts; players joining later get no replay.
 - **Entities without nearby players** stop ticking (vanilla), so burning does no damage there; sun damage still applies
   but hurt cooldowns do not run down.
