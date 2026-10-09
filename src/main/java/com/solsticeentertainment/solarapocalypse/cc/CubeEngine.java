@@ -199,6 +199,7 @@ public final class CubeEngine {
         boolean redrawFire = changes.redrawsFire(progress), manageFire = changes.managesFire(progress);
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
+        int deep = changes.deepestLayer();
         BitSet edited = state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int lz = 0; lz < 16; lz++) {
@@ -234,7 +235,12 @@ public final class CubeEngine {
                         top = heights.getHeightValue(lx, lz) - 1;
                         surface = surface(cubes, cx, cz, lx, lz, top);
                         surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
-                        if (top < minY) openedBelow = true;
+                        // the cube below needs a look once the surface is within the conversions' layers of its top;
+                        // queued now, as a pass can stop early (PARTIAL) and never get back to this column
+                        if (!openedBelow && (top < minY || surface - minY + 2 <= deep)) {
+                            openedBelow = true;
+                            if (cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
+                        }
                     }
                 }
                 // Fire: placed on the surface once the phase's conversions are done; removed when its layer is over
@@ -245,7 +251,7 @@ public final class CubeEngine {
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
                         wake = Math.min(wake, changes.wake());
-                        if (fire != null && SolarFire.is(fire) && nearShunned(world, cubes, pos, x, surface + 1, z)) fire = null;
+                        if (fire != null && SolarFire.is(fire) && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
                 boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1
@@ -265,17 +271,16 @@ public final class CubeEngine {
                 }
             }
         }
-        if (openedBelow && cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
         return wake;
     }
 
     /**
-     * Whether a loaded block around a position (diagonals too) burns or melts (BlockChanges.shunsFire). Solar fire is not
-     * placed there: it would take the space vanilla fire spreads into, and look odd next to a block that never catches or
-     * never melts. The block it stands on only counts if it melts (a flammable one gets vanilla fire, or solar fire on top
-     * when vanilla fire is off for it).
+     * Whether a loaded block around a position (diagonals too) can burn. Solar fire is not placed there: it would take the
+     * space vanilla fire spreads into, and look odd against wood that never catches (with fire spread off). The block it
+     * stands on does not count (a flammable one gets vanilla fire, or solar fire on top when vanilla fire is off for it).
+     * Ice and snow nearby are fine: vanilla melts them from the fire's light.
      */
-    private static boolean nearShunned(World world, ICubeProvider cubes, BlockPos.MutableBlockPos pos, int x, int y, int z) {
+    private static boolean nearFlammable(World world, ICubeProvider cubes, BlockPos.MutableBlockPos pos, int x, int y, int z) {
         for (int dy = -1; dy <= 1; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
@@ -284,10 +289,8 @@ public final class CubeEngine {
                     IBlockState s = blockAt(cubes, Coords.blockToCube(pos.getX()), Coords.blockToCube(pos.getZ()),
                             Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
                     if (s == null || s.getMaterial() == Material.AIR) continue;
-                    boolean ground = dx == 0 && dz == 0 && dy == -1;
-                    if (ground ? BlockChanges.melts(s) : BlockChanges.shunsFire(world, s, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) {
-                        return true;
-                    }
+                    if (dx == 0 && dz == 0 && dy == -1) continue; // the ground it stands on
+                    if (s.getBlock().isFlammable(world, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) return true;
                 }
             }
         }

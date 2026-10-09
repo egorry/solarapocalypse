@@ -38,34 +38,55 @@ import java.util.regex.Pattern;
 public final class BlockRules {
 
     /**
-     * The conversion of one block state: its targets with their chances (rules with '@ n%'), and the (0-based) phase
-     * whose rules they are, which sets when they are due.
+     * The conversion of one block state: the matching rules of one phase in order, each with its target, chance ('@ n%')
+     * and layers ('depth=', 1 = the surface block), and that (0-based) phase, which sets when they are due.
      */
     public static final class Step {
         private final IBlockState[] targets;
-        private final double[] upTo; // cumulative chance of each target; past the last one the block stays
+        private final double[] shares;
+        private final int[] minLayer, maxLayer;
         public final int phase;
 
-        Step(List<IBlockState> targets, List<Double> upTo, int phase) {
+        Step(List<IBlockState> targets, List<Double> shares, List<int[]> layers, int phase) {
             this.targets = targets.toArray(new IBlockState[0]);
-            this.upTo = new double[upTo.size()];
-            for (int i = 0; i < this.upTo.length; i++) this.upTo[i] = upTo.get(i);
+            this.shares = new double[shares.size()];
+            this.minLayer = new int[layers.size()];
+            this.maxLayer = new int[layers.size()];
+            for (int i = 0; i < this.shares.length; i++) {
+                this.shares[i] = shares.get(i);
+                this.minLayer[i] = layers.get(i)[0];
+                this.maxLayer[i] = layers.get(i)[1];
+            }
             this.phase = phase;
         }
 
         /**
-         * What the block at x, y, z becomes, or null if it stays. The roll is a fixed hash of the position, the phase and
-         * the state, so a block's outcome never changes between looks.
+         * What the block at x, y, z becomes in a layer of its column's surface, or null if it stays. The rules acting in
+         * that layer share the block out in order; the roll is a fixed hash of the position, the phase and the state, so a
+         * block's outcome never changes between looks.
          */
-        public IBlockState pick(int x, int y, int z, IBlockState from) {
-            IBlockState to = null;
-            if (targets.length == 1 && upTo[0] >= 1) {
-                to = targets[0];
-            } else {
-                double roll = Timeline.hash(x, y, z, CHANCE_SALT ^ phase << 16 ^ Block.getStateId(from));
-                for (int i = 0; i < targets.length && to == null; i++) if (roll < upTo[i]) to = targets[i];
+        public IBlockState pick(int x, int y, int z, IBlockState from, int layer) {
+            double total = 0, roll = -1;
+            for (int i = 0; i < targets.length && total < 1; i++) {
+                if (layer < minLayer[i] || layer > maxLayer[i]) continue;
+                double upTo = Math.min(1, total + shares[i]);
+                if (upTo < 1 || total > 0) {
+                    if (roll < 0) roll = Timeline.hash(x, y, z, CHANCE_SALT ^ phase << 16 ^ Block.getStateId(from));
+                    if (roll >= upTo) {
+                        total = upTo;
+                        continue;
+                    }
+                }
+                return targets[i] == from ? null : targets[i];
             }
-            return to == from ? null : to;
+            return null;
+        }
+
+        /** The deepest layer above `layer` in which a rule acts (the block's next chance as the surface comes down), or 0. */
+        public int nextLayer(int layer) {
+            int next = 0;
+            for (int i = 0; i < targets.length; i++) if (maxLayer[i] < layer && targets[i] != null) next = Math.max(next, maxLayer[i]);
+            return next;
         }
 
         @Override
@@ -73,8 +94,8 @@ public final class BlockRules {
             StringBuilder s = new StringBuilder();
             for (int i = 0; i < targets.length; i++) {
                 s.append(i == 0 ? "" : ", ").append(targets[i]);
-                double chance = upTo[i] - (i == 0 ? 0 : upTo[i - 1]);
-                if (chance < 1) s.append(String.format(Locale.ROOT, " @ %.4g%%", chance * 100));
+                if (shares[i] < 1) s.append(String.format(Locale.ROOT, " @ %.4g%%", shares[i] * 100));
+                s.append(" depth=").append(minLayer[i]).append('-').append(maxLayer[i]);
             }
             return s.toString();
         }
@@ -108,6 +129,7 @@ public final class BlockRules {
     }
 
     private final List<Map<IBlockState, Step>> convert = new ArrayList<>();
+    private int deepestLayer = 1;
     private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
     private final Set<IBlockState> noVanillaFire = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<IBlockState, Integer> evaporate = new IdentityHashMap<>(); // liquid state -> first phase evaporating it
@@ -128,6 +150,7 @@ public final class BlockRules {
             List<Predicate<IBlockState>> from = new ArrayList<>();
             List<Target> to = new ArrayList<>();
             List<Double> share = new ArrayList<>();
+            List<int[]> layers = new ArrayList<>();
             for (String raw : scoped(phases[i].convert, dimension)) {
                 String line = raw.replaceAll("\\s+(?=[^\\[\\]]*\\])", ""); // no spaces inside [...]
                 int arrow = line.indexOf("->");
@@ -135,21 +158,34 @@ public final class BlockRules {
                     SolarApocalypse.LOGGER.warn("{}.convert: '{}' has no '->'", where, raw);
                     continue;
                 }
-                // target, then modifiers in any order: '@ n%' and preserveState
+                // target, then modifiers in any order: '@ n%', preserveState, depth=k or depth=a-b
                 String[] words = line.substring(arrow + 2).replaceAll("\\s*%", "%").replace("@", " @ ").trim().split("\\s+");
                 double chance = 1;
                 boolean preserve = false;
+                int[] layer = {1, phases[i].convertDepth}; // default: the top convertDepth layers
                 for (int w = 1; w < words.length; w++) {
+                    Matcher depth = DEPTH.matcher(words[w]);
                     if (words[w].equals("@") && w + 1 < words.length) chance = percent(words[++w], where);
                     else if (words[w].equalsIgnoreCase("preserveState")) preserve = true;
-                    else SolarApocalypse.LOGGER.warn("{}.convert: unknown modifier '{}' in '{}'", where, words[w], raw);
+                    else if (depth.matches()) {
+                        int a = Integer.parseInt(depth.group(1)), b = depth.group(2) == null ? a : Integer.parseInt(depth.group(2));
+                        layer = depth.group(2) == null ? new int[]{1, a} : new int[]{Math.min(a, b), Math.max(a, b)};
+                        if (layer[0] < 1) {
+                            SolarApocalypse.LOGGER.warn("{}.convert: '{}' in '{}': layers count from 1 (the surface block)", where, words[w], raw);
+                            layer = null;
+                            break;
+                        }
+                    } else SolarApocalypse.LOGGER.warn("{}.convert: unknown modifier '{}' in '{}'", where, words[w], raw);
                 }
+                if (layer == null) continue;
                 Predicate<IBlockState> selector = selectors(new String[]{line.substring(0, arrow)}, where);
                 Target target = target(words[0], preserve, where);
                 if (selector == null || target == null || chance <= 0) continue;
                 from.add(selector);
                 to.add(target);
                 share.add(chance);
+                layers.add(layer);
+                rules.deepestLayer = Math.max(rules.deepestLayer, layer[1]);
             }
             Predicate<IBlockState> gone = selectors(scoped(phases[i].destroy, dimension), where);
             Predicate<IBlockState> dry = selectors(scoped(phases[i].evaporate, dimension), where);
@@ -159,21 +195,22 @@ public final class BlockRules {
             Map<IBlockState, Integer> removals = carryDestroy ? new IdentityHashMap<>(rules.destroy.get(i - 1)) : new IdentityHashMap<>();
             for (IBlockState state : states) {
                 if (state.getMaterial() == Material.AIR) continue;
-                // matching rules share the block out in order ('@ n%', 100 % without); the latest phase's set wins.
-                // The top half of a tall plant or door follows its bottom half (it pops off when that changes).
+                // matching rules share the block out in order ('@ n%', 100 % without) among those acting in its layer
+                // (Step.pick); the latest phase's set wins. The top half of a tall plant or door follows its bottom half
+                // (it pops off when that changes).
                 List<IBlockState> targets = new ArrayList<>();
-                List<Double> upTo = new ArrayList<>();
-                double total = 0;
+                List<Double> shares = new ArrayList<>();
+                List<int[]> ranges = new ArrayList<>();
                 boolean changes = false;
-                for (int r = 0; r < from.size() && total < 1 && !upperHalf(state); r++) {
+                for (int r = 0; r < from.size() && !upperHalf(state); r++) {
                     if (!from.get(r).test(state)) continue;
                     IBlockState target = to.get(r).of(state);
-                    total = Math.min(1, total + share.get(r));
                     targets.add(target);
-                    upTo.add(total);
+                    shares.add(share.get(r));
+                    ranges.add(layers.get(r));
                     changes |= target != state;
                 }
-                if (changes) conversions.put(state, new Step(targets, upTo, i));
+                if (changes) conversions.put(state, new Step(targets, shares, ranges, i));
                 if (gone != null && gone.test(state)) removals.putIfAbsent(state, i);
                 if (dry != null && isLiquid(state) && dry.test(state)) rules.evaporate.putIfAbsent(state, i);
             }
@@ -261,6 +298,7 @@ public final class BlockRules {
         return out;
     }
 
+    private static final Pattern DEPTH = Pattern.compile("(?i)depth=(-?\\d+)(?:-(\\d+))?");
     private static final Pattern DIMENSIONS = Pattern.compile("(?i)\\s*\\bdimensions\\s*=\\s*(\\*|-?\\d+(?:\\s*,\\s*-?\\d+)*)");
 
     /** The entries that apply in a dimension, without their dimensions=... modifier. */
@@ -304,6 +342,11 @@ public final class BlockRules {
     }
 
     /** Block states with an active conversion / destroy rule in a phase (for the load summary). */
+    /** The deepest layer below the surface any conversion acts in (1 = the surface block only). */
+    public int deepestLayer() {
+        return deepestLayer;
+    }
+
     public int convertCount(int phase) {
         return convert.get(phase).size();
     }

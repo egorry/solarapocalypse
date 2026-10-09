@@ -78,7 +78,15 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    nothing has to be stored; a later phase with its own rule for the block (e.g. 100 %) takes over in `CARRY`. A carried rule keeps its roll, so
    blocks a chance passed over stay as they are; to strike again in a later phase (anvils damaged a bit more each
    phase), repeat the rule there: it rolls anew.
-   **Modifiers** follow the target in any order: `@ n%`, and `preserveState`, which keeps the source block's properties
+   **Depth stages**: `depth=3` limits a rule to the top 3 layers of the column's current surface (layer 1 = the surface
+   block and what stands on it), `depth=2-3` to layers 2 and 3; without it a rule acts in the top `convertDepth` layers
+   of its own phase. Rules are filtered by the block's layer first, then share it out in order, so a rule for other
+   layers never takes a block's share. As erosion lowers the surface, a block moves up through the layers and each
+   stage's rules reach it: grass -> path at 5, path -> dirt at 4, dirt -> gravel at 3, gravel -> sand at 2, sand ->
+   glass at 1 makes each layer below the surface one stage further along. A block below every rule's layers is looked
+   at again once the depth line has come close enough, and the cube below is queued as soon as a column's surface is
+   within the deepest rule's layers of it.
+   **Modifiers** follow the target in any order: `@ n%`, `depth=`, `dimensions=`, and `preserveState`, which keeps the source block's properties
    the target block has too (by name: facing, half, shape...) unless the target sets them:
    `minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState` damages a quarter of anvils and keeps
    their facing. The top half of a two-block plant or door (`half=upper`) never converts by itself: it pops off when
@@ -102,10 +110,13 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    vanilla) is lit at night, vanilla fire already burning is left to vanilla. It reads the world's time of day, so
    sleeping and `/time set` take effect on the next look at each cube (in `TICKS` clock mode, when the cube's next look
    is due). After sleeping (to time of day 0) about half the spots light again on the next look and the rest within the
-   next 1000 ticks (50 s); while players sleep no fire is visible anyway. No solar fire goes next to (diagonals too) a block that can burn, nor next to ice or snow (or on snow): it
-   would take the space vanilla fire spreads into, or look odd next to wood that never catches (fire spread off) or ice
-   that never melts. Those positions just stay empty (checked on each look at the cube). Ice and snow farther away melt
-   as vanilla has them (ice at block light 9+, about 6 blocks from fire; snow at 12+, about 3 blocks).
+   next 1000 ticks (50 s); while players sleep no fire is visible anyway. No solar fire goes next to (diagonals too) a block that can burn: it
+   would take the space vanilla fire spreads into, or look odd next to wood that never catches (fire spread off). Those
+   positions just stay empty (checked on each look at the cube). Ice and snow next to or near solar fire melt as vanilla
+   has them (ice at block light 9+, about 6 blocks from fire; snow at 12+, about 3 blocks), on their random ticks.
+   Water flowing or placed into solar fire replaces it, as with vanilla fire; rain and splash water potions do not put
+   it out (vanilla fire dies in rain on its own random tick, which solar fire never gets; potions look for vanilla fire
+   only).
 
 - **Vitrified sand** (`solarapocalypse:vitrified_sand`, `variant` sand or red_sand like vanilla sand): sand the sun
   melted in place, a rough, cloudy glass (translucent, culls against itself, sand-coloured on maps; mobs do not spawn on
@@ -197,7 +208,7 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   reference lines).
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
   (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5, plus a sixth `TOP_Y` phase at 64
-  layers a day), so the checks do not move with the defaults. Last runs (2026-10-08):
+  layers a day; phase 5 also has `stone -> cobblestone depth=3-4`), so the checks do not move with the defaults. Last runs (2026-10-08):
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
   few blocks higher); rules check as expected (chances 30/20 % -> 3014 and 1977 of 10000 blocks, identical on a second
   look; exclusion, loop cut, TNT blacklist; evaporation lists with fluid and temperature selectors; `preserveState`:
@@ -212,7 +223,10 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   on 4.2-4.9 % of positions (5 % asked; water and other non-solid tops get none, nor spots next to flammables, ice and
   snow), at the end of phase 4 10.0-10.2 % (10 % asked), phase 3's fire all kept but where its ground went (1801 of
   1802), unchanged after 200 ticks; with `nightDousesFire`: 0 at midnight, 4.9 % half way through the sunset (half of
-  9.9 %), 9.9 % again the next morning; in the infinite phase 14.0-14.5 % (15 % asked), only the current layer's fire left;
+  9.9 %), 9.9 % again the next morning; depth stages: the user's grass to glass example gives one stage per layer,
+  `depth=2-3` acts in layers 2 and 3 only; after 8 layers of erosion, `stone -> cobblestone depth=3-4` left layers 3
+  and 4 cobblestone (34174 of 34174, 34198 of 34199) and layers 1, 2, 5 stone (under 0.1 % off, where the check's
+  top differs from the engine's surface); in the infinite phase 14.0-14.5 % (15 % asked), only the current layer's fire left;
   `TOP_Y` line of phase 6 at Y 26-45: 0 of 13-230 k positions above it still hold a block.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched.

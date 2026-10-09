@@ -315,7 +315,9 @@ public final class SolarConfig {
                 "@ <chance>%, and preserveState (keep the block's facing and other properties the target has too, unless the target\n" +
                 "sets them), e.g. minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState. The top half of a tall\n" +
                 "plant or door never converts by itself: it goes when its bottom half changes. dimensions=-1 (or 0,-1; * = all, as\n" +
-                "without it) limits a rule to those dimensions; a rule scoped elsewhere does not hide an older one.\n" +
+                "without it) limits a rule to those dimensions; a rule scoped elsewhere does not hide an older one. depth=3 limits a\n" +
+                "rule to the top 3 layers of the surface (1 = the surface block and what is on it), depth=2-3 to layers 2 and 3\n" +
+                "(default: the top convertDepth layers), so blocks can step through stages as the surface comes down.\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
                 "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
@@ -341,7 +343,7 @@ public final class SolarConfig {
                 "Percent of surface blocks alight with solar fire once the phase's conversions are done (chosen at random but\n" +
                 "fixed): looks, sounds and burns like fire but never spreads. A total: 25 then 50 in the next phase keeps the first\n" +
                 "25 % alight and lights as many again. Fire is never put out between phases; in an infinite phase it is redrawn on\n" +
-                "every new layer. No solar fire next to (diagonals too) blocks vanilla fire would burn, nor ice and snow.").getDouble();
+                "every new layer. No solar fire next to (diagonals too) a block that can burn; ice and snow nearby melt as in vanilla.").getDouble();
         p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.ignite,
                 "Percent of flammable surface blocks (wood, leaves, wool...) set alight with vanilla fire instead, which spreads\n" +
                 "and burns them as usual.").getDouble();

@@ -46,6 +46,11 @@ public final class BlockChanges {
         this.evaporationTopY = evaporationTopY;
     }
 
+    /** The deepest layer below a column's surface that a conversion acts in. */
+    public int deepestLayer() {
+        return rules.deepestLayer();
+    }
+
     /** When the block last passed to {@link #evaluate} next needs a look (NEVER if it will not change by itself). */
     public long wake() {
         return wake;
@@ -76,13 +81,18 @@ public final class BlockChanges {
 
         for (int n = 0; n < MAX_CHAIN; n++) {
             BlockRules.Step step = rules.convert(phase, state);
-            IBlockState target = step == null ? null : step.pick(x, y, z, state);
-            if (target == null) break; // no rule, or this block's share stays
+            if (step == null) break;
             if (surface == NO_Y) {
                 later(progress + RECHECK);
                 break;
             }
-            if (y <= (long) surface - SolarConfig.phases[step.phase].convertDepth) break; // below the surface layer
+            int layer = (int) Math.max(1, Math.min(Integer.MAX_VALUE, (long) surface - y + 1)); // 1 = the surface block and what is on it
+            IBlockState target = step.pick(x, y, z, state, layer);
+            if (target == null) { // no rule acts in this layer, or this block's share stays
+                int next = step.nextLayer(layer);
+                if (next > 0) laterNear(y + next, ground, topY, phase, progress); // look again once the surface is that close
+                break;
+            }
             long due = spread(timeline.convertStart(step.phase), timeline.convertSpread(step.phase), x, y, z, step.phase);
             if (progress < due) {
                 later(due);
@@ -91,6 +101,21 @@ public final class BlockChanges {
             state = target;
         }
         return evaporate(state, y, sky, progress);
+    }
+
+    /**
+     * Asks for another look once the running phase's depth line has removed the block at y (so the surface has come down
+     * to y - 1 or below): a deeper block then enters the layers of a depth-staged conversion.
+     */
+    private void laterNear(int y, int ground, int topY, int phase, long progress) {
+        int line = timeline.track(phase);
+        int ref = line == Timeline.TOP ? topY : ground;
+        if (ref == NO_Y) {
+            later(progress + RECHECK);
+            return;
+        }
+        long reach = timeline.reachTime(y, ref, line);
+        if (reach != NEVER) later(Math.max(reach, progress + 1));
     }
 
     /** When a depth line removes a block that a phase's destroy rule matches (NEVER if the line never gets there). */
@@ -119,7 +144,7 @@ public final class BlockChanges {
         if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
         int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
         BlockRules.Step pending = rules.convert(phase, surface);
-        if (pending != null && pending.pick(x, y, z, surface) != null) return null;
+        if (pending != null && pending.pick(x, y, z, surface, 1) != null) return null;
         boolean infinite = timeline.infinite(phase);
         int line = timeline.track(phase);
         int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;
@@ -180,19 +205,6 @@ public final class BlockChanges {
         return perDay <= 0 ? MIN_WAKE : Math.max(1, Math.min(MIN_WAKE, (long) (Timeline.DAY / perDay)));
     }
 
-    /**
-     * Whether a block next to a spot keeps solar fire off it: it can burn (vanilla fire would spread there, or with fire
-     * spread off it would look odd to have fire against wood that never catches), or fire would melt it.
-     */
-    public static boolean shunsFire(World world, IBlockState state, BlockPos pos, EnumFacing towardFire) {
-        return melts(state) || state.getBlock().isFlammable(world, pos, towardFire);
-    }
-
-    /** Ice and snow: fire next to them looks wrong (vanilla melts ice near block light 9+, snow 12+: up to 6 and 3 blocks). */
-    public static boolean melts(IBlockState state) {
-        Material m = state.getMaterial();
-        return m == Material.ICE || m == Material.PACKED_ICE || m == Material.SNOW || m == Material.CRAFTED_SNOW;
-    }
 
     /** Whether vanilla fire from the sun burns a block (with doFireTick false it would neither spread nor burn out). */
     private boolean burns(World world, IBlockState state, BlockPos pos, EnumFacing face) {

@@ -44,7 +44,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`minecraft:stone_brick_stairs -> minecraft:stone_stairs @ 30% preserveState`).
 - What a changed block can no longer hold (plants and crops on new paths, torches, the top half of tall plants and
   doors) pops off at once and drops nothing unless `blocks.dropItems`; tall plants and doors convert as a whole.
-- No solar fire diagonally next to flammable blocks either, nor next to ice and snow.
+- No solar fire diagonally next to flammable blocks either (next to ice and snow is fine: they melt as in vanilla).
 - Setting the time back by less than 1000 in the time of day (e.g. 23600 to 23500) no longer counts as a day skipped.
 - Phase 2 no longer burns 30 % of wool and carpets by default (phase 3 burns all of it).
 - `blocks.nightDousesFire` (default false): night puts the sun's fire out, spot by spot over the sunset, and lights the
@@ -64,7 +64,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Sleeping (or skipping time) where an infinite phase's erosion passes kills the player.
 - Blocks players place change on the engine's next pass, instead of on their cube's next scheduled look.
 - Red vitrified sand from red sand (drops red sand).
+- Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
+  blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Fixed
+- When erosion emptied a cube's columns over several ticks, the cube below could miss its look, leaving its
+  conversions undone until a later look.
 - Crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block change loaded a neighbouring cube.
 - A single cube with many slow changes (lighting after trees burn) could overrun the tick budget (one 188 ms tick seen);
   the budget is now checked before every change.

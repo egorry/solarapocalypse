@@ -15,6 +15,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockAnvil;
 import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoublePlant;
@@ -85,6 +86,7 @@ public final class SelfTest {
                         CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
                 modelCheck();
                 rulesCheck();
+                depthCheck();
                 settleCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
@@ -159,6 +161,7 @@ public final class SelfTest {
                     int ground = CubeEngine.groundAt(world, x, z);
                     return ground == BlockChanges.NO_Y ? BlockChanges.NO_Y : (int) (ground - depth + 1);
                 });
+                layerCheck();
                 SolarConfig.maxBlockChangesPerTick = cap;
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
@@ -294,7 +297,7 @@ public final class SelfTest {
         melt.evaporate = new String[0];
         IBlockState redSand = Blocks.SAND.getDefaultState().withProperty(BlockSand.VARIANT, BlockSand.EnumType.RED_SAND);
         BlockRules.Step glass = BlockRules.compile(new SolarConfig.Phase[]{melt}, 0).convert(0, redSand);
-        IBlockState vitrified = glass == null ? null : glass.pick(0, 64, 0, redSand);
+        IBlockState vitrified = glass == null ? null : glass.pick(0, 64, 0, redSand, 1);
         log("rules: red sand -> {} (vitrified_sand, variant red_sand), which drops sand meta {} (1)", vitrified,
                 vitrified == null ? -1 : vitrified.getBlock().damageDropped(vitrified));
         log("rules: evaporation from phase water {} (expect 0), flowing water {} (0), lava {} (1), flowing lava {} (1), stone {} (-1)",
@@ -305,10 +308,10 @@ public final class SelfTest {
         BlockRules.Step g = r.convert(0, gravel), d = r.convert(1, dirt), s = r.convert(1, sand);
         int toSand = 0, toClay = 0, same = 0;
         for (int i = 0; i < 10000; i++) {
-            IBlockState to = g.pick(i, 64, i * 7, gravel);
+            IBlockState to = g.pick(i, 64, i * 7, gravel, 1);
             if (to == sand) toSand++;
             else if (to == Blocks.CLAY.getDefaultState()) toClay++;
-            if (to == g.pick(i, 64, i * 7, gravel)) same++;
+            if (to == g.pick(i, 64, i * 7, gravel, 1)) same++;
         }
         log("rules: gravel of 10000 blocks -> {} sand (expect ~3000), {} clay (~2000), same on a second look {} (10000);"
                         + " stone destroyed in phase {} (expect 0), cobblestone {} (-1); loop cut in phase 2: dirt -> {} (none),"
@@ -320,11 +323,66 @@ public final class SelfTest {
         IBlockState anvil = Blocks.ANVIL.getDefaultState().withProperty(BlockAnvil.FACING, EnumFacing.WEST);
         IBlockState damaged = anvil.withProperty(BlockAnvil.DAMAGE, 1);
         int hits = 0;
-        for (int i = 0; i < 10000; i++) if (r.convert(0, anvil).pick(i, 64, i * 7, anvil) == damaged) hits++;
+        for (int i = 0; i < 10000; i++) if (r.convert(0, anvil).pick(i, 64, i * 7, anvil, 1) == damaged) hits++;
         IBlockState upper = Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER);
         log("rules: stairs -> {} (stone stairs, facing east, half top), anvil facing west -> {} in {} of 10000 (~2500), top half of"
                         + " a tall plant -> {} (none), bottom half -> {} (deadbush)", r.convert(0, stairs), damaged, hits,
                 r.convert(0, upper), r.convert(0, Blocks.DOUBLE_PLANT.getDefaultState()));
+    }
+
+    /** Phase 5 of the fixture has stone -> cobblestone depth=3-4: after erosion, by layer below each column's top. */
+    private static void layerCheck() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int[] stone = new int[6], cobble = new int[6];
+        for (int x = spawn.getX() - RADIUS * 16; x < spawn.getX() + RADIUS * 16; x++) {
+            for (int z = spawn.getZ() - RADIUS * 16; z < spawn.getZ() + RADIUS * 16; z++) {
+                Chunk column = cubes.getLoadedColumn(x >> 4, z >> 4);
+                if (column == null) continue;
+                int top = ((IColumn) column).getHeightValue(x & 15, z & 15) - 1;
+                for (int layer = 1; layer <= 5; layer++) {
+                    ICube cube = cubes.getLoadedCube(x >> 4, (top - layer + 1) >> 4, z >> 4);
+                    if (cube == null || cube.getStorage() == null) continue;
+                    Block b = cube.getStorage().get(x & 15, (top - layer + 1) & 15, z & 15).getBlock();
+                    if (b == Blocks.STONE) stone[layer]++;
+                    else if (b == Blocks.COBBLESTONE) cobble[layer]++;
+                }
+            }
+        }
+        StringBuilder s = new StringBuilder();
+        for (int layer = 1; layer <= 5; layer++) s.append(layer).append(": ").append(stone[layer]).append('/').append(cobble[layer]).append("  ");
+        log("depth-staged rule after erosion (stone -> cobblestone depth=3-4), stone/cobblestone by layer below the top: {}"
+                + "(cobblestone only in layers 3 and 4)", s);
+    }
+
+    /** The user's staged example: each layer below the surface one stage further along (layer 1 = the surface block). */
+    private static void depthCheck() {
+        SolarConfig.Phase p = new SolarConfig.Phase();
+        p.convertDepth = 1;
+        p.convert = new String[]{"minecraft:grass -> minecraft:grass_path depth=5", "minecraft:grass_path -> minecraft:dirt depth=4",
+                "minecraft:dirt -> minecraft:gravel depth=3", "minecraft:gravel -> minecraft:sand depth=2", "minecraft:sand -> minecraft:glass depth=1",
+                "minecraft:stone -> minecraft:cobblestone depth=2-3"};
+        p.destroy = new String[0];
+        p.evaporate = new String[0];
+        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{p}, 0);
+        StringBuilder grass = new StringBuilder(), stone = new StringBuilder();
+        for (int layer = 6; layer >= 1; layer--) {
+            grass.append(layer).append(':').append(staged(r, Blocks.GRASS.getDefaultState(), layer).getBlock().getRegistryName().getPath()).append(' ');
+            stone.append(layer).append(':').append(staged(r, Blocks.STONE.getDefaultState(), layer).getBlock().getRegistryName().getPath()).append(' ');
+        }
+        log("rules, depth: grass by layer {}(6 grass, 5 path, 4 dirt, 3 gravel, 2 sand, 1 glass); stone with depth=2-3 {}(only 2, 3"
+                + " cobblestone); a grass block at layer 6 next looks at layer {} (5)", grass, stone, r.convert(0, Blocks.GRASS.getDefaultState()).nextLayer(6));
+    }
+
+    /** A block followed through the conversion chain in one layer, as BlockChanges.evaluate does once everything is due. */
+    private static IBlockState staged(BlockRules r, IBlockState state, int layer) {
+        for (int n = 0; n < 16; n++) {
+            BlockRules.Step step = r.convert(0, state);
+            IBlockState to = step == null ? null : step.pick(0, 64, 0, state, layer);
+            if (to == null) break;
+            state = to;
+        }
+        return state;
     }
 
     private static String[] append(String[] list, String entry) {

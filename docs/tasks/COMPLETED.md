@@ -2,6 +2,13 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 10 (2026-10-09)
+- Depth-staged conversions (`depth=k`, `depth=a-b`), re-looks when the line nears, cube below queued as the surface
+  nears it; self-test: the user's grass-to-glass stages, a `depth=3-4` rule after 8 layers of erosion.
+- Fixed: the cube below lost its look when a pass stopped early (column edit limit).
+- Solar fire allowed next to ice and snow again (user, turn 10); only burnable neighbours keep it away.
+- User's edit to the non-falling gravel and sand item kept (only with `blocks.blockPhysics` false).
+
 ## Turn 9 (2026-10-09)
 - The user's working rules in CLAUDE.md (file everything, disagree openly, check before surprises, few-word references).
 - `dimensions=` scope for convert, destroy and evaporate entries (filter first, no shadowing); self-test check.
