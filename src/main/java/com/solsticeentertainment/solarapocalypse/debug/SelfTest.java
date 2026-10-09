@@ -27,7 +27,12 @@ import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.passive.EntityPig;
+import net.minecraft.entity.projectile.EntityPotion;
 import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
+import net.minecraft.init.PotionTypes;
+import net.minecraft.item.ItemStack;
+import net.minecraft.potion.PotionUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
@@ -84,9 +89,11 @@ public final class SelfTest {
                 if (ticks < 40) return; // let spawn cubes finish lighting
                 log("depth reference {}, CubicWorldGen model {}, phases start {} end {}", SolarConfig.depthReference,
                         CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
+                configCheck();
                 modelCheck();
                 rulesCheck();
                 depthCheck();
+                carryCheck();
                 settleCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
@@ -127,12 +134,16 @@ public final class SelfTest {
             case 4:
                 if (!drained(3000)) return;
                 fireCount = fire("end of phase 4");
+                throwWater();
                 stage++;
                 waited = ticks;
                 break;
             case 5:
                 if (ticks - waited < 200) return;
-                log("solar fire after 200 more ticks: {} (was {}; it must not spread or burn out)", fire("200 ticks later"), fireCount);
+                int out = 0;
+                for (BlockPos spot : splashed) if (!SolarFire.is(world.getBlockState(spot))) out++;
+                log("water bottles: {} of {} solar fires hit are out ({}); solar fire after 200 more ticks: {} (was {}, less what the"
+                        + " bottles put out; it must not spread or burn out)", out, splashed.size(), splashed.size(), fire("200 ticks later"), fireCount);
                 SolarConfig.nightDousesFire = true;
                 timeOfDay(18000, 0, "midnight, blocks.nightDousesFire on");
                 break;
@@ -150,10 +161,14 @@ public final class SelfTest {
                 if (!drained(3000)) return;
                 fire("morning (expect 10 % again)");
                 SolarConfig.nightDousesFire = false;
+                world.getWorldInfo().setRaining(true); // phase 5 inherits phase 4's NONE: this rain must stop
+                world.getWorldInfo().setThundering(true);
                 jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
                 break;
             case 9:
                 if (!drained(3000)) return;
+                log("weather in phase 5 (NONE, inherited from phase 4; rain was set before the jump): raining {} (false),"
+                        + " thundering {} (false)", world.getWorldInfo().isRaining(), world.getWorldInfo().isThundering());
                 fire("erosion (15 % per layer, earlier fire removed)");
                 census("erosion");
                 long depth = (long) t.depthAt(ApocalypseClock.progress(), Timeline.SURFACE);
@@ -173,21 +188,98 @@ public final class SelfTest {
                 log("most block changes in one tick over 100 ticks: {} (cap {}), {} cubes still queued", maxChanges, cap,
                         CubeEngine.queued(world));
                 SolarConfig.maxBlockChangesPerTick = 0;
+                stage++;
+                waited = ticks;
+                break;
+            case 11:
+                if (!drained(3000)) return; // the skip's catch-up first
+                evenness("caught up after the skip");
+                SolarConfig.maxBlockChangesPerTick = cap;
+                log("--- the clock runs at a layer every 20 ticks for 400 ticks, block changes capped at {} per tick: the engine falls"
+                        + " behind; phase 6 starts on the way (day 18), which must not bring cubes ahead of the rest", cap);
+                stage++;
+                waited = ticks;
+                break;
+            case 12:
+                ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 16 / 20); // phase 5: 16 layers a day
+                if (ticks - waited < 400) return;
+                evenness("the clock running ahead of the engine");
+                SolarConfig.maxBlockChangesPerTick = 0;
                 // below what the SURFACE line (frozen during phase 6) leaves of the highest ground, so the plane has terrain to cut
                 planeY = highestGround() - (int) t.depthAt(t.start(5), Timeline.SURFACE) - 8;
                 if ((planeY & 15) == 0) planeY += 2; // on a cube's bottom the cube above it would be empty: a check of nothing
                 jump(t.reachTime(planeY, SolarApocalypse.topY(world), Timeline.TOP),
                         "phase 6 (TOP_Y line from Y " + SolarApocalypse.topY(world) + ") down to Y " + planeY);
                 break;
-            case 11:
+            case 13:
                 if (!drained(3000)) return;
                 long top = SolarApocalypse.topY(world) - (long) t.depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1;
                 lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
+                log("weather in phase 6 (THUNDER): raining {} (true), thundering {} (true), vanilla's rain counter {} (at most 12000)",
+                        world.getWorldInfo().isRaining(), world.getWorldInfo().isThundering(), world.getWorldInfo().getRainTime());
                 server.initiateShutdown();
                 stage++;
                 break;
             default:
         }
+    }
+
+    /**
+     * How evenly the SURFACE erosion came down: layers each spawn column lost (its reference minus its top), against the
+     * line. Even erosion keeps nearly every column within a layer of the others (caves and lakes under the reference aside).
+     */
+    private static void evenness(String when) {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        Map<Integer, Integer> lost = new java.util.TreeMap<>();
+        int columns = 0;
+        for (int x = spawn.getX() - RADIUS * 16; x < spawn.getX() + RADIUS * 16; x++) {
+            for (int z = spawn.getZ() - RADIUS * 16; z < spawn.getZ() + RADIUS * 16; z++) {
+                Chunk column = cubes.getLoadedColumn(x >> 4, z >> 4);
+                int ground = CubeEngine.groundAt(world, x, z);
+                if (column == null || ground == BlockChanges.NO_Y) continue;
+                lost.merge(ground - (((IColumn) column).getHeightValue(x & 15, z & 15) - 1), 1, Integer::sum);
+                columns++;
+            }
+        }
+        int best = 0, mode = 0;
+        for (Map.Entry<Integer, Integer> e : lost.entrySet()) {
+            int near = e.getValue() + lost.getOrDefault(e.getKey() + 1, 0);
+            if (near > best) {
+                best = near;
+                mode = e.getKey();
+            }
+        }
+        log("evenness, {}: line at {} layers, engine behind by {} layers; layers lost by column {}; {} % of {} columns within"
+                        + " two neighbouring values ({}-{})", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
+                String.format("%.1f", CubeEngine.behind * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
+                columns, mode, mode + 1);
+    }
+
+    private static final List<BlockPos> splashed = new ArrayList<>();
+
+    /** Throws a water bottle down onto a few solar fires near spawn (entities tick for 300 ticks after this, players or not). */
+    private static void throwWater() {
+        BlockPos spawn = world.getSpawnPoint();
+        for (int dx = -40; dx <= 40 && splashed.size() < 3; dx += 4) {
+            for (int dz = -40; dz <= 40 && splashed.size() < 3; dz += 4) {
+                BlockPos.MutableBlockPos at = new BlockPos.MutableBlockPos();
+                for (int y = spawn.getY() + 64; y > spawn.getY() - 64; y--) {
+                    at.setPos(spawn.getX() + dx, y, spawn.getZ() + dz);
+                    if (!world.isBlockLoaded(at) || !SolarFire.is(world.getBlockState(at))) continue;
+                    BlockPos fire = at.toImmutable();
+                    if (splashed.stream().anyMatch(q -> q.distanceSq(fire) < 64)) break;
+                    EntityPotion bottle = new EntityPotion(world, fire.getX() + 0.5, fire.getY() + 2.5, fire.getZ() + 0.5,
+                            PotionUtils.addPotionToItemStack(new ItemStack(Items.SPLASH_POTION), PotionTypes.WATER));
+                    bottle.motionY = -0.5;
+                    world.spawnEntity(bottle);
+                    splashed.add(fire);
+                    break;
+                }
+            }
+        }
+        world.resetUpdateEntityTick();
+        log("threw water bottles onto {} solar fires", splashed.size());
     }
 
     private static void jump(long progress, String what) {
@@ -270,6 +362,24 @@ public final class SelfTest {
         while (System.nanoTime() < until) Thread.yield();
     }
 
+    /** A config with phases.count 2 and a leftover phase_5 section: no phase_3 or later is made, phase_5 stays with a note. */
+    private static void configCheck() {
+        java.io.File fixture = SolarConfig.file(), test = new java.io.File(fixture.getParentFile(), "solarapocalypse-configcheck.cfg");
+        try {
+            java.nio.file.Files.write(test.toPath(), java.util.Arrays.asList("phases {", "    I:count=2", "}", "phase_5 {", "    D:days=4.0", "}"));
+            SolarConfig.init(test);
+            String text = new String(java.nio.file.Files.readAllBytes(test.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            log("config with count 2: phase_1 {} (true), phase_2 {} (true), phase_3 {} (false), phase_11 {} (false), leftover phase_5"
+                            + " kept {} (true) with its note {} (true)", text.contains("phase_1 {"), text.contains("phase_2 {"),
+                    text.contains("phase_3 {"), text.contains("phase_11 {"), text.contains("phase_5 {"), text.contains("Not used: phases.count is 2"));
+        } catch (java.io.IOException e) {
+            log("config check failed: {}", e);
+        } finally {
+            SolarConfig.init(fixture); // back to the fixture
+            test.delete();
+        }
+    }
+
     /** Chances, selector exclusions, loop cutting and the vanilla fire blacklist, on a throwaway two-phase rule set (CARRY). */
     private static void rulesCheck() {
         SolarConfig.Phase a = new SolarConfig.Phase(), b = new SolarConfig.Phase();
@@ -289,15 +399,14 @@ public final class SelfTest {
         IBlockState glowstone = Blocks.GLOWSTONE.getDefaultState(), soulSand = Blocks.SOUL_SAND.getDefaultState();
         log("rules, dimensions: glowstone in phase 2 -> {} in the overworld (cobblestone: the Nether-only rule does not shadow"
                         + " phase 1's), {} in the Nether (magma); soul sand destroyed in phase {} overworld (1), {} Nether (1), {} End (-1)",
-                r.convert(1, glowstone), nether.convert(1, glowstone), r.destroyPhase(1, soulSand), nether.destroyPhase(1, soulSand),
+                to(r, 1, glowstone, 0, 0, 1), to(nether, 1, glowstone, 0, 0, 1), r.destroyPhase(1, soulSand), nether.destroyPhase(1, soulSand),
                 end.destroyPhase(1, soulSand));
         SolarConfig.Phase melt = new SolarConfig.Phase();
         melt.convert = new String[]{"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"};
         melt.destroy = new String[0];
         melt.evaporate = new String[0];
         IBlockState redSand = Blocks.SAND.getDefaultState().withProperty(BlockSand.VARIANT, BlockSand.EnumType.RED_SAND);
-        BlockRules.Step glass = BlockRules.compile(new SolarConfig.Phase[]{melt}, 0).convert(0, redSand);
-        IBlockState vitrified = glass == null ? null : glass.pick(0, 64, 0, redSand, 1);
+        IBlockState vitrified = to(BlockRules.compile(new SolarConfig.Phase[]{melt}, 0), 0, redSand, 0, 0, 1);
         log("rules: red sand -> {} (vitrified_sand, variant red_sand), which drops sand meta {} (1)", vitrified,
                 vitrified == null ? -1 : vitrified.getBlock().damageDropped(vitrified));
         log("rules: evaporation from phase water {} (expect 0), flowing water {} (0), lava {} (1), flowing lava {} (1), stone {} (-1)",
@@ -305,13 +414,14 @@ public final class SelfTest {
                 r.evaporationPhase(Blocks.LAVA.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_LAVA.getDefaultState()),
                 r.evaporationPhase(Blocks.STONE.getDefaultState()));
         IBlockState dirt = Blocks.DIRT.getDefaultState(), sand = Blocks.SAND.getDefaultState(), gravel = Blocks.GRAVEL.getDefaultState();
-        BlockRules.Step g = r.convert(0, gravel), d = r.convert(1, dirt), s = r.convert(1, sand);
+        BlockRules.Step d = r.convert(1, dirt);
+        IBlockState s = to(r, 1, sand, 0, 0, 1);
         int toSand = 0, toClay = 0, same = 0;
         for (int i = 0; i < 10000; i++) {
-            IBlockState to = g.pick(i, 64, i * 7, gravel, 1);
+            IBlockState to = to(r, 0, gravel, i, i * 7, 1);
             if (to == sand) toSand++;
             else if (to == Blocks.CLAY.getDefaultState()) toClay++;
-            if (to == g.pick(i, 64, i * 7, gravel, 1)) same++;
+            if (to == to(r, 0, gravel, i, i * 7, 1)) same++;
         }
         log("rules: gravel of 10000 blocks -> {} sand (expect ~3000), {} clay (~2000), same on a second look {} (10000);"
                         + " stone destroyed in phase {} (expect 0), cobblestone {} (-1); loop cut in phase 2: dirt -> {} (none),"
@@ -323,11 +433,11 @@ public final class SelfTest {
         IBlockState anvil = Blocks.ANVIL.getDefaultState().withProperty(BlockAnvil.FACING, EnumFacing.WEST);
         IBlockState damaged = anvil.withProperty(BlockAnvil.DAMAGE, 1);
         int hits = 0;
-        for (int i = 0; i < 10000; i++) if (r.convert(0, anvil).pick(i, 64, i * 7, anvil, 1) == damaged) hits++;
+        for (int i = 0; i < 10000; i++) if (to(r, 0, anvil, i, i * 7, 1) == damaged) hits++;
         IBlockState upper = Blocks.DOUBLE_PLANT.getDefaultState().withProperty(BlockDoublePlant.HALF, BlockDoublePlant.EnumBlockHalf.UPPER);
         log("rules: stairs -> {} (stone stairs, facing east, half top), anvil facing west -> {} in {} of 10000 (~2500), top half of"
-                        + " a tall plant -> {} (none), bottom half -> {} (deadbush)", r.convert(0, stairs), damaged, hits,
-                r.convert(0, upper), r.convert(0, Blocks.DOUBLE_PLANT.getDefaultState()));
+                        + " a tall plant -> {} (none), bottom half -> {} (deadbush)", to(r, 0, stairs, 0, 0, 1), damaged, hits,
+                r.convert(0, upper), to(r, 0, Blocks.DOUBLE_PLANT.getDefaultState(), 0, 0, 1));
     }
 
     /** Phase 5 of the fixture has stone -> cobblestone depth=3-4: after erosion, by layer below each column's top. */
@@ -367,18 +477,72 @@ public final class SelfTest {
         BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{p}, 0);
         StringBuilder grass = new StringBuilder(), stone = new StringBuilder();
         for (int layer = 6; layer >= 1; layer--) {
-            grass.append(layer).append(':').append(staged(r, Blocks.GRASS.getDefaultState(), layer).getBlock().getRegistryName().getPath()).append(' ');
-            stone.append(layer).append(':').append(staged(r, Blocks.STONE.getDefaultState(), layer).getBlock().getRegistryName().getPath()).append(' ');
+            grass.append(layer).append(':').append(name(staged(r, 0, Blocks.GRASS.getDefaultState(), layer))).append(' ');
+            stone.append(layer).append(':').append(name(staged(r, 0, Blocks.STONE.getDefaultState(), layer))).append(' ');
         }
         log("rules, depth: grass by layer {}(6 grass, 5 path, 4 dirt, 3 gravel, 2 sand, 1 glass); stone with depth=2-3 {}(only 2, 3"
-                + " cobblestone); a grass block at layer 6 next looks at layer {} (5)", grass, stone, r.convert(0, Blocks.GRASS.getDefaultState()).nextLayer(6));
+                + " cobblestone); a grass block at layer 6 next looks at layer {} (5)", grass, stone, r.convert(0, Blocks.GRASS.getDefaultState()).nextLayer(6, 0));
+    }
+
+    /**
+     * Carried rules per layer (the user's gradient): phase 1 converts grass step by step to vitrified sand at convertDepth 1,
+     * phase 2 (convertDepth 3) has no rules of its own, phase 3 is infinite with layer= rules for layers 2 to 5.
+     */
+    private static void carryCheck() {
+        SolarConfig.Phase a = phase(1, 0, "minecraft:grass -> minecraft:grass_path", "minecraft:grass_path -> minecraft:dirt",
+                "minecraft:dirt -> minecraft:gravel", "minecraft:gravel -> minecraft:sand", "minecraft:sand -> solarapocalypse:vitrified_sand");
+        SolarConfig.Phase b = phase(3, 0);
+        SolarConfig.Phase c = phase(5, SolarConfig.INFINITE, "minecraft:grass_path -> solarapocalypse:vitrified_sand layer=2",
+                "minecraft:grass -> minecraft:sand layer=2", "minecraft:dirt -> minecraft:sand layer=2", "minecraft:gravel -> minecraft:sand layer=2",
+                "minecraft:grass_path -> minecraft:gravel layer=3", "minecraft:grass -> minecraft:gravel layer=3", "minecraft:dirt -> minecraft:gravel layer=3",
+                "minecraft:grass_path -> minecraft:dirt layer=4", "minecraft:grass -> minecraft:dirt layer=4", "minecraft:grass -> minecraft:grass_path layer=5",
+                "minecraft:clay -> minecraft:sandstone layer=1", "minecraft:sandstone -> minecraft:clay layer=2");
+        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{a, b, c}, 0);
+        IBlockState grass = Blocks.GRASS.getDefaultState();
+        StringBuilder fresh = new StringBuilder(), stepped = new StringBuilder(), middle = new StringBuilder();
+        IBlockState block = grass;
+        for (int layer = 6; layer >= 1; layer--) {
+            fresh.append(layer).append(':').append(name(staged(r, 2, grass, layer))).append(' ');
+            block = staged(r, 2, block, layer); // the same block as the surface comes down
+            stepped.append(layer).append(':').append(name(block)).append(' ');
+        }
+        for (int layer = 4; layer >= 1; layer--) middle.append(layer).append(':').append(name(staged(r, 1, grass, layer))).append(' ');
+        BlockRules.Step step = r.convert(1, grass);
+        IBlockState clay = Blocks.CLAY.getDefaultState(), sandstone = Blocks.SANDSTONE.getDefaultState();
+        log("rules, carry: infinite phase, grass appearing in a layer {}(6 grass, 5 grass_path, 4 dirt, 3 gravel, 2 sand, 1"
+                        + " vitrified_sand: the carried rules in layer 1 only); one grass block as the surface comes down {}(the same);"
+                        + " phase 2 (convertDepth 3, no own rules) {}(4 grass, 3 2 1 vitrified_sand); timing of grass -> grass_path in"
+                        + " phase 2: layer 1 phase {} (0), layer 3 phase {} (1); in phase 3 a grass block at layer 7 next looks at {} (5);"
+                        + " clay layer=1 / sandstone layer=2: clay at 1 -> {} (sandstone), sandstone at 2 -> {} (clay), no loop warning",
+                fresh, stepped, middle, step.timing(step.pick(0, 64, 0, grass, 1, 1), 1, 1), step.timing(step.pick(0, 64, 0, grass, 3, 1), 3, 1),
+                r.convert(2, grass).nextLayer(7, 2), name(to(r, 2, clay, 0, 0, 1)), name(to(r, 2, sandstone, 0, 0, 2)));
+    }
+
+    private static SolarConfig.Phase phase(int convertDepth, int depth, String... convert) {
+        SolarConfig.Phase p = new SolarConfig.Phase();
+        p.convertDepth = convertDepth;
+        p.depth = depth;
+        p.convert = convert;
+        p.destroy = new String[0];
+        p.evaporate = new String[0];
+        return p;
+    }
+
+    /** What a block becomes in a layer while a phase runs (one rule, the first look), or null if it stays. */
+    private static IBlockState to(BlockRules r, int phase, IBlockState state, int x, int z, int layer) {
+        BlockRules.Step step = r.convert(phase, state);
+        int rule = step == null ? -1 : step.pick(x, 64, z, state, layer, phase);
+        return rule < 0 ? null : step.target(rule);
+    }
+
+    private static String name(IBlockState state) {
+        return state == null ? "null" : state.getBlock().getRegistryName().getPath();
     }
 
     /** A block followed through the conversion chain in one layer, as BlockChanges.evaluate does once everything is due. */
-    private static IBlockState staged(BlockRules r, IBlockState state, int layer) {
+    private static IBlockState staged(BlockRules r, int phase, IBlockState state, int layer) {
         for (int n = 0; n < 16; n++) {
-            BlockRules.Step step = r.convert(0, state);
-            IBlockState to = step == null ? null : step.pick(0, 64, 0, state, layer);
+            IBlockState to = to(r, phase, state, 0, 0, layer);
             if (to == null) break;
             state = to;
         }

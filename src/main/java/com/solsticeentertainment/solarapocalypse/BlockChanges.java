@@ -18,8 +18,9 @@ import net.minecraft.world.World;
  *   column's reference (its terrain surface, or world.topY): a block reached during the rule's phase goes when the depth
  *   passes it (layer by layer); blocks above the reference (trees, buildings) go top down early in the phase; other
  *   blocks reached before the phase go at a random but fixed moment within it.
- * - convert: blocks in the top convertDepth layers of the column's current surface change, once the phase's destruction
- *   is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to its end.
+ * - convert: blocks in the layers of the column's current surface a rule acts in (BlockRules.Step) change, once the
+ *   phase's destruction is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to
+ *   its end.
  * - evaporation: sun-exposed liquids go from their phase on (LAYERS mode: once a descending level passes them).
  */
 public final class BlockChanges {
@@ -87,18 +88,19 @@ public final class BlockChanges {
                 break;
             }
             int layer = (int) Math.max(1, Math.min(Integer.MAX_VALUE, (long) surface - y + 1)); // 1 = the surface block and what is on it
-            IBlockState target = step.pick(x, y, z, state, layer);
-            if (target == null) { // no rule acts in this layer, or this block's share stays
-                int next = step.nextLayer(layer);
+            int rule = step.pick(x, y, z, state, layer, phase);
+            if (rule < 0) { // no rule acts in this layer, or this block's share stays
+                int next = step.nextLayer(layer, phase);
                 if (next > 0) laterNear(y + next, ground, topY, phase, progress); // look again once the surface is that close
                 break;
             }
-            long due = spread(timeline.convertStart(step.phase), timeline.convertSpread(step.phase), x, y, z, step.phase);
+            int timing = step.timing(rule, layer, phase);
+            long due = spread(timeline.convertStart(timing), timeline.convertSpread(timing), x, y, z, timing);
             if (progress < due) {
                 later(due);
                 break;
             }
-            state = target;
+            state = step.target(rule);
         }
         return evaporate(state, y, sky, progress);
     }
@@ -144,7 +146,7 @@ public final class BlockChanges {
         if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
         int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
         BlockRules.Step pending = rules.convert(phase, surface);
-        if (pending != null && pending.pick(x, y, z, surface, 1) != null) return null;
+        if (pending != null && pending.pick(x, y, z, surface, 1, phase) >= 0) return null;
         boolean infinite = timeline.infinite(phase);
         int line = timeline.track(phase);
         int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;

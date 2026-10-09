@@ -10,6 +10,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
+import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -149,11 +150,16 @@ public class SolarApocalypse {
         return String.format(" at %.4g layers a day (a layer every %.4g s%s)", perDay, seconds, sun ? " at 20-minute days" : "");
     }
 
-    /** After a jump in time or a new phase: every loaded cube may have work again. */
+    /** After a jump in time or a config reload: every loaded cube may have work again, straight to the present. */
     public static void requeueAll() {
+        requeueAll(true);
+    }
+
+    /** Every loaded cube may have work again; jump false (a new phase) keeps cubes that are behind stepping. */
+    public static void requeueAll(boolean jump) {
         if (!CUBIC_CHUNKS) return;
         for (WorldServer world : DimensionManager.getWorlds()) {
-            if (isActive(world) && isCubic(world)) CubeEngine.queueAll(world);
+            if (isActive(world) && isCubic(world)) CubeEngine.queueAll(world, jump);
         }
     }
 
@@ -188,6 +194,7 @@ public class SolarApocalypse {
         if (command && SolarConfig.skipBoostSeconds > 0) boostUntil = server.getTickCounter() + SolarConfig.skipBoostSeconds * 20;
         LOGGER.info("Time skip of {} days ({}){}", String.format("%.2f", (to - from) / (double) Timeline.DAY), command ? "/time" : "sleep",
                 command && SolarConfig.skipBoostSeconds > 0 ? ", catching up faster for " + SolarConfig.skipBoostSeconds + " s" : "");
+        if (CUBIC_CHUNKS) for (WorldServer world : DimensionManager.getWorlds()) if (isActive(world) && isCubic(world)) CubeEngine.jump(world, to);
         int phase = timeline.phaseAt(to);
         if (phase < 0 || !timeline.infinite(phase)) return;
         for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
@@ -270,10 +277,28 @@ public class SolarApocalypse {
             if (lastPhase != Integer.MIN_VALUE) {
                 if (phase < 0) LOGGER.info("The sun is calm again");
                 else Announcer.phasesStarted(phase > lastPhase ? Math.max(lastPhase + 1, 0) : phase, phase, progress);
-                requeueAll();
+                requeueAll(false);
             }
             lastPhase = phase;
         }
         Announcer.tick(server);
+        if (phase >= 0 && server.getTickCounter() % 20 == 0) holdWeather(SolarConfig.phases[phase].weather);
+    }
+
+    /** Vanilla's weather counters are set to this: the weather lasts half a day after a phase stops holding it. */
+    private static final int HOLD_WEATHER = 12000;
+
+    /** Holds a phase's weather (phase_n.weather) in the apocalypse's dimensions that have weather; UNCHANGED leaves it alone. */
+    private static void holdWeather(SolarConfig.Weather weather) {
+        if (weather == SolarConfig.Weather.UNCHANGED) return;
+        for (WorldServer world : DimensionManager.getWorlds()) {
+            if (!isActive(world) || !world.provider.hasSkyLight()) continue;
+            WorldInfo info = world.getWorldInfo();
+            info.setCleanWeatherTime(0);
+            info.setRainTime(HOLD_WEATHER);
+            info.setThunderTime(HOLD_WEATHER);
+            info.setRaining(weather != SolarConfig.Weather.NONE);
+            info.setThundering(weather == SolarConfig.Weather.THUNDER);
+        }
     }
 }

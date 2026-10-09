@@ -47,11 +47,19 @@ import java.util.WeakHashMap;
  * cubes are processed once ready (populated, lit, surface-tracked), within the per-tick time budget. Processing a cube
  * evaluates {@link BlockChanges} for each block from the top down, so a removal can expose the block below in the same
  * pass. Nothing here loads or generates a cube.
+ *
+ * A cube whose look is due while the engine is behind (more due than the time budget allows) is brought up to its due
+ * time only, and queued again for its next step: every cube then moves one step (one layer in an infinite phase) per
+ * round, so the terrain comes down evenly at the speed the engine manages instead of in patches (a phase start keeps
+ * those steps). Loads, placed blocks, time skips and reloads bring a cube straight to the present. A pass the budget
+ * cuts short resumes first on the next tick.
  */
 public final class CubeEngine {
 
     private static final class State {
         final Set<CubePos> queue = new LinkedHashSet<>();
+        final Set<CubePos> resume = new LinkedHashSet<>(); // passes cut short: before the queue on the next tick
+        final Map<CubePos, Long> due = new HashMap<>();     // queued cubes behind the present: brought up to this time
         final Set<CubePos> notReady = new HashSet<>(); // looked at again every 20 ticks
         final Map<CubePos, Long> wake = new HashMap<>();
         final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column
@@ -72,23 +80,43 @@ public final class CubeEngine {
         return STATES.computeIfAbsent(world, w -> new State());
     }
 
-    /** Queue every loaded cube of a world (phase start, time jump, config reload). */
-    public static void queueAll(WorldServer world) {
+    /**
+     * Queue every loaded cube of a world: straight to the present (jump: time changes by command, config reload), or
+     * keeping the steps of cubes that are behind (a phase start, which must not cut the terrain unevenly).
+     */
+    public static void queueAll(WorldServer world, boolean jump) {
         State state = state(world);
         for (Chunk column : world.getChunkProvider().getLoadedChunks()) {
             for (ICube cube : ((IColumn) column).getLoadedCubes()) state.queue.add(cube.getCoords());
         }
+        if (jump) state.due.clear();
+        else for (Map.Entry<CubePos, Long> e : state.wake.entrySet()) state.due.merge(e.getKey(), e.getValue(), Math::min);
         state.wake.clear();
+    }
+
+    /** A time skip (sleeping, /time): what is due comes straight to the present, without steps. */
+    public static void jump(WorldServer world, long progress) {
+        State state = state(world);
+        state.due.clear();
+        for (Iterator<Map.Entry<CubePos, Long>> it = state.wake.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<CubePos, Long> e = it.next();
+            if (e.getValue() <= progress) {
+                state.queue.add(e.getKey());
+                it.remove();
+            }
+        }
     }
 
     /** Ready cubes waiting to be processed (not counting cubes not yet lit or scheduled for a later time). */
     public static int queued(World world) {
         State state = STATES.get(world);
-        return state == null ? 0 : state.queue.size();
+        return state == null ? 0 : state.queue.size() + state.resume.size();
     }
 
     /** Totals since server start, for /solar status and tests. */
     public static long nanos, cubesProcessed;
+    /** How far behind the present the last cube processed was brought (progress units), for /solar status. */
+    public static long behind;
 
     private static boolean processing, loadDuringProcessingReported;
     private static long cubeStart;
@@ -119,6 +147,8 @@ public final class CubeEngine {
         if (state == null) return;
         CubePos pos = event.getCube().getCoords();
         state.queue.remove(pos);
+        state.resume.remove(pos);
+        state.due.remove(pos);
         state.notReady.remove(pos);
         state.wake.remove(pos);
     }
@@ -142,20 +172,22 @@ public final class CubeEngine {
                 Map.Entry<CubePos, Long> e = it.next();
                 if (e.getValue() <= progress) {
                     state.queue.add(e.getKey());
+                    state.due.merge(e.getKey(), e.getValue(), Math::min);
                     it.remove();
                 }
             }
         }
-        if (state.queue.isEmpty()) return;
+        if (state.queue.isEmpty() && state.resume.isEmpty()) return;
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockChanges changes = SolarApocalypse.changes(world);
-        List<CubePos> later = new ArrayList<>();
-        long minWake = changes.minWake(progress);
-        while (!state.queue.isEmpty() && SolarApocalypse.hasBudget()) {
+        List<CubePos> later = new ArrayList<>(), cut = new ArrayList<>();
+        while ((!state.resume.isEmpty() || !state.queue.isEmpty()) && SolarApocalypse.hasBudget()) {
             // no iterator held across process(): a block's own callbacks can load a cube, which queues it (onCubeLoad)
-            Iterator<CubePos> it = state.queue.iterator();
+            Iterator<CubePos> it = (state.resume.isEmpty() ? state.queue : state.resume).iterator();
             CubePos pos = it.next();
             it.remove();
+            Long due = state.due.remove(pos);
+            long at = due == null ? progress : Math.min(due, progress);
             ICube cube = cubes.getLoadedCube(pos);
             if (cube == null) continue;
             if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !cube.isSurfaceTracked()) {
@@ -166,17 +198,30 @@ public final class CubeEngine {
             processing = true;
             long wake;
             try {
-                wake = process(world, cubes, cube, changes, progress, state, later);
+                wake = process(world, cubes, cube, changes, at, state, later);
             } finally {
                 processing = false;
             }
             nanos += System.nanoTime() - t0;
             cubesProcessed++;
-            if (wake == PARTIAL) later.add(pos);
+            behind = progress - at;
+            if (wake == PARTIAL) {
+                cut.add(pos); // not again this tick: the column limit that stopped it holds until the next one
+                if (at < progress) state.due.put(pos, at);
+                continue;
+            }
+            if (wake == BlockChanges.NEVER) continue;
             // ponytail: one look per cube per MIN_WAKE (a layer in infinite phases) at most: spread conversions land in
             // batches; per-block timers if that shows
-            else if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, progress + minWake));
+            long next = Math.max(wake, at + changes.minWake(at));
+            if (next > progress) {
+                state.wake.put(pos, next);
+            } else { // still behind: its next step, after the cubes already waiting
+                state.queue.add(pos);
+                state.due.merge(pos, next, Math::min);
+            }
         }
+        state.resume.addAll(cut);
         state.queue.addAll(later);
     }
 
@@ -239,7 +284,11 @@ public final class CubeEngine {
                         // queued now, as a pass can stop early (PARTIAL) and never get back to this column
                         if (!openedBelow && (top < minY || surface - minY + 2 <= deep)) {
                             openedBelow = true;
-                            if (cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
+                            if (cubes.getLoadedCube(cx, cy - 1, cz) != null) {
+                                CubePos below = new CubePos(cx, cy - 1, cz);
+                                later.add(below);
+                                state.due.merge(below, progress, Math::min); // the same step as this cube
+                            }
                         }
                     }
                 }

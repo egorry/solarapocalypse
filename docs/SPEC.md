@@ -62,7 +62,8 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
 
 ## 3. Block effects
 Per block, using the rules active in the running phase (`phases.convertRuleMode` and `phases.destroyRuleMode`, each
-`CARRY` = every phase so far, the latest phase's rule winning per block, or `ISOLATED` = the running phase only):
+`CARRY` = every phase so far, the latest phase's rule winning per block (for conversions: per block and layer), or
+`ISOLATED` = the running phase only):
 1. **Destroy** (`destroy` selectors): removed once the depth reaches the block. Blocks reached while the rule's phase
    runs go layer by layer as the depth passes; blocks above the reference (trees, buildings) go top down over the first
    tenth of the phase; other blocks reached before the phase go at random but fixed moments within it.
@@ -78,15 +79,26 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    nothing has to be stored; a later phase with its own rule for the block (e.g. 100 %) takes over in `CARRY`. A carried rule keeps its roll, so
    blocks a chance passed over stay as they are; to strike again in a later phase (anvils damaged a bit more each
    phase), repeat the rule there: it rolls anew.
-   **Depth stages**: `depth=3` limits a rule to the top 3 layers of the column's current surface (layer 1 = the surface
-   block and what stands on it), `depth=2-3` to layers 2 and 3; without it a rule acts in the top `convertDepth` layers
-   of its own phase. Rules are filtered by the block's layer first, then share it out in order, so a rule for other
-   layers never takes a block's share. As erosion lowers the surface, a block moves up through the layers and each
-   stage's rules reach it: grass -> path at 5, path -> dirt at 4, dirt -> gravel at 3, gravel -> sand at 2, sand ->
-   glass at 1 makes each layer below the surface one stage further along. A block below every rule's layers is looked
-   at again once the depth line has come close enough, and the cube below is queued as soon as a column's surface is
-   within the deepest rule's layers of it.
-   **Modifiers** follow the target in any order: `@ n%`, `depth=`, `dimensions=`, and `preserveState`, which keeps the source block's properties
+   **Layers**: layer 1 is the surface block and what stands on it, layer 2 the block below, and so on. Without a layer
+   modifier a rule acts in the top `convertDepth` layers of the running phase. A rule carried from an earlier phase
+   (`CARRY`) does too, except in an infinite phase, where it acts only in layer 1, the layer the erosion takes next
+   (the user's design, turn 11: the carried rules blast the top layer, the infinite phase's own rules make a gradient
+   ahead of the destruction line). `layer=2` limits a rule to layer 2, `layer=2-4` to layers 2 to 4, `depth=3` to the
+   top 3 (= `layer=1-3`); these hold in every phase the rule is carried into. In each layer the latest phase with a
+   rule acting there decides, and its rules acting there share the block out in order: a rule for other layers never
+   takes a block's share, and older phases' rules still act in the layers a newer phase leaves alone. As erosion
+   lowers the surface, a block moves up through the layers and each stage's rules reach it. The user's example, an
+   infinite phase (`convertDepth` 5) after phases that turn grass to path, path to dirt, dirt to gravel, gravel to sand
+   and sand to vitrified sand: `grass -> grass_path layer=5`; `grass -> dirt layer=4` and `grass_path -> dirt layer=4`;
+   grass, grass_path and dirt `-> gravel layer=3`; grass, dirt and gravel `-> sand layer=2`, and
+   `grass_path -> solarapocalypse:vitrified_sand layer=2`. Each layer below the surface is then one stage further
+   along, and whatever reaches layer 1 becomes vitrified sand through the carried rules (dirt there turns to vitrified
+   sand at once). Chances work in every layer, infinite phases included: a block rolls once per deciding phase and
+   state, so `dirt -> gravel @ 50% layer=3` makes a patchy stage. A carried rule that reaches deeper in a later
+   non-infinite phase (a bigger `convertDepth`) converts those new layers over that phase's `convertDays`; layers it
+   reached before catch up at once. A block below every rule's layers is looked at again once the depth line has come
+   close enough, and the cube below is queued as soon as a column's surface is within the deepest rule's layers of it.
+   **Modifiers** follow the target in any order: `@ n%`, `layer=`, `depth=`, `dimensions=`, and `preserveState`, which keeps the source block's properties
    the target block has too (by name: facing, half, shape...) unless the target sets them:
    `minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState` damages a quarter of anvils and keeps
    their facing. The top half of a two-block plant or door (`half=upper`) never converts by itself: it pops off when
@@ -104,8 +116,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Outside infinite
    phases one roll serves every phase, so the percent is the total alight: 25 % then 50 % keeps the first 25 % and
    lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases fire is
-   tagged with its layer and redrawn on every new layer. Punching the block under it puts it out (it comes back on the
-   cube's next look). Vanilla fire is left to vanilla (it spreads and burns out). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
+   tagged with its layer and redrawn on every new layer. Punching the block under it, water, or a thrown water bottle
+   (splash or lingering: the spot it hits and the four beside it, as vanilla does for vanilla fire) puts it out; it
+   comes back on the engine's next look at the cube. Its steps are silent: an entity's step plays the sound of the
+   block 0.2 below its centre, which is the fire when the centre hangs over it beside a ledge (vanilla fire sounds
+   like wool there). Vanilla fire is left to vanilla (it spreads and burns out). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
    between time of day 12000 and 14000, and lights the same spots again between 23000 and 1000; no new fire (solar or
    vanilla) is lit at night, vanilla fire already burning is left to vanilla. It reads the world's time of day, so
    sleeping and `/time set` take effect on the next look at each cube (in `TICKS` clock mode, when the cube's next look
@@ -114,9 +129,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    would take the space vanilla fire spreads into, or look odd next to wood that never catches (fire spread off). Those
    positions just stay empty (checked on each look at the cube). Ice and snow next to or near solar fire melt as vanilla
    has them (ice at block light 9+, about 6 blocks from fire; snow at 12+, about 3 blocks), on their random ticks.
-   Water flowing or placed into solar fire replaces it, as with vanilla fire; rain and splash water potions do not put
-   it out (vanilla fire dies in rain on its own random tick, which solar fire never gets; potions look for vanilla fire
-   only).
+   Water flowing or placed into solar fire replaces it, as with vanilla fire. Rain does not put it out yet (vanilla
+   fire dies in rain on its own random tick, which solar fire never gets): planned per phase, see TODO.md.
 
 - **Vitrified sand** (`solarapocalypse:vitrified_sand`, `variant` sand or red_sand like vanilla sand): sand the sun
   melted in place, a rough, cloudy glass (translucent, culls against itself, sand-coloured on maps; mobs do not spawn on
@@ -131,8 +145,17 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   unbreakable blocks. Several can be combined with commas, and `!` excludes: `material:rock, !minecraft:cobblestone`
   (a destroy list counts as one combined selector). Exclusions apply to the list or rule they are in, not to rules
   carried from earlier phases. Within a phase the first matching rule wins.
-- Loops (A -> B -> A, also across phases in `CARRY`) are cut when the rules are compiled: the loop's oldest rule is
-  dropped, with a warning in the log.
+- Loops (A -> B -> A in one layer, also across phases in `CARRY`) are cut when the rules are compiled: the deciding
+  rules of the loop member with the oldest phase are turned off from that phase on, with a warning in the log. Rules in
+  different layers never loop (`dirt -> sand layer=1` with `sand -> dirt layer=2` is fine).
+- **Weather** (`phase_n.weather`): `UNCHANGED` (as usual), `NONE` (no rain), `RAIN` (always raining), `THUNDER` (always
+  a thunderstorm), or `INHERIT` (the default: the previous phase's; phase 1 `UNCHANGED`), so the defaults leave the
+  weather alone and two settings give dry early phases and storms later. Held every second in the apocalypse's
+  dimensions that have weather (`/weather` cannot change it meanwhile); vanilla's weather counters are set to half a
+  day, so the weather lasts that long into a following `UNCHANGED` phase. Vanilla consequences: a thunderstorm darkens
+  the sky enough that the world no longer counts it as day, so there is no direct sun damage while
+  `entities.sunNeedsDaytime` applies, and players can sleep at any time (each sleep skips to the next morning, which
+  the `SUN` clock counts); rain puts out burning mobs and vanilla fire under the open sky (not solar fire yet).
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
@@ -157,7 +180,14 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 - Cubes are queued on load (new and reloaded: the retroactive part), when a player (or a wand, an enderman...) places
   a block in them (so placing cannot hold the apocalypse off), on phase starts, on `/solar` time changes and
   reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
-  1/20 day, or per layer in an infinite phase, so erosion and its fire move layer by layer). Queued cubes are processed
+  1/20 day, or per layer in an infinite phase, so erosion and its fire move layer by layer). When more is due than the
+  budget allows, a cube whose look was due is brought up to its due time only and queued again for its next step, so
+  every cube moves one step (a layer in an infinite phase) per round: the terrain comes down evenly at the speed the
+  engine manages, a layer at a time, instead of in patches several layers deep (the user's trenches, turn 11); a phase
+  start keeps those steps. Loads, placed blocks, time skips (sleeping, `/time`, `/solar set` and `add`) and reloads
+  bring a cube straight to the present. A pass the budget cuts short
+  resumes first on the next tick (it used to wait behind every queued cube, which cut stripes 16 blocks long into the
+  terrain and evaporated water in slivers). `/solar status` shows how far behind the engine is. Queued cubes are processed
   once ready (populated, lit, surface-tracked), top-down per x/z. A block's own callbacks (vanilla fire placed, a block
   popping off) can load a neighbouring cube mid-pass; the engine copes (it is queued like any loaded cube), places
   vanilla fire only where its six neighbours are loaded, and logs the first such load once per game with its cause.
@@ -208,7 +238,8 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   reference lines).
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
   (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5, plus a sixth `TOP_Y` phase at 64
-  layers a day; phase 5 also has `stone -> cobblestone depth=3-4`), so the checks do not move with the defaults. Last runs (2026-10-08):
+  layers a day; phase 5 also has `stone -> cobblestone depth=3-4`, phase 4 `weather=NONE`, phase 6 `THUNDER`), so the
+  checks do not move with the defaults. Last runs (2026-10-08):
   CWG model exact for 96.9-98.6 % of positions depending on the seed (the rest lower, from caves and lakes; at most a
   few blocks higher); rules check as expected (chances 30/20 % -> 3014 and 1977 of 10000 blocks, identical on a second
   look; exclusion, loop cut, TNT blacklist; evaporation lists with fluid and temperature selectors; `preserveState`:
@@ -228,6 +259,17 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   and 4 cobblestone (34174 of 34174, 34198 of 34199) and layers 1, 2, 5 stone (under 0.1 % off, where the check's
   top differs from the engine's surface); in the infinite phase 14.0-14.5 % (15 % asked), only the current layer's fire left;
   `TOP_Y` line of phase 6 at Y 26-45: 0 of 13-230 k positions above it still hold a block.
+  Turn 11 (2026-10-10, two seeds): a config with `count` 2 gets no `phase_3` or later, a leftover `phase_5` is kept
+  with its note; carried rules per layer: the user's gradient in an infinite phase gives 5 grass_path, 4 dirt,
+  3 gravel, 2 sand, 1 vitrified_sand (carried rules in layer 1 only), the same for one block stepping up the layers; in
+  a non-infinite phase with `convertDepth` 3 and no rules of its own the carried chain reaches 3 layers, the new ones on
+  that phase's timing; `layer=1` and `layer=2` rules pointing at each other do not loop; thrown water bottles put out
+  3 of 3 solar fires hit; weather: an inherited `NONE` stopped rain set before the phase, `THUNDER` held (rain counter
+  11986); evenness: after the skip to 32 layers 98.2-100 % of columns lost 32 or 33 layers (the rest: caves and lakes
+  under the reference); with the clock running a layer every 20 ticks and the change cap at 512 the engine fell 19
+  layers behind and 100 % of columns still lost 32 or 33, across the phase 6 start (before the phase-start fix, 488
+  columns jumped to the line there). Turn 10's run printed 0 for the chance and anvil checks and null for red sand
+  (its throwaway phases had `convertDepth` 0, now counted as 1); it was reported as passing by mistake.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and

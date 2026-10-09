@@ -4,6 +4,13 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- `layer=2` / `layer=2-4` on a convert rule: it acts only in those layers below the surface, so a whole gradient of
+  stages can run ahead of infinite erosion (`depth=3` still means the top 3 layers).
+- Thrown water bottles (splash and lingering) put out solar fire, as they do vanilla fire.
+- `phase_n.weather`: `UNCHANGED`, `NONE`, `RAIN`, `THUNDER` or `INHERIT` (default; phase 1 `UNCHANGED`), held while the
+  phase runs.
+- `/solar status` shows how far behind the engine is when it cannot keep up.
+- Phase sections above `phases.count` get a note saying they are not used (they are kept, never recreated).
 - Configurable phases (`config/solarapocalypse.cfg`): any number, lengths per phase or scaled, a safe phase 0.
 - Apocalypse clock that follows the sun (works with day-length mods) or counts ticks; optional pause while the server
   is empty; nothing rewinds it.
@@ -66,7 +73,15 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Red vitrified sand from red sand (drops red sand).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
+### Changed
+- Carried convert rules act in the running phase's `convertDepth` layers (they kept their own phase's depth), and only
+  in the top layer during infinite phases; per block and layer the latest phase with a rule there wins.
+- Infinite erosion comes down evenly, a layer at a time, when the engine cannot keep up with `layersPerDay`: it then
+  runs slower than set instead of leaving trenches several layers deep.
+- Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Trenches and stripes in infinite erosion, and water evaporating in slivers: a cube the time budget cut short waited
+  behind every other queued cube.
 - When erosion emptied a cube's columns over several ticks, the cube below could miss its look, leaving its
   conversions undone until a later look.
 - Crash (`ConcurrentModificationException` in `CubeEngine.run`) when a block change loaded a neighbouring cube.

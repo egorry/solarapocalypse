@@ -30,6 +30,7 @@ public final class SolarConfig {
     public enum FireResistance { NONE, DIRECT, BACKGROUND, BOTH }
     public enum DepthReference { SURFACE, TOP_Y }
     public enum RuleMode { CARRY, ISOLATED }
+    public enum Weather { UNCHANGED, NONE, RAIN, THUNDER }
 
     public static final int INFINITE = -1;
     public static final int AUTO = Integer.MIN_VALUE;
@@ -51,6 +52,7 @@ public final class SolarConfig {
         public int backgroundFireSeconds;
         public String message, sound, splash;
         public DepthReference depthReference; // null = the previous phase's (phase 1: world.depthReference)
+        public Weather weather;               // null (INHERIT) until load resolves it
     }
 
     private static File file;
@@ -110,6 +112,10 @@ public final class SolarConfig {
         load();
     }
 
+    public static File file() {
+        return file;
+    }
+
     public static void load() {
         Tracked c = new Tracked(file);
         numberedCategoriesInOrder(c);
@@ -139,7 +145,7 @@ public final class SolarConfig {
         scalingFactor = c.get(cat, "scalingFactor", 1.5, "EXPONENTIAL scaling factor.").getDouble();
         convertRuleMode = enumValue(c, cat, "convertRuleMode", RuleMode.CARRY,
                 "CARRY: the convert rules of every phase so far apply; for a block several phases convert, the latest phase's\n" +
-                "rules win. Terrain loaded late then looks like terrain that lived through every phase.\n" +
+                "rules acting in its layer win. Terrain loaded late then looks like terrain that lived through every phase.\n" +
                 "ISOLATED: only the running phase's rules apply.\n" +
                 "Either way a chain of rules (grass -> dirt, dirt -> sand) is followed to its end.");
         destroyRuleMode = enumValue(c, cat, "destroyRuleMode", RuleMode.CARRY,
@@ -243,6 +249,13 @@ public final class SolarConfig {
 
         phases = new Phase[count];
         for (int i = 0; i < count; i++) phases[i] = loadPhase(c, i + 1);
+        for (int i = 0; i < count; i++) if (phases[i].weather == null) phases[i].weather = i == 0 ? Weather.UNCHANGED : phases[i - 1].weather;
+        // only phase_1..phase_<count> are read (and created); a section above the count is left as it is, with a note
+        for (String name : c.getCategoryNames()) {
+            Matcher m = Pattern.compile("phase_(\\d+)").matcher(name);
+            if (m.matches()) c.setCategoryComment(name, Integer.parseInt(m.group(1)) <= count ? null
+                    : "Not used: phases.count is " + count + ". Kept so that a higher count brings it back; delete it if you like.");
+        }
 
         c.dropUnused();
         c.save(); // also puts an older file's sections in order
@@ -300,6 +313,16 @@ public final class SolarConfig {
                 "a block goes when either line reaches it. A TOP_Y line starts at world.topY and descends at this phase's speed,\n" +
                 "flattening mountains first.", new String[]{"INHERIT", "SURFACE", "TOP_Y"}).trim().toUpperCase(Locale.ROOT);
         p.depthReference = reference.equals("SURFACE") ? DepthReference.SURFACE : reference.equals("TOP_Y") ? DepthReference.TOP_Y : null;
+        String weather = c.getString("weather", cat, "INHERIT",
+                "Weather while this phase runs, in the apocalypse's dimensions: UNCHANGED (as usual), NONE (no rain), RAIN (always\n" +
+                "raining), THUNDER (always a thunderstorm); INHERIT = the previous phase's (phase 1: UNCHANGED). /weather cannot\n" +
+                "change it meanwhile; it lasts half a day into a following UNCHANGED phase. A thunderstorm darkens the sky so the\n" +
+                "world stops counting it as day: no direct sun damage while entities.sunNeedsDaytime applies, and players can\n" +
+                "sleep at any time (each sleep skips to the next morning, which the SUN clock counts). Rain puts out burning mobs\n" +
+                "and vanilla fire under the open sky; solar fire stays.",
+                new String[]{"INHERIT", "UNCHANGED", "NONE", "RAIN", "THUNDER"}).trim().toUpperCase(Locale.ROOT);
+        for (Weather w : Weather.values()) if (w.name().equals(weather)) p.weather = w;
+        if (p.weather == null && !weather.equals("INHERIT")) SolarApocalypse.LOGGER.warn("Config {}.weather: unknown value '{}', using INHERIT", cat, weather);
         p.speed = enumValue(c, cat, "speed", d.speed,
                 "How destruction reaches the depth: PHASE over the phase's days, RATE at layersPerDay, INSTANT at the phase start.\n" +
                 "Infinite depth always descends at layersPerDay; each layer then stays for 1/layersPerDay of a day.");
@@ -315,18 +338,22 @@ public final class SolarConfig {
                 "@ <chance>%, and preserveState (keep the block's facing and other properties the target has too, unless the target\n" +
                 "sets them), e.g. minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState. The top half of a tall\n" +
                 "plant or door never converts by itself: it goes when its bottom half changes. dimensions=-1 (or 0,-1; * = all, as\n" +
-                "without it) limits a rule to those dimensions; a rule scoped elsewhere does not hide an older one. depth=3 limits a\n" +
-                "rule to the top 3 layers of the surface (1 = the surface block and what is on it), depth=2-3 to layers 2 and 3\n" +
-                "(default: the top convertDepth layers), so blocks can step through stages as the surface comes down.\n" +
+                "without it) limits a rule to those dimensions; a rule scoped elsewhere does not hide an older one. layer=2 limits a\n" +
+                "rule to layer 2 of the surface (1 = the surface block and what is on it), layer=2-4 to layers 2 to 4, depth=3 to\n" +
+                "the top 3 (= layer=1-3). Without them a rule acts in the top convertDepth layers of the running phase, except that\n" +
+                "in an infinite phase an earlier phase's rule acts only in layer 1, the one the erosion takes next. Blocks then step\n" +
+                "through stages as the surface comes down: grass -> grass_path layer=5, grass_path -> dirt layer=4, ...\n" +
                 "Rules matching a block share it out in order: dirt -> gravel @ 70% converts 70 % of dirt and leaves the rest\n" +
                 "(add dirt -> sand @ 30% to cover it); a rule without @ takes all that is left. Which blocks convert is random\n" +
                 "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
                 "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules\n" +
-                "still apply (per block, the latest phase with a rule for it wins).");
+                "still apply (per block and layer, the latest phase with a rule acting there wins).");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 1, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
-                "snow layers and the like on it). Converting a block to air makes the block below the new surface.\n" +
-                "In an infinite phase the conversions run all the time, ahead of the descending destruction.");
+                "snow layers and the like on it), earlier phases' rules included (layers they reach for the first time convert\n" +
+                "over this phase's convertDays). Converting a block to air makes the block below the new surface.\n" +
+                "In an infinite phase the conversions run all the time, ahead of the descending destruction; earlier phases' rules\n" +
+                "then act only in layer 1, this phase's own in all of them (or where their layer= says).");
         p.convertDays = c.get(cat, "convertDays", d.convertDays,
                 "Conversions start once this phase's destruction is done and land at random but fixed moments over this many\n" +
                 "days: -1 = the rest of the phase's days (at once if none are left), 0 = at once. Infinite phases: at once.").getDouble();

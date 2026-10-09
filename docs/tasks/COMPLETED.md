@@ -2,6 +2,17 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 11 (2026-10-10)
+- Carried rules per layer (user's design): top layer only in infinite phases, all `convertDepth` layers otherwise;
+  latest phase decides per layer; `layer=` modifier (Claude's form instead of `@ 2`, user asked for a recommendation).
+- Thrown water bottles put out solar fire (user: yes to potions).
+- Per-phase `weather` (UNCHANGED / NONE / RAIN / THUNDER, user's names; INHERIT default added by Claude).
+- Even erosion when the engine falls behind (lockstep steps, cut-short passes resume first): the user's 4-6 deep trenches.
+- Silent solar fire steps (user).
+- Phase sections above `phases.count`: confirmed never recreated; kept with a "not used" note.
+- Self-test: carry per layer, config regen, water bottles, weather, evenness under a capped engine; the three rule
+  checks turn 10 misreported as passing (synthetic phases with `convertDepth` 0) fixed by treating 0 as 1.
+
 ## Turn 10 (2026-10-09)
 - Depth-staged conversions (`depth=k`, `depth=a-b`), re-looks when the line nears, cube below queued as the surface
   nears it; self-test: the user's grass-to-glass stages, a `depth=3-4` rule after 8 layers of erosion.
