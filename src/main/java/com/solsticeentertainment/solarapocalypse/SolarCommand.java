@@ -115,7 +115,7 @@ public final class SolarCommand extends CommandBase {
             reach = "depth " + depth + " layers below " + (line == Timeline.TOP ? "TOP_Y" : "SURFACE")
                     + (reference == BlockChanges.NO_Y ? " (not known here yet)" : " (here Y " + reference + ", destroyed down to Y " + (reference - depth + 1) + ")")
                     + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world)
-                    + behind(timeline, phase) : "")
+                    + behind(world, timeline, phase) : "")
                     + "; you: " + sky(world, pos.up());
         }
         double tickMs = MathHelper.average(world.getMinecraftServer().tickTimeArray) * 1.0E-6;
@@ -135,8 +135,8 @@ public final class SolarCommand extends CommandBase {
     }
 
     /** ", engine behind by 0.05 days (10 layers)" while the engine cannot keep up (it then moves every cube step by step). */
-    private static String behind(Timeline timeline, int phase) {
-        long behind = com.solsticeentertainment.solarapocalypse.cc.CubeEngine.behind;
+    private static String behind(World world, Timeline timeline, int phase) {
+        long behind = com.solsticeentertainment.solarapocalypse.cc.CubeEngine.behind(world);
         if (behind <= 0) return "";
         double perDay = phase < 0 ? 0 : timeline.layersPerDay(phase);
         return ", engine behind by " + days(behind) + (perDay > 0 ? String.format(Locale.ROOT, " (%.0f layers)", behind * perDay / Timeline.DAY) : "");

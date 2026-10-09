@@ -201,7 +201,7 @@ public final class SelfTest {
                 waited = ticks;
                 break;
             case 12:
-                ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 16 / 20); // phase 5: 16 layers a day
+                ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 16 / 20); // a phase 5 layer per 20 ticks; phase 6 from tick 320
                 if (ticks - waited < 400) return;
                 evenness("the clock running ahead of the engine");
                 SolarConfig.maxBlockChangesPerTick = 0;
@@ -252,7 +252,7 @@ public final class SelfTest {
         }
         log("evenness, {}: line at {} layers, engine behind by {} layers; layers lost by column {}; {} % of {} columns within"
                         + " two neighbouring values ({}-{})", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
-                String.format("%.1f", CubeEngine.behind * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
+                String.format("%.1f", CubeEngine.behind(world) * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
                 columns, mode, mode + 1);
     }
 

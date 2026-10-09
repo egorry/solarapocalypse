@@ -10,6 +10,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
+import net.minecraft.world.storage.DerivedWorldInfo;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.MinecraftForge;
@@ -29,8 +30,11 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 
 // Cubic Chunks is optional: "after:" only orders loading, it never requires the mod.
@@ -285,20 +289,28 @@ public class SolarApocalypse {
         if (phase >= 0 && server.getTickCounter() % 20 == 0) holdWeather(SolarConfig.phases[phase].weather);
     }
 
-    /** Vanilla's weather counters are set to this: the weather lasts half a day after a phase stops holding it. */
+    /** Vanilla's rain counter is set to this: the rain (or dry spell) lasts half a day after a phase stops holding it. */
     private static final int HOLD_WEATHER = 12000;
 
-    /** Holds a phase's weather (phase_n.weather) in the apocalypse's dimensions that have weather; UNCHANGED leaves it alone. */
+    /**
+     * Holds a phase's weather (phase_n.weather) in the apocalypse's dimensions that have weather; UNCHANGED leaves it alone.
+     * Dimensions that share the overworld's weather (vanilla's DerivedWorldInfo ignores changes) are held through it.
+     * Rain and thunder only end together after a storm: otherwise the thunder counter stays at least two days, so a dry
+     * spell does not end in a thunderstorm.
+     */
     private static void holdWeather(SolarConfig.Weather weather) {
         if (weather == SolarConfig.Weather.UNCHANGED) return;
+        Set<WorldInfo> held = Collections.newSetFromMap(new IdentityHashMap<>());
         for (WorldServer world : DimensionManager.getWorlds()) {
             if (!isActive(world) || !world.provider.hasSkyLight()) continue;
-            WorldInfo info = world.getWorldInfo();
+            WorldInfo info = world.getWorldInfo() instanceof DerivedWorldInfo ? DimensionManager.getWorld(0).getWorldInfo() : world.getWorldInfo();
+            if (!held.add(info)) continue;
+            boolean thunder = weather == SolarConfig.Weather.THUNDER;
             info.setCleanWeatherTime(0);
             info.setRainTime(HOLD_WEATHER);
-            info.setThunderTime(HOLD_WEATHER);
+            info.setThunderTime(thunder ? HOLD_WEATHER : Math.max(info.getThunderTime(), 4 * HOLD_WEATHER));
             info.setRaining(weather != SolarConfig.Weather.NONE);
-            info.setThundering(weather == SolarConfig.Weather.THUNDER);
+            info.setThundering(thunder);
         }
     }
 }

@@ -63,6 +63,9 @@ public final class CubeEngine {
         final Set<CubePos> notReady = new HashSet<>(); // looked at again every 20 ticks
         final Map<CubePos, Long> wake = new HashMap<>();
         final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column
+        long scanned;      // progress at the last wake check (every 20 ticks)
+        long window = 20;  // progress over the last 20 ticks: a cube due within it is on time, not behind
+        long behind;       // how far behind the present the last cube brought up to a due time was (progress units)
     }
 
     /** CC's client heightmap packet counts changed x/z in a byte: keep a column under 256 per tick. */
@@ -115,8 +118,12 @@ public final class CubeEngine {
 
     /** Totals since server start, for /solar status and tests. */
     public static long nanos, cubesProcessed;
-    /** How far behind the present the last cube processed was brought (progress units), for /solar status. */
-    public static long behind;
+
+    /** How far behind the present the engine is in a world (progress units, 0 while it keeps up), for /solar status. */
+    public static long behind(World world) {
+        State state = STATES.get(world);
+        return state == null ? 0 : state.behind;
+    }
 
     private static boolean processing, loadDuringProcessingReported;
     private static long cubeStart;
@@ -138,7 +145,11 @@ public final class CubeEngine {
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
         World world = event.getWorld();
         if (world.isRemote || !SolarApocalypse.isActive(world) || !CubicSky.isCubic(world)) return;
-        state(world).queue.add(CubePos.fromBlockCoords(event.getPos()));
+        State state = state(world);
+        CubePos pos = CubePos.fromBlockCoords(event.getPos());
+        state.queue.add(pos);
+        state.due.remove(pos); // straight to the present, even if the cube is behind
+        state.wake.remove(pos);
     }
 
     @SubscribeEvent
@@ -166,6 +177,8 @@ public final class CubeEngine {
         State state = state(world);
         state.columnEdits.clear();
         if (world.getTotalWorldTime() % 20 == 0) {
+            state.window = Math.max(20, progress - state.scanned);
+            state.scanned = progress;
             state.queue.addAll(state.notReady);
             state.notReady.clear();
             for (Iterator<Map.Entry<CubePos, Long>> it = state.wake.entrySet().iterator(); it.hasNext(); ) {
@@ -177,7 +190,11 @@ public final class CubeEngine {
                 }
             }
         }
-        if (state.queue.isEmpty() && state.resume.isEmpty()) return;
+        if (state.queue.isEmpty() && state.resume.isEmpty()) {
+            state.behind = 0;
+            return;
+        }
+        Timeline timeline = SolarApocalypse.timeline();
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockChanges changes = SolarApocalypse.changes(world);
         List<CubePos> later = new ArrayList<>(), cut = new ArrayList<>();
@@ -187,7 +204,7 @@ public final class CubeEngine {
             CubePos pos = it.next();
             it.remove();
             Long due = state.due.remove(pos);
-            long at = due == null ? progress : Math.min(due, progress);
+            long at = due == null || progress - due <= state.window ? progress : due; // due within the last check: on time
             ICube cube = cubes.getLoadedCube(pos);
             if (cube == null) continue;
             if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !cube.isSurfaceTracked()) {
@@ -204,16 +221,18 @@ public final class CubeEngine {
             }
             nanos += System.nanoTime() - t0;
             cubesProcessed++;
-            behind = progress - at;
+            if (at < progress) state.behind = progress - at;
             if (wake == PARTIAL) {
                 cut.add(pos); // not again this tick: the column limit that stopped it holds until the next one
                 if (at < progress) state.due.put(pos, at);
                 continue;
             }
-            if (wake == BlockChanges.NEVER) continue;
             // ponytail: one look per cube per MIN_WAKE (a layer in infinite phases) at most: spread conversions land in
             // batches; per-block timers if that shows
-            long next = Math.max(wake, at + changes.minWake(at));
+            long next = wake == BlockChanges.NEVER ? wake : Math.max(wake, at + changes.minWake(at));
+            int phase = timeline.phaseAt(at);
+            if (phase != timeline.phaseAt(progress)) next = Math.min(next, timeline.start(phase + 1)); // step into the next phase
+            if (next == BlockChanges.NEVER) continue;
             if (next > progress) {
                 state.wake.put(pos, next);
             } else { // still behind: its next step, after the cubes already waiting

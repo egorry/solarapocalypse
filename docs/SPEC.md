@@ -151,8 +151,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 - **Weather** (`phase_n.weather`): `UNCHANGED` (as usual), `NONE` (no rain), `RAIN` (always raining), `THUNDER` (always
   a thunderstorm), or `INHERIT` (the default: the previous phase's; phase 1 `UNCHANGED`), so the defaults leave the
   weather alone and two settings give dry early phases and storms later. Held every second in the apocalypse's
-  dimensions that have weather (`/weather` cannot change it meanwhile); vanilla's weather counters are set to half a
-  day, so the weather lasts that long into a following `UNCHANGED` phase. Vanilla consequences: a thunderstorm darkens
+  dimensions that have weather (`/weather` cannot change it meanwhile). Vanilla's other dimensions share the
+  overworld's weather, so holding it for one of them holds the overworld's (and the other way round). The rain counter
+  is set to half a day, so rain or a dry spell lasts that long into a following `UNCHANGED` phase; the thunder counter
+  is kept at two days or more except in a storm, so a dry spell does not end in a thunderstorm (a storm's rain and
+  thunder end together). Vanilla consequences: a thunderstorm darkens
   the sky enough that the world no longer counts it as day, so there is no direct sun damage while
   `entities.sunNeedsDaytime` applies, and players can sleep at any time (each sleep skips to the next morning, which
   the `SUN` clock counts); rain puts out burning mobs and vanilla fire under the open sky (not solar fire yet).
@@ -185,7 +188,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   every cube moves one step (a layer in an infinite phase) per round: the terrain comes down evenly at the speed the
   engine manages, a layer at a time, instead of in patches several layers deep (the user's trenches, turn 11); a phase
   start keeps those steps. Loads, placed blocks, time skips (sleeping, `/time`, `/solar set` and `add`) and reloads
-  bring a cube straight to the present. A pass the budget cuts short
+  bring a cube straight to the present, and so does a look due within the last wake check (20 ticks: the engine is then
+  keeping up). A cube still stepping through an earlier phase steps into the next phase at its start, so the new
+  phase's rules reach it. A pass the budget cuts short
   resumes first on the next tick (it used to wait behind every queued cube, which cut stripes 16 blocks long into the
   terrain and evaporated water in slivers). `/solar status` shows how far behind the engine is. Queued cubes are processed
   once ready (populated, lit, surface-tracked), top-down per x/z. A block's own callbacks (vanilla fire placed, a block

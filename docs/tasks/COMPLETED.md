@@ -12,6 +12,12 @@ Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CH
 - Phase sections above `phases.count`: confirmed never recreated; kept with a "not used" note.
 - Self-test: carry per layer, config regen, water bottles, weather, evenness under a capped engine; the three rule
   checks turn 10 misreported as passing (synthetic phases with `convertDepth` 0) fixed by treating 0 as 1.
+- Review workflow (3 reviewers, each finding checked by an independent verifier) over the turn's changes; fixed what it
+  confirmed: a cube stepping in an old phase could be dropped for the new phase (high), a missed look where an older
+  phase takes over a layer, a loop surviving a cut made in a deeper layer, huge numbers in `layer=`, `dimensions=`
+  and `temperature` stopping the server, a thunderstorm at the end of every dry spell, weather holds in dimensions
+  that share the overworld's, extra passes while keeping up, placed blocks waiting behind a cube's steps, and the
+  status line's "behind" figure.
 
 ## Turn 10 (2026-10-09)
 - Depth-staged conversions (`depth=k`, `depth=a-b`), re-looks when the line nears, cube below queued as the surface

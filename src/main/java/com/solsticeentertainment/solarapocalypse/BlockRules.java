@@ -139,10 +139,18 @@ public final class BlockRules {
             return phase;
         }
 
-        /** The deepest layer above `layer` in which a rule acts (the block's next chance as the surface comes down), or 0. */
+        /**
+         * The deepest layer above `layer` where the rules acting change (the block's next chance as the surface comes down):
+         * a rule starts acting, or one acting here stops, which can hand the layer to an older phase. 0 if none.
+         */
         public int nextLayer(int layer, int phase) {
             int next = 0;
-            for (Rule r : rules) if (on(r, phase) && hi(r, phase) < layer) next = Math.max(next, hi(r, phase));
+            for (Rule r : rules) {
+                if (!on(r, phase)) continue;
+                int hi = hi(r, phase);
+                if (hi < layer) next = Math.max(next, hi);
+                else if (lo(r) <= layer) next = Math.max(next, lo(r) - 1);
+            }
             return next;
         }
 
@@ -318,9 +326,10 @@ public final class BlockRules {
                 layers.add(step.hi(r, phase) + 1);
             }
         }
-        for (int layer : layers) {
-            for (boolean again = true; again; ) {
-                again = false;
+        for (boolean again = true; again; ) { // after a cut, every layer again: older rules may now decide a checked one
+            again = false;
+            search:
+            for (int layer : layers) {
                 Set<IBlockState> clear = Collections.newSetFromMap(new IdentityHashMap<>());
                 for (IBlockState first : convert.keySet()) {
                     List<IBlockState> loop = loopFrom(first, layer, phase, new ArrayList<>(), clear);
@@ -335,7 +344,7 @@ public final class BlockRules {
                             where, layer, chain, loop.get(0), set + 1, oldest, where);
                     for (Rule r : step.rules) if (r.phase == set && step.acts(r, layer, phase)) r.off = phase;
                     again = true;
-                    break;
+                    break search;
                 }
             }
         }
@@ -395,8 +404,8 @@ public final class BlockRules {
         return out;
     }
 
-    private static final Pattern LAYERS = Pattern.compile("(?i)(depth|layers?)=(\\d+)(?:-(\\d+))?");
-    private static final Pattern DIMENSIONS = Pattern.compile("(?i)\\s*\\bdimensions\\s*=\\s*(\\*|-?\\d+(?:\\s*,\\s*-?\\d+)*)");
+    private static final Pattern LAYERS = Pattern.compile("(?i)(depth|layers?)=(-?\\d{1,9})(?:-(\\d{1,9}))?");
+    private static final Pattern DIMENSIONS = Pattern.compile("(?i)\\s*\\bdimensions\\s*=\\s*(\\*|-?\\d{1,9}(?:\\s*,\\s*-?\\d{1,9})*)");
 
     /** The entries that apply in a dimension, without their dimensions=... modifier. */
     private static String[] scoped(String[] entries, int dimension) {
@@ -482,7 +491,7 @@ public final class BlockRules {
         return block instanceof IFluidBlock ? ((IFluidBlock) block).getFluid() : FluidRegistry.lookupFluidForBlock(block);
     }
 
-    private static final Pattern TEMPERATURE = Pattern.compile("temperature\\s*(<=|>=|<|>)\\s*(-?\\d+)");
+    private static final Pattern TEMPERATURE = Pattern.compile("temperature\\s*(<=|>=|<|>)\\s*(-?\\d{1,9})");
 
     /**
      * A list of selectors (each entry may hold several, separated by commas): any of the plain ones, minus any of the ones
