@@ -15,6 +15,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
+import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
@@ -22,6 +23,7 @@ import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
@@ -330,6 +332,7 @@ public final class CubeEngine {
                 boolean surfaceKnown = CubicSky.knownClear(surface, loadedUpTo, ceiling);
                 int ground = needGround ? ground(world, cubes, column, lx, lz, x, z, surface, surfaceKnown) : BlockChanges.NO_Y;
                 int fireY = BlockChanges.NO_Y; // solar fire found in this column of the cube
+                boolean litInPlace = false; // the fire at fireY was lit in place of the block the erosion took (checked then)
                 for (int ly = 15; ly >= 0 && !empty; ly--) {
                     IBlockState from = storage.get(lx, ly, lz);
                     if (from.getMaterial() == Material.AIR) continue;
@@ -348,6 +351,25 @@ public final class CubeEngine {
                     wake = Math.min(wake, changes.wake());
                     if (to == from) continue;
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
+                    if (!to.getMaterial().blocksMovement()) {
+                        // the solar fire on it goes first, as a counted change without neighbour updates (it would go anyway,
+                        // through its neighbour update)
+                        IBlockState above = ly < 15 ? storage.get(lx, ly + 1, lz) : blockAt(cubes, cx, cz, lx, y + 1, lz);
+                        if (above != null && SolarFire.is(above)) {
+                            BlockChanges.apply(world, pos.setPos(x, y + 1, z), above, AIR);
+                            if (fireY == y + 1) fireY = BlockChanges.NO_Y;
+                            if (limited(edited, lz << 4 | lx)) return PARTIAL;
+                        }
+                        // the surface block the erosion takes becomes the new surface's fire in the same change
+                        IBlockState fire = to.getMaterial() == Material.AIR && surfaceKnown && surface == y
+                                ? fireInPlace(world, cubes, storage, changes, pos, cx, cz, lx, ly, lz, x, y, z, ground, topY, progress) : null;
+                        if (fire != null) {
+                            to = fire;
+                            fireY = y;
+                            litInPlace = true;
+                        }
+                        pos.setPos(x, y, z);
+                    }
                     BlockChanges.apply(world, pos, from, to);
                     if (from.getLightOpacity() != to.getLightOpacity() || BlockChanges.isSurface(from) != BlockChanges.isSurface(to)) {
                         top = heights.getHeightValue(lx, lz) - 1;
@@ -369,7 +391,8 @@ public final class CubeEngine {
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
                         wake = Math.min(wake, changes.wake());
-                        if (fire != null && SolarFire.is(fire) && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
+                        if (fire != null && SolarFire.is(fire) && !(litInPlace && fireY == surface + 1)
+                                && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
                 boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1);
@@ -392,6 +415,23 @@ public final class CubeEngine {
     }
 
     /**
+     * The solar fire a surface block about to be destroyed can become at once (one change instead of two): when the block
+     * under it, the new surface, does not change in this pass and the fire belongs on it. Null otherwise: the block goes
+     * and the fire is placed after the column, as usual.
+     */
+    private static IBlockState fireInPlace(WorldServer world, ICubeProvider cubes, ExtendedBlockStorage storage, BlockChanges changes,
+                                           BlockPos.MutableBlockPos pos, int cx, int cz, int lx, int ly, int lz, int x, int y, int z,
+                                           int ground, int topY, long progress) {
+        IBlockState below = ly > 0 ? storage.get(lx, ly - 1, lz) : blockAt(cubes, cx, cz, lx, y - 1, lz);
+        if (below == null || !below.getMaterial().blocksMovement()) return null;
+        pos.setPos(x, y - 1, z);
+        if (changes.evaluate(below, pos, ground, topY, y - 1, Sky.SHADED, progress) != below) return null; // solid: sky does not matter
+        IBlockState fire = changes.fire(world, pos.toImmutable(), below, progress);
+        if (fire == null || !SolarFire.is(fire) || nearFlammable(world, cubes, pos, x, y, z)) return null;
+        return fire;
+    }
+
+    /**
      * Whether a loaded block around a position (diagonals too) can burn. Solar fire is not placed there: it would take the
      * space vanilla fire spreads into, and look odd against wood that never catches (with fire spread off). The block it
      * stands on does not count (a flammable one gets vanilla fire, or solar fire on top when vanilla fire is off for it).
@@ -405,14 +445,44 @@ public final class CubeEngine {
                     pos.setPos(x + dx, y + dy, z + dz);
                     IBlockState s = blockAt(cubes, Coords.blockToCube(pos.getX()), Coords.blockToCube(pos.getZ()),
                             Coords.blockToLocal(pos.getX()), pos.getY(), Coords.blockToLocal(pos.getZ()));
-                    if (s == null || s.getMaterial() == Material.AIR) continue;
+                    if (s == null || s.getMaterial() == Material.AIR || s.getMaterial() == Material.FIRE) continue; // fire: flammability 0
                     if (dx == 0 && dz == 0 && dy == -1) continue; // the ground it stands on
+                    if (knownNotFlammable(s)) continue;
                     if (s.getBlock().isFlammable(world, pos, EnumFacing.getFacingFromVector(-dx, -dy, -dz))) return true;
+                    rememberNotFlammable(s);
                 }
             }
         }
         return false;
     }
+
+    // Recently seen blocks that cannot burn: nearFlammable asks up to 25 neighbours per fire placed, nearly all stone and
+    // the like. Server thread only. ponytail: never cleared, as Blocks.FIRE's table is filled at startup.
+    private static final Block[] NOT_FLAMMABLE = new Block[16];
+    private static int notFlammableNext;
+
+    private static boolean knownNotFlammable(IBlockState state) {
+        Block block = state.getBlock();
+        for (Block b : NOT_FLAMMABLE) if (b == block) return true;
+        return false;
+    }
+
+    private static void rememberNotFlammable(IBlockState state) {
+        if (DEFAULT_FLAMMABILITY.get(state.getBlock().getClass())) NOT_FLAMMABLE[notFlammableNext++ & 15] = state.getBlock();
+    }
+
+    /** Whether a block class keeps Forge's flammability (Blocks.FIRE's table, the same at every position), so it can be remembered. */
+    private static final ClassValue<Boolean> DEFAULT_FLAMMABILITY = new ClassValue<Boolean>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            try {
+                return type.getMethod("isFlammable", IBlockAccess.class, BlockPos.class, EnumFacing.class).getDeclaringClass() == Block.class
+                        && type.getMethod("getFlammability", IBlockAccess.class, BlockPos.class, EnumFacing.class).getDeclaringClass() == Block.class;
+            } catch (NoSuchMethodException e) {
+                return false;
+            }
+        }
+    };
 
     private static boolean neighboursLoaded(ICubeProvider cubes, BlockPos pos) {
         for (EnumFacing side : EnumFacing.values()) {

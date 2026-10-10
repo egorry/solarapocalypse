@@ -2,6 +2,23 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 14 (2026-10-10)
+- Cheaper fire in infinite phases, second part (the user's to-do item): the engine removes the old fire before its
+  ground goes (it went through a neighbour update, uncounted, and the engine then counted a change that did nothing),
+  and the block the erosion takes becomes the new surface's fire in the same change; no neighbour updates around
+  changes of air and fire, and none to solar fire beside a change (it only minds its ground); flammability around a
+  new fire remembered for ordinary blocks. Measured on one seed at a 10 ms budget: 33 layers a minute instead of 23,
+  ~30 % fewer block changes and ~15 % less server time per layer; fire coverage unchanged (84.5-84.8 % for 85 %).
+- Throughput measured (the user's questions: what the budget counts, whether 200 layers a day is possible, whether
+  dropping conversions or evaporation helps, what makes their PC struggle, what causes player timeouts): fire is
+  the cost (no fire: 57 layers a minute, a quarter of the server time per layer), half of it the fire's light, which
+  runs outside the engine's budget; conversions and evaporation barely matter in stone (SPEC section 4).
+- `scripts/probe_server.sh <tag> bench [fire0|light0]`: the dev throughput check (`debug/Bench`, `scripts/bench.cfg`,
+  the user's turn 14 test config without the cap and at 10 ms).
+- Filed: the user's enquiries on trees and on water against the SURFACE line (options in TODO, waiting), a lighter
+  solar fire (waiting), block-breaking effects near the player (the user's later to-do), and the vanilla fire seed cap
+  moved up (the user reports vanilla fire as their biggest FPS cost).
+
 ## Turn 13 (2026-10-10)
 - The user's SURFACE "raw chunk deletion" again (phase 11 as phase 1): in the first phase on a depth line everything
   above the terrain (the sea, trees) was due at the phase start, so the first round took each cube's whole sea at once

@@ -62,8 +62,9 @@ public class SolarApocalypse {
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         File config = event.getSuggestedConfigurationFile();
-        // the self-test runs on its own fixed config (scripts/selftest.cfg), never on the one being edited
+        // the self-test and the bench run on their own fixed configs (scripts/), never on the one being edited
         if (System.getProperty("solarapocalypse.selftest") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-selftest.cfg");
+        if (System.getProperty("solarapocalypse.bench") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-bench.cfg");
         SolarConfig.init(config);
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         MinecraftForge.EVENT_BUS.register(SolarApocalypse.class);
@@ -94,6 +95,9 @@ public class SolarApocalypse {
         }
         if (System.getProperty("solarapocalypse.selftest") != null && CUBIC_CHUNKS) {
             com.solsticeentertainment.solarapocalypse.debug.SelfTest.run(server);
+        }
+        if (System.getProperty("solarapocalypse.bench") != null && CUBIC_CHUNKS) {
+            com.solsticeentertainment.solarapocalypse.debug.Bench.run(server);
         }
     }
 

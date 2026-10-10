@@ -257,11 +257,13 @@ public final class BlockChanges {
     /**
      * Writes a change: no neighbour updates unless blocks.blockPhysics (but see settle), no drops unless
      * blocks.dropItems, also from blocks that pop off. Every change the apocalypse makes goes through here (counted for
-     * performance.maxBlockChangesPerTick).
+     * performance.maxBlockChangesPerTick). A block destroyed into fire (the erosion lighting the new surface in the same
+     * change) drops like one destroyed into air.
      */
     public static void apply(World world, BlockPos pos, IBlockState from, IBlockState to) {
         if (!SolarConfig.dropItems && from.getBlock().hasTileEntity(from)) world.removeTileEntity(pos); // no container spill
-        if (SolarConfig.dropItems && to.getMaterial() == Material.AIR) from.getBlock().dropBlockAsItem(world, pos, from, 0);
+        boolean destroyed = to.getMaterial() == Material.AIR || to.getMaterial() == Material.FIRE;
+        if (SolarConfig.dropItems && destroyed) from.getBlock().dropBlockAsItem(world, pos, from, 0);
         boolean restoring = world.restoringBlockSnapshots;
         world.restoringBlockSnapshots |= !SolarConfig.dropItems; // Forge's no-drops switch (used when it restores blocks)
         try {
@@ -271,7 +273,7 @@ public final class BlockChanges {
                 world.setBlockState(pos, AIR, SolarConfig.blockPhysics ? 3 : 2 | 16);
                 to = AIR;
             }
-            if (!SolarConfig.blockPhysics) settle(world, pos, to);
+            if (!SolarConfig.blockPhysics && !nothingRests(from)) settle(world, pos, to);
         } finally {
             world.restoringBlockSnapshots = restoring;
         }
@@ -292,9 +294,16 @@ public final class BlockChanges {
             if (!world.isBlockLoaded(n)) continue;
             IBlockState state = world.getBlockState(n);
             if (state.getMaterial() == Material.AIR || state.isFullCube() || state.getBlock() instanceof BlockFalling
-                    || BlockRules.isLiquid(state) || !aroundLoaded(world, n)) continue;
+                    || BlockRules.isLiquid(state) || side != EnumFacing.UP && SolarFire.is(state) // solar fire only minds its ground
+                    || !aroundLoaded(world, n)) continue;
             state.neighborChanged(world, n, to.getBlock(), pos);
         }
+    }
+
+    /** Nothing rests on or hangs from air or fire, so changing them needs no settle. */
+    private static boolean nothingRests(IBlockState from) {
+        Material m = from.getMaterial();
+        return m == Material.AIR || m == Material.FIRE;
     }
 
     private static final EnumFacing[] SETTLE = {EnumFacing.UP, EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST};

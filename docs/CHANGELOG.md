@@ -74,6 +74,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Infinite erosion with fire is faster: about 40 % more layers for the same block-change time. The block the erosion
+  takes becomes the new surface's fire in the same change, the old fire goes without a chain of neighbour updates, and
+  a layer needs about 30 % fewer block changes.
 - Erosion the engine cannot keep up with comes down evenly over the whole loaded world, an onion layer at a time:
   one clock per world, which moves a layer once every cube has done the one before. The clock is saved, so a restart
   carries on where the engine was; `/solar reload` keeps it (it used to bring everything to the present).

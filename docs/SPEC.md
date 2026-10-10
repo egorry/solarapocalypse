@@ -128,7 +128,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases each
    surface block rolls once, so fire on a surface the line has not reached yet stays as it is, and when the erosion takes
    the block, the one below rolls for the new surface (turn 12: fire used to be redrawn on every layer of the line,
-   which cost two changes per column per layer even while a TOP_Y line was still in the sky). Punching the block under it, water, or a thrown water bottle
+   which cost two changes per column per layer even while a TOP_Y line was still in the sky). The engine takes the old
+   fire away before its ground goes, and where the block below is the new surface and stays, the block the erosion
+   takes becomes the new fire in the same change (turn 14: ~1.85 changes per column per layer at 85 % fire, from ~2.7). Punching the block under it, water, or a thrown water bottle
    (splash or lingering: the spot it hits and the four beside it, as vanilla does for vanilla fire) puts it out; it
    comes back on the engine's next look at the cube. Its steps are silent: an entity's step plays the sound of the
    block 0.2 below its centre, which is the fire when the centre hangs over it beside a ledge (vanilla fire sounds
@@ -175,7 +177,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
   switches to flag 3. The blocks on top of and beside a change still get their neighbour update when their own neighbours
-  are loaded (full blocks are not told), so what the new block cannot hold (plants and crops on paths, torches on top or
+  are loaded (full blocks are not told; nothing around a change of air or fire, which hold nothing; solar fire beside
+  a change, which only minds its ground), so what the new block cannot hold (plants and crops on paths, torches on top or
   on the side, ladders, top halves, fire) pops off at once; sand, gravel and liquids are left alone. A plant a rule
   makes where it cannot live (a dead bush on grass or path; vanilla keeps dead bushes on sand, dirt and hardened clay
   only) is removed at once instead of popping off later with drops. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
@@ -225,9 +228,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   apocalypse instead of lagging.
 - ...and at most `performance.maxBlockChangesPerTick` (512) changes per tick, also inside a cube, which caps what
   clients are sent and must redraw. 64 or more changes in a cube in one tick make Cubic Chunks resend the whole cube
-  (Forge's `clumpingThreshold`), and each changed cube is re-meshed by clients. Infinite SURFACE erosion with fire makes about 3
-  changes per column per layer (block, old fire, new fire), so a render distance of 12 (625 columns) needs ~480 k
-  changes a layer: ~940 ticks (~47 s) at 512 per tick, about 25 layers a 20-minute day. Vertical view distance hardly
+  (Forge's `clumpingThreshold`), and each changed cube is re-meshed by clients. Infinite SURFACE erosion through stone
+  makes 1 change per x/z column per layer without fire and ~1.85 with 85 % fire (old fire away, the block taken
+  becoming the new fire; ~2.7 before turn 14), plus the gradient's conversions while it passes through soil, so a
+  render distance of 12 (625 columns, 160 k x/z) needs ~300 k changes a layer: ~580 ticks (~29 s) at 512 per tick,
+  about 40 layers a 20-minute day. Vertical view distance hardly
   matters (only cubes at the line work). Faster: raise `maxBlockChangesPerTick` and `tickBudgetMs`, or lower
   `layersPerDay` to what the engine manages (`/solar status` shows how far behind it is). A big ocean evaporating (2.2 M sources in the self-test's loaded area) then takes
   ~4400 ticks instead of ~160.
@@ -251,6 +256,30 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   per tick), is guarded separately. What can go wrong: a lower TPS if the budget is set high on a busy server, client
   stutter (many cubes re-meshed), and in multiplayer upload bandwidth (~2 KB per cube resent per player watching; slow
   connections can time out).
+- What a layer costs (turn 14, the user's questions; measured with `scripts/probe_server.sh <tag> bench` on the dev
+  server: the user's turn 14 test config, one seed, no cap, a 10 ms budget, ~550 columns loaded, the clock kept ahead so
+  the engine works flat out). 85 % fire: 33 layers a minute, ~261 k changes a layer, ~1.4 µs of engine time a change,
+  ~990 ms of server time a layer (turn 13's engine: 23, 379 k, ~1,190 ms). The same fire without its light: the same
+  speed, 428 ms a layer. No fire: 57 layers a minute, 143 k changes and 261 ms a layer. The budget (time and cap)
+  counts every change the engine makes: destruction, conversions, evaporation, fire placed and removed; its time also
+  covers looking at blocks that do not change. Lighting is outside it: Cubic Chunks relights after the engine's changes
+  (in its own tick and when cubes are sent), and with 85 % fire that is about half the server's time per layer, as the
+  fire's light field shifts down with every layer (~15 light values a column). Conversions cost only while the
+  gradient passes through soil (dirt, sand, gravel: the first layers, deserts, beaches); in stone nothing converts.
+  Evaporation costs once per liquid block (`INSTANT`: all at the phase start; `LAYERS`: spread out). The user's turn 14
+  test (2048 and 4 ms, render distance ~12-14, turn 13's engine): ~1,750 changes and ~3.5 ms a tick (both limits
+  binding), 77 layers a day of 200, the server 11-14 ms a tick, 70-120 fps (140-200 before the apocalypse). With turn
+  14's engine the same settings should give ~110 a day; 200 a day needs ~3,200 changes and ~6 ms of engine time a tick,
+  ~20-25 ms of server time a tick (20 TPS holds). The client: every surface cube in view is resent whole and re-meshed
+  once per layer whatever the cap (the cap only paces it; a resent cube also marks the render chunks beside it), so its
+  work grows with layers per day and view distance; each floor fire is vanilla's model, ~40 see-through quads (flames
+  on four sides, two layers), so 85 % fire adds many times the terrain's own geometry, and fire near the player smokes
+  and crackles (vanilla's display ticks). Vanilla fire is the user's biggest FPS cost (240 -> 80 fps): it changes
+  blocks, light and meshes wherever it spreads. Multiplayer: a vanilla server sends a keep-alive every 15 s and drops a
+  player ("Timed out") whose previous one is still unanswered when the next is due, so a player whose connection carries
+  less than the server sends them falls behind and is dropped once the backlog passes ~15-30 s. The data rate is the
+  cubes resent in their view per second: `layersPerDay` and view distance in the long run, `maxBlockChangesPerTick`,
+  `tickBudgetMs` and the `skip*` boost for bursts. Singleplayer has no network.
 - Every config load logs the phase plan (days, depth, layer interval, rule and block-state counts) and warns about
   decreasing depths.
 - `/solar status` shows the engine's average and slowest tick, block changes per tick and the server's tick time;
@@ -336,8 +365,14 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   rest are caves and lakes under the line, now opened; the snapshot shows none of it was cut by the engine). TOP_Y line
   behind the clock: 0 caverns, 0 below, 0 left above; a low seed took the line into the unpopulated cubes at the bottom
   of the loaded range, which the engine never touches, so the terrain checks now count only cubes it works on.
+  Turn 14 (2026-10-10): the self-test passes unchanged with the fire made cheaper (fire shares, epochs, night dousing,
+  bottles, erosion fire 15.1 % of 15 % with only the current layer's, line checks 0, evenness 99.2 %, TOP_Y lag 0 / 0 /
+  0). `bench` (above, section 4): fire coverage after a minute of layer-by-layer erosion 84.5-84.8 % for 85 %, as with
+  turn 13's engine (85.0 %); ~1 % of fires carry an older layer, as before (ground the line has not reached).
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched. From turn 13, phase 11's settings as the only phase, starting after a quarter
-  day, so it runs as in play without skips (no backlog from a jump).
+  day, so it runs as in play without skips (no backlog from a jump). Turn 14 ("Phase 11 SURFACE Test 5", 2048 changes
+  and 4 ms, evaporation `INSTANT`, `material` rules turning plants, leaves, wood and the like to air): 77 layers a day,
+  91 behind at depth 145 (Y -93), 70-120 fps; `/solar reload` applies config changes in play (confirmed).
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and
   burning in a client.
