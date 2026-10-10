@@ -337,6 +337,7 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   behind the clock: 0 caverns, 0 below, 0 left above; a low seed took the line into the unpopulated cubes at the bottom
   of the loaded range, which the engine never touches, so the terrain checks now count only cubes it works on.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
-  up to the infinite one can be watched.
+  up to the infinite one can be watched. From turn 13, phase 11's settings as the only phase, starting after a quarter
+  day, so it runs as in play without skips (no backlog from a jump).
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and
   burning in a client.

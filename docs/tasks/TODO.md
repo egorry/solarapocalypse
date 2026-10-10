@@ -34,7 +34,9 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    [high, user]: done in part (turn 12: no redraw on every layer, which was all the work of a TOP_Y line in the sky).
    Left: the block the erosion takes becomes the new surface's fire in one change (now: block removed, old fire removed,
    new fire placed = 3 changes per column per layer, so this saves a third of SURFACE erosion's work).
-2. Throughput headroom (the user, turn 13: after SURFACE) [high, user]: research done (SPEC section 4, the turn 13
+2. Throughput headroom (the user, turn 13: after SURFACE; their TOP_Y test "works wonderfully" but falls behind: the
+   line at Y -165 while the terrain was cut to Y 36, 203 layers (a day) behind, 707 by the time they were below Y 0,
+   with their PC not struggling) [high, user]: research done (SPEC section 4, the turn 13
    reply, the default cap waiting above). Left: the user's experiments with higher limits; the cheaper fire above
    (a third fewer changes); counting the cap in cubes resent per tick instead of changes (Claude's suggestion: the
    network and client cost is per cube, as 64 or more changes in a cube in one tick resend it whole).
