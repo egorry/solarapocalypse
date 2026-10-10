@@ -68,7 +68,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   announcement.
 - `/time add` counts in full (no `maxSunJump` any more); after `/time set` or `/time add` the engine catches up faster
   for 30 s (`performance.skip*`); sleeping keeps the normal budget.
-- Sleeping (or skipping time) where an infinite phase's erosion passes kills the player.
+- Skipping time with `/time` where an infinite phase's erosion passes kills the player.
 - Blocks players place change in the engine's next round, instead of on their cube's next scheduled look.
 - Red vitrified sand from red sand (drops red sand).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
@@ -79,14 +79,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carries on where the engine was; `/solar reload` keeps it (it used to bring everything to the present).
 - Fire in infinite phases is no longer redrawn on every layer: each surface block rolls once, so fire on ground the
   line has not reached yet stays as it is, and a TOP_Y line still in the sky costs nothing.
-- Phase 11 of the defaults has the gradient running ahead of the erosion: layer 5 grass to path, 4 dirt, 3 gravel,
-  2 sand, vitrified sand on top.
+- Phase 11 of the defaults has the gradient running ahead of the erosion (`convertDepth` 6): layer 6 grass to path,
+  5 dirt, 4 gravel, 3 sand, 2 vitrified sand.
+- Default fire per phase (solar fire, and vanilla fire on flammables): 0, 5, 10, 25, 30, 40, 50, 60, 70 and 75 %, then
+  85 % solar and 100 % vanilla in phase 11.
+- Sleeping no longer brings the erosion straight to the present: the engine carries on a layer at a time from where it
+  was, so the world stays even and catches up behind the clock. `/time` and `/solar set/add/phase` still jump. Nobody
+  dies in their sleep from erosion any more; they fall when it gets there.
+- The engine works outwards from the players: each round reaches their surroundings first.
 - Carried convert rules act in the running phase's `convertDepth` layers (they kept their own phase's depth), and only
   in the top layer during infinite phases; per block and layer the latest phase with a rule there wins.
 - Infinite erosion comes down evenly, a layer at a time, when the engine cannot keep up with `layersPerDay`: it then
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- In the first phase on a depth line (such as an infinite SURFACE phase as phase 1), trees, buildings and the sea above
+  the terrain all went at the phase start, a whole cube at a time, holding up the erosion for minutes; they now go top
+  down over the first tenth of the phase, as in later phases.
+- Solar fire burns what touches it, as vanilla fire does: mobs and players catch fire, dropped items burn up.
 - Pits a cube wide cut through the terrain, and caverns under standing ground, while the engine was behind: a cube that
   loaded, or woke for its first layer, went straight to the present instead of its neighbours' layer.
 - Trenches and stripes in infinite erosion, and water evaporating in slivers: a cube the time budget cut short waited

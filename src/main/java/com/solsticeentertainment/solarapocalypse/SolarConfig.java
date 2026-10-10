@@ -369,9 +369,9 @@ public final class SolarConfig {
         p.ignitePercent = c.get(cat, "ignitePercent", d.ignite,
                 "Percent of surface blocks alight with solar fire once the phase's conversions are done (chosen at random but\n" +
                 "fixed): looks, sounds and burns like fire but never spreads. A total: 25 then 50 in the next phase keeps the first\n" +
-                "25 % alight and lights as many again. Fire is never put out between phases; in an infinite phase it is redrawn on\n" +
-                "every new layer. No solar fire next to (diagonals too) a block that can burn; ice and snow nearby melt as in vanilla.").getDouble();
-        p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.ignite,
+                "25 % alight and lights as many again. Fire is never put out between phases; in an infinite phase each new surface\n" +
+                "block rolls once, so the unlit share moves with every layer. No solar fire next to (diagonals too) a block that can burn; ice and snow nearby melt as in vanilla.").getDouble();
+        p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.igniteFlammable,
                 "Percent of flammable surface blocks (wood, leaves, wool...) set alight with vanilla fire instead, which spreads\n" +
                 "and burns them as usual.").getDouble();
         p.sunDamage = c.get(cat, "sunDamage", d.sunDamage, "Damage to mobs in direct sunlight per interval (2 = one heart).").getDouble();
@@ -399,9 +399,10 @@ public final class SolarConfig {
         private static final double[] DAYS = {1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 0};
         private static final String[] DEPTH = {"0", "0", "0", "0", "0", "0", "1", "2", "3", "5", "infinite"};
         private static final double[] LAYERS_PER_DAY = {16, 16, 16, 16, 16, 16, 1, 1, 1, 1, 200};
-        private static final int[] CONVERT_DEPTH = {1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 5};
+        private static final int[] CONVERT_DEPTH = {1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 6};
         private static final double[] CONVERT_DAYS = {-1, -1, -1, -1, -1, -1, 1, 1, 1, 1, -1};
-        private static final double[] IGNITE = {0, 25, 50, 75, 80, 85, 90, 95, 95, 95, 100};
+        private static final double[] IGNITE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 85};
+        private static final double[] IGNITE_FLAMMABLE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 100};
         private static final double[] SUN_DAMAGE = {0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10};
         private static final int[] SUN_FIRE = {0, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10};
         private static final double[] BACKGROUND_DAMAGE = {0, 0, 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4};
@@ -417,12 +418,12 @@ public final class SolarConfig {
                 {"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"},
                 {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"},
                 {}, {}, {}, {},
-                // the gradient under the erosion: path, dirt, gravel, sand, then vitrified sand on top (carried rules, layer 1)
-                {"minecraft:grass -> minecraft:grass_path layer=5", "minecraft:grass -> minecraft:dirt layer=4",
-                        "minecraft:grass_path -> minecraft:dirt layer=4",
-                        "minecraft:grass, minecraft:grass_path, minecraft:dirt -> minecraft:gravel layer=3",
-                        "minecraft:grass, minecraft:dirt, minecraft:gravel -> minecraft:sand layer=2",
-                        "minecraft:grass_path -> solarapocalypse:vitrified_sand layer=2"}};
+                // the gradient under the erosion: path, dirt, gravel, sand, then vitrified sand from layer 2 up
+                {"minecraft:grass -> minecraft:grass_path layer=6", "minecraft:grass_path, minecraft:grass -> minecraft:dirt layer=5",
+                        "minecraft:grass_path, minecraft:grass, minecraft:dirt -> minecraft:gravel layer=4",
+                        "minecraft:grass_path, minecraft:grass, minecraft:dirt, minecraft:gravel -> minecraft:sand layer=3",
+                        "minecraft:grass_path, minecraft:grass, minecraft:dirt, minecraft:gravel, minecraft:sand"
+                                + " -> solarapocalypse:vitrified_sand layer=2"}};
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
         static final int COUNT = DAYS.length;
@@ -436,7 +437,7 @@ public final class SolarConfig {
         String[] convert = new String[0];
         String[] destroy = new String[0];
         String[] evaporate = new String[0];
-        double ignite, sunDamage, backgroundDamage;
+        double ignite, igniteFlammable, sunDamage, backgroundDamage;
         int sunFire;
 
         static Defaults of(int n) {
@@ -453,6 +454,7 @@ public final class SolarConfig {
             if (i >= 6) d.destroy = new String[]{"*"};
             if (i < EVAPORATE.length) d.evaporate = EVAPORATE[i];
             d.ignite = IGNITE[i];
+            d.igniteFlammable = IGNITE_FLAMMABLE[i];
             d.sunDamage = SUN_DAMAGE[i];
             d.sunFire = SUN_FIRE[i];
             d.backgroundDamage = BACKGROUND_DAMAGE[i];

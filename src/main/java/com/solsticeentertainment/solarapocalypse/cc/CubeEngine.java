@@ -17,9 +17,11 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
@@ -31,6 +33,7 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -52,8 +55,9 @@ import java.util.WeakHashMap;
  * by it has been processed (a round). While the engine keeps up the clock is the present. While it cannot, the clock
  * moves one step (a layer in an infinite phase) per round, so the whole world comes down evenly at the speed the engine
  * manages, and cubes that load or wake meanwhile join at the same layer as their neighbours. The clock steps into each
- * phase at its start, and is saved, so a restart carries on where the engine was. Time skips and /solar time commands
- * bring it straight to the present. A pass the budget cuts short resumes first on the next tick.
+ * phase at its start, and is saved, so a restart carries on where the engine was. /time and /solar time commands bring
+ * it straight to the present; sleeping does not. Each round goes nearest the players first. A pass the budget cuts
+ * short resumes first on the next tick.
  */
 public final class CubeEngine {
 
@@ -101,7 +105,7 @@ public final class CubeEngine {
         state.wake.clear();
     }
 
-    /** A time skip (sleeping, /time): the clock comes straight to the present, without steps. */
+    /** A /time skip: the clock comes straight to the present, without steps (sleeping steps: SolarApocalypse.skipped). */
     public static void jump(WorldServer world, long progress) {
         State state = state(world);
         Timeline timeline = SolarApocalypse.timeline();
@@ -194,6 +198,7 @@ public final class CubeEngine {
             state.queue.addAll(state.next);
             state.next.clear();
             if (state.clock < progress) advance(world, state, changes, progress);
+            nearestFirst(world, state.queue);
         }
         if (state.queue.isEmpty() && state.resume.isEmpty()) return;
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
@@ -249,6 +254,33 @@ public final class CubeEngine {
         setClock(world, state, newPhase ? timeline.start(phase + 1) : to);
         if (newPhase) queueLoaded(world, state);
         else wakeUntil(state, state.clock);
+    }
+
+    /**
+     * Orders a round nearest the players first (by column), each column top down, so a round the budget spreads over many
+     * ticks reaches the players' surroundings first and spreads out from them.
+     */
+    private static void nearestFirst(WorldServer world, Set<CubePos> queue) {
+        List<EntityPlayer> players = world.playerEntities;
+        if (queue.size() < 2 || players.isEmpty()) return;
+        int[] px = new int[players.size()], pz = new int[players.size()];
+        for (int i = 0; i < px.length; i++) {
+            px[i] = Coords.blockToCube(MathHelper.floor(players.get(i).posX));
+            pz[i] = Coords.blockToCube(MathHelper.floor(players.get(i).posZ));
+        }
+        List<CubePos> order = new ArrayList<>(queue);
+        Map<CubePos, Long> key = new HashMap<>(order.size() * 2);
+        for (CubePos pos : order) {
+            long nearest = Long.MAX_VALUE;
+            for (int i = 0; i < px.length; i++) {
+                long dx = pos.getX() - px[i], dz = pos.getZ() - pz[i];
+                nearest = Math.min(nearest, dx * dx + dz * dz);
+            }
+            key.put(pos, Math.min(nearest, Integer.MAX_VALUE) << 32 | (0xFFFFFFFFL & ~(pos.getY() ^ Integer.MIN_VALUE))); // then higher cubes first
+        }
+        order.sort(Comparator.comparingLong(key::get));
+        queue.clear();
+        queue.addAll(order);
     }
 
     private static void setClock(WorldServer world, State state, long clock) {

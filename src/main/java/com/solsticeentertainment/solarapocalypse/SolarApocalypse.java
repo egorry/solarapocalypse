@@ -189,15 +189,17 @@ public class SolarApocalypse {
     }
 
     /**
-     * The clock skipped ahead (sleeping, /time set, /time add; ApocalypseClock). The engine catches up on its own; after a
-     * /time command with the bigger performance.skip* budget for a while. Players whose ground an infinite phase's erosion
-     * took during the skip die in their sleep.
+     * The clock skipped ahead (sleeping, /time set, /time add; ApocalypseClock). After sleeping the engine carries on a
+     * step per round from where it was (even, the world catching up behind the clock). A /time command brings the
+     * engine's clock straight to the present, with the bigger performance.skip* budget for a while; players whose ground
+     * an infinite phase's erosion took during it die.
      */
     static void skipped(long from, long to, boolean command) {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         if (command && SolarConfig.skipBoostSeconds > 0) boostUntil = server.getTickCounter() + SolarConfig.skipBoostSeconds * 20;
         LOGGER.info("Time skip of {} days ({}){}", String.format("%.2f", (to - from) / (double) Timeline.DAY), command ? "/time" : "sleep",
                 command && SolarConfig.skipBoostSeconds > 0 ? ", catching up faster for " + SolarConfig.skipBoostSeconds + " s" : "");
+        if (!command) return;
         if (CUBIC_CHUNKS) for (WorldServer world : DimensionManager.getWorlds()) if (isActive(world) && isCubic(world)) CubeEngine.jump(world, to);
         int phase = timeline.phaseAt(to);
         if (phase < 0 || !timeline.infinite(phase)) return;
@@ -210,7 +212,7 @@ public class SolarApocalypse {
             int surface = CubeEngine.groundAt(world, ground.getX(), ground.getZ());
             IBlockState after = changes(world).evaluate(state, ground, surface, topY(world), BlockChanges.NO_Y, Sky.UNKNOWN, to);
             if (state.getMaterial() != Material.AIR && after.getMaterial() == Material.AIR) {
-                LOGGER.info("{} slept where the erosion passed and dies", player.getName());
+                LOGGER.info("{} stood where the erosion passed during the skip and dies", player.getName());
                 player.attackEntityFrom(SunDamage.SUN, Float.MAX_VALUE);
             }
         }

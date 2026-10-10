@@ -12,6 +12,7 @@ import net.minecraft.potion.PotionUtils;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.event.entity.ProjectileImpactEvent;
@@ -78,6 +79,12 @@ public final class SolarFire extends BlockFire {
     @Override
     public boolean requiresUpdates() {
         return false;
+    }
+
+    /** Burns what touches it like vanilla fire (World.isFlammableWithin only knows Blocks.FIRE): mobs catch fire, items burn up. */
+    @Override
+    public boolean isBurning(IBlockAccess world, BlockPos pos) {
+        return true;
     }
 
     @SubscribeEvent

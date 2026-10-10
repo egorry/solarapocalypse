@@ -2,6 +2,20 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 13 (2026-10-10)
+- The user's SURFACE "raw chunk deletion" again (phase 11 as phase 1): in the first phase on a depth line everything
+  above the terrain (the sea, trees) was due at the phase start, so the first round took each cube's whole sea at once
+  and took minutes, holding the erosion up; it now goes top down over the first tenth of the phase, as in later phases.
+- Rounds nearest the players first (the user saw random chunks change).
+- Sleeping steps, `/time` and `/solar set/add/phase` jump (user's decision, as Claude described); no death in one's
+  sleep from erosion any more.
+- Default phase 11 gradient from the user's list (layers 6 to 2, `convertDepth` 6).
+- Default fire per phase from the user's table (solar and vanilla 0-75 %, phase 11 85 % solar, 100 % vanilla).
+- Solar fire burns what touches it (the user: dropped items did not burn; nothing caught fire from it at all).
+- Throughput research (the user: where 512 comes from, what each setting does, whether anything crashes).
+- Self-test: above-terrain timing in a single infinite SURFACE phase; items burning on solar fire; terrain gone below
+  the SURFACE line counted directly; terrain checks limited to cubes the engine works on.
+
 ## Turn 12 (2026-10-10)
 - Engine clock per world (the user's SURFACE "raw chunk deletion" and TOP_Y pits and caverns): every cube is brought up
   to one clock, which moves a layer per round while the engine is behind; loads and late-waking cubes join at their

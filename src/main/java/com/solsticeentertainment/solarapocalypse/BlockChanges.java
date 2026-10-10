@@ -16,8 +16,9 @@ import net.minecraft.world.World;
  *
  * - destroy: blocks matching an active destroy rule go once the phase depth reaches them. Depth counts layers below the
  *   column's reference (its terrain surface, or world.topY): a block reached during the rule's phase goes when the depth
- *   passes it (layer by layer); blocks above the reference (trees, buildings) go top down early in the phase; other
- *   blocks reached before the phase go at a random but fixed moment within it.
+ *   passes it (layer by layer); blocks above the reference (trees, buildings, the sea over the terrain) go top down
+ *   early in the phase, also in the first phase on a line; other blocks reached before the phase go at a random but
+ *   fixed moment within it.
  * - convert: blocks in the layers of the column's current surface a rule acts in (BlockRules.Step) change, once the
  *   phase's destruction is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to
  *   its end.
@@ -124,11 +125,14 @@ public final class BlockChanges {
     private long destroyDue(int x, int y, int z, int ref, int line, int destroyedBy) {
         if (!timeline.uses(line)) return NEVER;
         long reach = timeline.reachTime(y, ref, line);
-        long start = timeline.start(destroyedBy), length = timeline.spread(destroyedBy);
+        long start = timeline.start(destroyedBy);
         if (reach == NEVER) return NEVER;
+        if (y > ref) { // trees, buildings, the sea over the terrain: top down, early in the first phase that has the line there
+            long from = Math.max(reach, start);
+            return from + aboveSurface(y - ref, timeline.spread(reach > start ? timeline.phaseAt(reach) : destroyedBy));
+        }
         if (reach >= start) return reach; // reached while the phase runs: layer by layer
-        if (y > ref) return start + aboveSurface(y - ref, length); // trees, buildings: top down
-        return spread(start, length, x, y, z, destroyedBy);
+        return spread(start, timeline.spread(destroyedBy), x, y, z, destroyedBy);
     }
 
     /**

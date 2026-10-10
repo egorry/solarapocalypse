@@ -94,17 +94,20 @@ public final class SelfTest {
                 rulesCheck();
                 depthCheck();
                 carryCheck();
+                aboveCheck();
                 settleCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
                 SolarConfig.phases[3].message = "&6The ground cracks"; // the phase 4 start log line carries it
                 census("fresh world");
                 spawnPigs();
+                dropItems();
                 jump(t.end(0) - 1, "end of phase 1, every world tick made 12 ms slower");
                 break;
             case 1:
                 if (!drained(600)) return;
                 census("after phase 1");
+                log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
                 pigs("phase 1 (fire only)");
                 for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) pig.setEntityInvulnerable(true); // live through phase 3
                 jump(t.end(2) - 1, "end of phase 3 (fire: 5 % solar)");
@@ -177,6 +180,7 @@ public final class SelfTest {
                     return ground == BlockChanges.NO_Y ? BlockChanges.NO_Y : (int) (ground - depth + 1);
                 });
                 layerCheck();
+                solidBefore = solidColumns(); // evenness counts terrain gone below the line against this
                 SolarConfig.maxBlockChangesPerTick = cap;
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
@@ -253,7 +257,9 @@ public final class SelfTest {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
         Map<Integer, Integer> lost = new java.util.TreeMap<>();
-        int columns = 0;
+        int columns = 0, below = 0;
+        long depth = (long) SolarApocalypse.timeline().depthAt(CubeEngine.clock(world), Timeline.SURFACE); // the engine's line
+        Map<Long, java.util.BitSet> after = solidColumns();
         for (int x = spawn.getX() - RADIUS * 16; x < spawn.getX() + RADIUS * 16; x++) {
             for (int z = spawn.getZ() - RADIUS * 16; z < spawn.getZ() + RADIUS * 16; z++) {
                 Chunk column = cubes.getLoadedColumn(x >> 4, z >> 4);
@@ -261,6 +267,10 @@ public final class SelfTest {
                 if (column == null || ground == BlockChanges.NO_Y) continue;
                 lost.merge(ground - (((IColumn) column).getHeightValue(x & 15, z & 15) - 1), 1, Integer::sum);
                 columns++;
+                long key = ((long) x << 32) | (z & 0xFFFFFFFFL);
+                java.util.BitSet gone = (java.util.BitSet) solidBefore.getOrDefault(key, new java.util.BitSet()).clone();
+                gone.andNot(after.getOrDefault(key, new java.util.BitSet()));
+                below += gone.get(0, (int) Math.max(0, ground - depth + 1 - SOLID_LOW)).cardinality(); // under the lowest layer reached
             }
         }
         int best = 0, mode = 0;
@@ -271,10 +281,11 @@ public final class SelfTest {
                 mode = e.getKey();
             }
         }
-        log("evenness, {}: line at {} layers, engine behind by {} layers; layers lost by column {}; {} % of {} columns within"
-                        + " two neighbouring values ({}-{})", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
+        log("evenness, {}: line at {} layers, engine behind by {} layers; layers lost by column {} (more: caves and lakes under"
+                        + " the line, opened); {} % of {} columns within two neighbouring values ({}-{}); terrain gone below the engine's"
+                        + " line {} (0)", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
                 String.format("%.1f", CubeEngine.behind(world) * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
-                columns, mode, mode + 1);
+                columns, mode, mode + 1, below);
     }
 
     /** Posts a load event for every loaded cube of 2 x 2 columns near spawn, as if a player had come back to them. */
@@ -313,7 +324,7 @@ public final class SelfTest {
 
     /**
      * Terrain blocks (rock, dirt, sand, grass, clay: what only the erosion removes; carried rules burn wood, leaves and
-     * ice at the surface) of the loaded cubes of the spawn columns, per x/z: bit y - SOLID_LOW.
+     * ice at the surface) of the ready cubes of the spawn columns, per x/z: bit y - SOLID_LOW.
      */
     private static Map<Long, java.util.BitSet> solidColumns() {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
@@ -326,6 +337,8 @@ public final class SelfTest {
                 for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
                     ExtendedBlockStorage storage = cube.getStorage();
                     if (storage == null || storage.isEmpty() || cube.getY() * 16 < SOLID_LOW) continue;
+                    // cubes the engine does not touch yet (at the bottom of the loaded range: not populated)
+                    if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !cube.isSurfaceTracked()) continue;
                     for (int i = 0; i < 4096; i++) {
                         IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
                         Material m = s.getMaterial();
@@ -465,6 +478,22 @@ public final class SelfTest {
             BlockPos eye = new BlockPos(pig.posX, pig.posY + pig.getEyeHeight(), pig.posZ);
             log("pig at {}: sun {}, heat {}", eye, Sky.at(world, eye), Sky.heat(world, eye));
         }
+    }
+
+    private static EntityItem burning, bare;
+
+    /** Cobblestone dropped onto solar fire (it burns up as on vanilla fire) and onto bare ground under a roof beside it. */
+    private static void dropItems() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int x = spawn.getX() + 12, z = spawn.getZ(), y = top(cubes, x, z) + 1;
+        world.setBlockState(new BlockPos(x, y, z), SolarFire.forEpoch(0), 18);
+        world.spawnEntity(burning = new EntityItem(world, x + 0.5, y + 0.1, z + 0.5, new ItemStack(Blocks.COBBLESTONE)));
+        int bx = x + 3, by = top(cubes, bx, z) + 1;
+        world.setBlockState(new BlockPos(bx, by + 3, z), Blocks.STONE.getDefaultState(), 18); // a roof: the sun lights no fire under it
+        world.spawnEntity(bare = new EntityItem(world, bx + 0.5, by + 0.1, z + 0.5, new ItemStack(Blocks.COBBLESTONE)));
+        burning.setNoDespawn();
+        bare.setNoDespawn();
     }
 
     private static EntityPig pig(int x, int y, int z) {
@@ -647,6 +676,39 @@ public final class SelfTest {
                         + " clay layer=1 / sandstone layer=2: clay at 1 -> {} (sandstone), sandstone at 2 -> {} (clay), no loop warning",
                 fresh, stepped, middle, step.timing(step.pick(0, 64, 0, grass, 1, 1), 1, 1), step.timing(step.pick(0, 64, 0, grass, 3, 1), 3, 1),
                 r.convert(2, grass).nextLayer(7, 2), name(to(r, 2, clay, 0, 0, 1)), name(to(r, 2, sandstone, 0, 0, 2)));
+    }
+
+    /**
+     * Blocks over the terrain go top down over the first tenth of a phase, also in the first phase on a depth line (turn 13:
+     * the user's SURFACE test, phase 11 as phase 1, lost the sea and trees whole at the phase start, a cube at a time).
+     */
+    private static void aboveCheck() {
+        SolarConfig.Phase p = phase(1, SolarConfig.INFINITE);
+        p.destroy = new String[]{"*"};
+        p.days = 2;
+        p.layersPerDay = 200;
+        p.depthReference = SolarConfig.DepthReference.SURFACE;
+        SolarConfig.Phase[] phases = {p};
+        Timeline t = new Timeline(0.25, phases);
+        BlockChanges c = new BlockChanges(t, BlockRules.compile(phases, 0), 63);
+        int ground = 40, high = SolarConfig.surfaceMargin + 5;
+        long start = t.start(0), tenth = start + (t.end(0) - start) / 10;
+        IBlockState water = Blocks.WATER.getDefaultState(), stone = Blocks.STONE.getDefaultState();
+        log("above the terrain in a first phase (one infinite SURFACE phase): at its start water 1 above the ground {} (water), 20 above {}"
+                        + " (water), {} above {} (air), the ground {} (stone); a tenth of the phase in, water 1 above {} (air), 20 above"
+                        + " gone before 1 above {} (true)",
+                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
+                name(c.evaluate(water, new BlockPos(0, ground + 20, 0), ground, 256, ground + 20, Sky.EXPOSED, start)), high,
+                name(c.evaluate(stone, new BlockPos(0, ground + high, 0), ground, 256, ground + high, Sky.EXPOSED, start)),
+                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
+                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, tenth)),
+                due(c, water, ground + 20, ground, start) < due(c, water, ground + 1, ground, start));
+    }
+
+    /** When a block next needs a look (its removal time, for a block that only a destroy rule changes). */
+    private static long due(BlockChanges c, IBlockState state, int y, int ground, long at) {
+        c.evaluate(state, new BlockPos(0, y, 0), ground, 256, ground + 20, Sky.EXPOSED, at);
+        return c.wake();
     }
 
     private static SolarConfig.Phase phase(int convertDepth, int depth, String... convert) {
