@@ -7,20 +7,23 @@ import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.Timeline;
 import com.solsticeentertainment.solarapocalypse.cc.CubeEngine;
-import net.minecraft.block.Block;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
-import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Dev-only throughput check of an infinite phase (-Dsolarapocalypse.bench, scripts/bench.cfg): the clock runs far
  * ahead, so the engine works flat out within its budget, one layer per round; logs "SOLAR BENCH" lines with the block
- * changes per layer and the time per change, then stops the server. -Dsolarapocalypse.bench=fire0 turns the fire off,
- * light0 keeps the fire but without its light.
+ * changes per layer and the time per change, then stops the server. Variants, comma-separated
+ * (-Dsolarapocalypse.bench=fire0,stone): fire0 no fire; light<n> solar fire light n; noconv no conversions; stone adds
+ * stone -> cobblestone -> gravel -> sand -> vitrified sand to the gradient (layers 5 to 2); vit1 replaces the gradient
+ * with dirt and stone to vitrified sand in layer 1.
  */
 public final class Bench {
 
@@ -36,19 +39,29 @@ public final class Bench {
     public static void run(MinecraftServer s) {
         server = s;
         world = s.getWorld(0);
-        String variant = System.getProperty("solarapocalypse.bench");
-        if ("fire0".equals(variant)) {
-            for (SolarConfig.Phase p : SolarConfig.phases) p.ignitePercent = p.igniteFlammablePercent = 0;
-        }
-        if ("light0".equals(variant)) { // what the fire's light costs (lighting is outside the engine's budget)
-            try {
-                Field light = Block.class.getDeclaredField("lightValue"); // dev names
-                light.setAccessible(true);
-                light.setInt(SolarFire.BLOCK, 0);
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException(e);
+        SolarConfig.Phase p = SolarConfig.phases[0];
+        List<String> convert = new ArrayList<>(Arrays.asList(p.convert));
+        convert.removeIf(rule -> rule.contains("layer=")); // the gradient; the trees' rules stay
+        for (String variant : System.getProperty("solarapocalypse.bench").split(",")) {
+            if (variant.equals("fire0")) p.ignitePercent = p.igniteFlammablePercent = 0;
+            if (variant.startsWith("light")) SolarConfig.solarFireLight = Integer.parseInt(variant.substring(5)); // outside the engine's budget
+            if (variant.equals("noconv")) p.convert = new String[0];
+            if (variant.equals("stone")) {
+                convert = new ArrayList<>(Arrays.asList(p.convert));
+                convert.addAll(Arrays.asList("minecraft:stone -> minecraft:cobblestone layer=5",
+                        "minecraft:stone, minecraft:cobblestone -> minecraft:gravel layer=4",
+                        "minecraft:stone, minecraft:cobblestone -> minecraft:sand layer=3",
+                        "minecraft:stone, minecraft:cobblestone -> solarapocalypse:vitrified_sand layer=2"));
+                p.convert = convert.toArray(new String[0]);
+            }
+            if (variant.equals("vit1")) {
+                convert.add("minecraft:grass, minecraft:grass_path, minecraft:dirt, minecraft:gravel, minecraft:sand, minecraft:stone"
+                        + " -> solarapocalypse:vitrified_sand layer=1");
+                p.convert = convert.toArray(new String[0]);
+                p.convertDepth = 1;
             }
         }
+        SolarApocalypse.rebuild();
         MinecraftForge.EVENT_BUS.register(Bench.class);
     }
 
@@ -68,8 +81,9 @@ public final class Bench {
         if (ticks == 40) {
             ApocalypseClock.set(t.start(0));
             SolarApocalypse.requeueAll(true);
-            log("variant {}, cap {}, budget {} ms, fire {} %", System.getProperty("solarapocalypse.bench"),
-                    SolarConfig.maxBlockChangesPerTick, SolarConfig.tickBudgetMs, SolarConfig.phases[0].ignitePercent);
+            log("variant {}, cap {}, budget {} ms, fire {} % (light {}), {} convert rules", System.getProperty("solarapocalypse.bench"),
+                    SolarConfig.maxBlockChangesPerTick, SolarConfig.tickBudgetMs, SolarConfig.phases[0].ignitePercent, SolarFire.light,
+                    SolarConfig.phases[0].convert.length);
         }
         if (ticks < 40) return;
         ApocalypseClock.set(Math.max(ApocalypseClock.progress(), CubeEngine.clock(world) + Timeline.DAY / 10)); // always behind

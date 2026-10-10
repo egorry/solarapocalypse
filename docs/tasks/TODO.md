@@ -9,78 +9,53 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- **Higher default block change cap?** (turn 13: the user asked where 512 comes from and what raising it does; the
-  research is in SPEC section 4.) 512 was a starting value from a suggestion the user relayed in turn 3 ("around
-  512", against client and network bursts), never measured. Turn 13 TOP_Y test: the cap bound the whole time while the
-  engine used ~1 ms of its 4. Turn 14: the user ran 2048 with `tickBudgetMs` 4 (not 4096 or more, which they expect to
-  cost their 60 fps floor): 77 layers a day of the 200 set (91 behind at depth 145), 70-120 fps, the server 11-14 ms a
-  tick; the cap and the 4 ms bound about equally. Since turn 14 a layer with fire takes ~30 % fewer changes and engine
-  time, so the same settings should give ~110 a day; 200 a day at their view distance needs ~3,200 changes and ~6 ms of
-  engine time a tick (the server ~20-25 ms a tick, still 20 TPS); the client is the open question (SPEC section 4).
-  Claude's view: default 2048 (the user's own setting), `tickBudgetMs` stays 4; on their PC one short try of 4096 with
-  `tickBudgetMs` 8 shows whether 200 a day keeps 60 fps (`/solar reload` back if not). Until the user decides, 512
-  stays.
-- **What stands above the terrain in a fast first phase** (turn 13, found while fixing the user's SURFACE test): in
-  the user's shortcut test (phase 11 as phase 1), trees and the sea go top down over the first tenth of the phase
-  (0.2 days), while the 200-a-day erosion of the terrain starts at once, so for those minutes the lowest water and tree
-  trunks hang over ground already eroded under them (up to ~40 layers). In the full config they are gone in phase 7, at
-  one layer a day, long before phase 11 (and the default phases 3 and 4 already turn leaves and wood to air). Turn 14,
-  the user asked (an enquiry, not to be done yet): don't trees count as part of the surface; why wait for them, and why
-  is the terrain under them affected but not them; can they be added to that definition, at what impact and
-  complexity; would converting all leaves and logs to air in the fast phase be a bandaid? Answered in the turn 14
-  reply: the SURFACE reference is the terrain CubicWorldGen shapes before caves, trees, structures and water (the sea
-  floor under the sea), the same whenever a cube loads, so terrain loaded later is cut at its neighbours' layer; trees
-  stand above it. Conversions count from another surface, each column's current top block, trees included. Ways to
-  include trees: (a) the column's real top as the reference: the erosion under trees and builds would start late by
-  their height (terrain pillars where trees stood), and the top is unknown until the cubes above load; (b) a lead-in:
-  in the first phase on a line, the line starts `surfaceMargin` (48) above the terrain at the layer rate (small, in
-  Timeline; delays the first terrain layer by up to a tenth of the phase); (c) everything above the terrain at the
-  phase start (turn 12's behaviour: the sea in one burst). The bandaid works and is in the user's test config already:
-  `material:leaves -> air` and `material:wood -> air` (no `layer=`) in an infinite phase act at its start in the top
-  `convertDepth` layers of the current surface, top down within a pass, so trees go in the engine's first look at each
-  cube (`material:wood` also takes planks and wooden builds). Claude's view: the bandaid is enough for shortcut tests;
-  (b) only if the user wants it without the rules.
 - **Water and the SURFACE line** (the user, turn 14, an enquiry: water evaporation and SURFACE erosion do not match up,
   as SURFACE counts from the ground under the water while evaporation comes down flat from `topY` or goes at once; they
-  set evaporation to `INSTANT` for their SURFACE tests; can SURFACE treat water as its surface, or other ideas?). Now,
-  in one phase with both, water goes by whichever comes first: the destroy rule (`*` takes liquids), above the sea
-  floor top down over the first tenth of the phase by height above the local floor (deep water first, shallows last);
-  evaporation `LAYERS` flat from `topY` at its own rate (water above `topY`, lakes and falls on hills, at the start);
-  `INSTANT` at the start. The floor erodes from its own top from the start, under water still standing (without
-  physics the water hangs over the cut). Options: (a) water as surface: over standing water the reference is the
-  water's top (CubicWorldGen's sea level), so the sea comes down flat with the land and its floor is cut once the water
-  above is gone; the floor's shape is lost where the line has passed it; small change; but in the default phases the
-  sea evaporates in phase 3, and the dry floors would then lie below the line of phases 7-10 (1-5 layers) and keep
-  their sand and gravel meanwhile; (b) the floor waits for its water: a block under standing liquid is not destroyed
-  until the liquid has gone, then catches up at once; the basin keeps its shape and drains flat, the floor drops
-  several layers in one go as the water leaves it; moderate; (c) config only (what the user did): `INSTANT`, or
-  `LAYERS` with the phase's `layersPerDay` and `topY` at sea level. Claude's view: (c) for tests; the default phases
-  evaporate the sea long before erosion, so nothing shows there; (b) if seas should drain alongside erosion in one
-  phase.
-- **Lighter solar fire?** (turn 14, from the throughput measurements and the user's question on what makes their PC
-  struggle; they report vanilla fire as their biggest FPS cost, 240 -> 80 fps.) Measured on the dev server (SPEC section
-  4): at 85 % fire, fire is ~45 % of a layer's block changes, and its light about half the server's time per layer
-  (lighting runs outside the engine's budget; the light field shifts down with every layer, ~15 values a column): the
-  same world with the fire's light off took 428 ms of server time a layer instead of ~990. On the client each floor
-  fire is vanilla's model, ~40 see-through quads (flames on four sides and two layers), so 85 % of the visible surface
-  on fire draws many times the terrain's own geometry: likely the biggest FPS cost (unmeasured; Claude cannot see the
-  client). Options: (a) `blocks.solarFireLight` (0-15, default 15): less lighting work, a dimmer glow at night; in
-  multiplayer clients must get the server's value (sent on login); (b) a lighter model: the floor layers only (8 quads
-  instead of 40), a lower, thinner flame; (c) a lower `ignitePercent` (possible now). Claude's view: the user first
-  compares FPS with `ignitePercent` 0 against 85 (`/solar reload`; the fire goes as the layers move on); if fire is
-  the FPS cost, (b); (a) if the server side matters (multiplayer).
+  set evaporation to `INSTANT` for their SURFACE tests; can SURFACE treat water as its surface, or other ideas?). Turn
+  15, the user: option (c) does not work: with `LAYERS` the floor is cut from its own top while the flat level is still
+  above it, so a cavern opens under the water (held up, as block physics is off); (a) and (b) sound promising; are they
+  changes to the evaporation or to the surface destruction? Decision next turn. Answer: both change the destruction,
+  not the evaporation, which stays as it is (water goes by whichever comes first). (a) changes where the line is: over
+  standing water the SURFACE reference becomes the water's top (CubicWorldGen's sea level where the terrain lies below
+  it; lakes are not in the generator's model and keep their floor), so the `*` destroy rule takes the sea flat from sea
+  level down with the land, and the floor once the line reaches it; small, in the surface model. (b) changes when a
+  block may go: the engine does not destroy a block under standing liquid (any liquid, lakes too) until the liquid
+  has gone, by evaporation or the destroy rule; the floor then catches up its missing layers at once; moderate, in the
+  engine's pass. How it is now: in one phase with both, the destroy rule (`*` takes liquids) takes water above the
+  floor top down over the first tenth of a first phase (at the start of a later one), deepest first;
+  evaporation `LAYERS` flat from `topY` at its own rate (water above `topY` at the start), `INSTANT` at the start (it
+  works, by taking all the water at once). Claude's view: (b): basins keep their shape and drain flat, lakes too; (a)
+  loses the floor's shape, and in the default phases, where the sea evaporates in phase 3, the dry floors would lie
+  below the line of phases 7-10 (1-5 layers) and wait for phase 11.
+- **Solar fire light default** (turn 15: the user asked for a configurable light level, "defaulting to what, 4?";
+  `blocks.solarFireLight` is in, default 15 until the user decides). Measured (bench, 85 % fire in an infinite phase):
+  server time a layer 992 ms at light 15, 599 at 4, 428 at 0, so 4 saves ~70 % of the light's cost. Light below 8 also
+  lets mobs spawn beside fire at night (more night spawns dying in the sun); the flames stay full-bright either way.
+  Claude's view: keep 15 as the default (vanilla's glow, and with no fire in phase 11 the default phases no longer pay
+  for moving fire: fire placed once per phase costs little); 4 in configs with fire in an infinite phase.
+- **Stone stages in phase 11** (the user, turn 15: they plan to add stone -> cobblestone -> gravel -> sand -> vitrified
+  sand to the default gradient later, or instead dirt and stone straight to vitrified sand in layer 1; how much more
+  lag?). Measured (bench, no fire; SPEC section 4): each stage in stone is one more change per column per layer. The
+  four stone stages: 4.4 times the changes of today's gradient, ~3 times the server time a layer, 20 layers a minute
+  instead of 54 (at the user's 2048 and 4 ms ~50-80 a day instead of ~200; keeping 200 needs ~7,500 changes and ~9 ms
+  a tick). One vitrified stage in layer 1 (`convertDepth` 1): 1.8 times the changes, 39 a minute (~115-150 a day).
+  No conversions: 67 a minute (~225-260 a day). Clients re-mesh about as often either way (a cube's stages change in
+  the same pass, one resend a layer, plus the cube below where the stages reach into it). Vitrified sand is see-through:
+  a surface of it lets sky light into the block below (lighting work every layer) and clients draw it in the
+  translucent pass. Claude's view: one stage, to an opaque block or in layer 2 (the top is then already converted when
+  it shows); several stages only with a lower `layersPerDay`.
 
 ## Will do (Cubic Chunks)
 1. Throughput headroom (the user, turn 13: after SURFACE; their TOP_Y test "works wonderfully" but falls behind: the
    line at Y -165 while the terrain was cut to Y 36, 203 layers (a day) behind, 707 by the time they were below Y 0,
    with their PC not struggling; turn 14: 77 a day of 200 at 2048 changes and 4 ms) [high, user]: research done (SPEC
-   section 4); turn 14: measured with `scripts/probe_server.sh <tag> bench`, and the fire made cheaper (the cheaper fire
-   item, done: COMPLETED turn 14), ~42 % more layers for the same engine time. Left: the user's A/B tries (fire off, and
-   4096 with 8 ms once; see the cap decision above); skipping blocks that cannot change yet (Claude's suggestion: in an
-   infinite phase every block of a cube the line is in is looked at on every layer, about a quarter of the engine's
-   time in the profile; below the line and the conversions' layers, nothing changes until the line gets there);
-   counting the cap in cubes resent per tick instead of changes (Claude's suggestion: the network and client cost is
-   per cube, as 64 or more changes in a cube in one tick resend it whole).
+   section 4); turn 14: the cheaper fire (~42 % more layers); turn 15: no fire in the default phase 11 (the user), and
+   in the user's test their engine then kept up with 200 a day at 2048 and 4 ms (~100 with 85 % fire); default cap
+   2048. Left: skipping blocks that cannot change yet (Claude's suggestion: in an infinite phase every block of a cube
+   the line is in is looked at on every layer, about a quarter of the engine's time; below the line and the
+   conversions' layers nothing changes until the line gets there; needs care with the next-look time of excluded
+   blocks); counting the cap in cubes resent per tick instead of changes (Claude's suggestion: the network and client
+   cost is per cube, as 64 or more changes in a cube in one tick resend it whole).
 2. Rain puts out solar fire, per phase (the user, turn 11: players expect it, and our fire should differ from vanilla
    fire only in spreading; agreed by Claude) [high, Claude: players expect it, and it is next to the fire code just
    touched]: `phase_n.rainDousesFire` (default true), solar fire under
@@ -94,7 +69,8 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
 4. Vanilla fire seed cap (`maxVanillaFireSeedsPerChunk`) [medium, the user's turn 14 observation: vanilla fire is their
    biggest FPS cost, 240 -> 80 fps; it was waiting on such a report]: fewer places where the sun lights vanilla fire,
    so fewer fronts burn at once (each burning block changes its neighbours, light and the client's mesh, and smokes).
-   Claude's view: also try a lower `igniteFlammablePercent` meanwhile.
+   Claude's view: also try a lower `igniteFlammablePercent` meanwhile. Turn 15: no vanilla fire in the default phase 11
+   any more (the user), so this is for phases 2-10.
 5. Investigate the user's spot that counts as under cover in open sky (cube -19 5 -13, block 8 0 7, near
    -296 80 -201, vanilla-like CC preset); likely a CC sky light or heightmap fault [low, user].
 6. Leaf culling when logs are removed before leaves [low, Claude: only matters for configs that burn wood first].

@@ -6,10 +6,12 @@ import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityArmorStand;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.MobEffects;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -24,6 +26,8 @@ public final class SunDamage {
 
     /** Not fire damage, so Fire Resistance only protects as entities.fireResistance says. */
     public static final DamageSource SUN = new DamageSource(Tags.MOD_ID + ".sun").setDamageBypassesArmor();
+    /** World tick until which a death by fire counts as the sun's: the fire it sets outlasts the exposure. */
+    private static final String BURNT_UNTIL = Tags.MOD_ID + ":burntUntil";
 
     private SunDamage() {}
 
@@ -70,7 +74,31 @@ public final class SunDamage {
         }
         double damage = (direct ? p.sunDamage : 0) + (background ? p.backgroundDamage : 0);
         int fire = Math.max(direct ? p.sunFireSeconds : 0, background ? p.backgroundFireSeconds : 0);
-        if (fire > 0) e.setFire(fire);
+        if (fire > 0) {
+            e.setFire(fire);
+            burnt(e, fire * 20 + 20);
+        }
         if (damage > 0) e.attackEntityFrom(SUN, (float) damage);
+    }
+
+    /** The apocalypse set this entity alight for some ticks (sun, heat, solar fire). */
+    public static void burnt(EntityLivingBase e, int ticks) {
+        NBTTagCompound data = e.getEntityData();
+        long until = e.world.getTotalWorldTime() + ticks;
+        if (data.getLong(BURNT_UNTIL) < until) data.setLong(BURNT_UNTIL, until);
+    }
+
+    /**
+     * With blocks.dropItems false, mobs the apocalypse kills drop nothing: night spawns dying in the sun at once piled up
+     * items. Players drop their things as usual; a mob a player kills drops as usual.
+     */
+    @SubscribeEvent
+    public static void onDrops(LivingDropsEvent event) {
+        EntityLivingBase e = event.getEntityLiving();
+        if (SolarConfig.dropItems || e instanceof EntityPlayer || e.world.isRemote) return;
+        DamageSource source = event.getSource();
+        if (source == SUN || source.isFireDamage() && e.world.getTotalWorldTime() <= e.getEntityData().getLong(BURNT_UNTIL)) {
+            event.setCanceled(true);
+        }
     }
 }

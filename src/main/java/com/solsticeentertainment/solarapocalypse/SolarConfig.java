@@ -31,6 +31,7 @@ public final class SolarConfig {
     public enum DepthReference { SURFACE, TOP_Y }
     public enum RuleMode { CARRY, ISOLATED }
     public enum Weather { UNCHANGED, NONE, RAIN, THUNDER }
+    public enum FireModel { FULL, SIMPLE }
 
     public static final int INFINITE = -1;
     public static final int AUTO = Integer.MIN_VALUE;
@@ -81,6 +82,8 @@ public final class SolarConfig {
     public static boolean blockPhysics;
     public static String[] vanillaFireBlacklist;
     public static boolean nightDousesFire;
+    public static int solarFireLight;
+    public static FireModel solarFireModel;
     public static int skipBoostSeconds, skipMaxBlockChangesPerTick;
     public static double skipTickBudgetMs;
     // evaporation
@@ -181,7 +184,8 @@ public final class SolarConfig {
         c.setCategoryComment(cat, "How block changes are applied.");
         dropItems = c.getBoolean("dropItems", cat, false,
                 "Destroyed blocks drop their items, and so do blocks that pop off a changed block (plants, crops, torches...).\n" +
-                "Container contents never drop when false.");
+                "Container contents never drop when false, nor do mobs killed by the sun, its heat or solar fire (players drop\n" +
+                "their things as usual).");
         blockPhysics = c.getBoolean("blockPhysics", cat, false,
                 "Changes notify neighbours: sand and gravel fall, liquids flow into removed space. In Cubic Chunks this can\n" +
                 "generate neighbouring cubes at cube edges.");
@@ -193,6 +197,15 @@ public final class SolarConfig {
                 "true: night puts the sun's fire out. Each solar fire goes out at its own moment over the sunset (time of day\n" +
                 "12000-14000) and the same spots light again over the sunrise (23000-1000); no new fire is lit at night (vanilla\n" +
                 "fire already burning is left to vanilla). false: fire, once lit, stays (infinite phases redraw it on every layer).");
+        solarFireLight = c.getInt("solarFireLight", cat, 15, 0, 15,
+                "Light level solar fire gives off (vanilla fire: 15); its flames look as bright either way. Less light is less\n" +
+                "lighting work for the server and clients while fire moves with infinite erosion, a dimmer glow around it at\n" +
+                "night, and below 8 mobs can spawn beside it. Fire already burning keeps its old light until something relights\n" +
+                "it. Clients get the server's value.");
+        solarFireModel = enumValue(c, cat, "solarFireModel", FireModel.FULL,
+                "Client: FULL looks like vanilla fire (crossed flames and a flame wall on each side, 12 faces). SIMPLE draws only\n" +
+                "the crossed flames (4 faces), lighter for slower PCs with much fire in view. Applies when the game starts or\n" +
+                "textures reload (F3+T).");
 
         cat = "evaporation";
         c.setCategoryComment(cat, "How sun-exposed liquids vanish. Which liquids, from which phase: each phase's evaporate list.");
@@ -223,7 +236,7 @@ public final class SolarConfig {
         freeTickShare = c.get(cat, "freeTickShare", 0.5,
                 "...and at most this share of the time left in a 50 ms tick by everything else (average of the last 100 ticks),\n" +
                 "so a busy server slows the apocalypse down instead of lagging. At least 0.5 ms per tick always runs.").getDouble();
-        maxBlockChangesPerTick = c.getInt("maxBlockChangesPerTick", cat, 512, 0, Integer.MAX_VALUE,
+        maxBlockChangesPerTick = c.getInt("maxBlockChangesPerTick", cat, 2048, 0, Integer.MAX_VALUE,
                 "...and at most this many block changes per server tick, which caps what clients are sent and must redraw.\n" +
                 "0 = no limit.");
         skipBoostSeconds = c.getInt("skipBoostSeconds", cat, 30, 0, 3600,
@@ -401,8 +414,9 @@ public final class SolarConfig {
         private static final double[] LAYERS_PER_DAY = {16, 16, 16, 16, 16, 16, 1, 1, 1, 1, 200};
         private static final int[] CONVERT_DEPTH = {1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 6};
         private static final double[] CONVERT_DAYS = {-1, -1, -1, -1, -1, -1, 1, 1, 1, 1, -1};
-        private static final double[] IGNITE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 85};
-        private static final double[] IGNITE_FLAMMABLE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 100};
+        // phase 11: too hot for fire to burn any more (and fire is the costliest part of a layer)
+        private static final double[] IGNITE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 0};
+        private static final double[] IGNITE_FLAMMABLE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 0};
         private static final double[] SUN_DAMAGE = {0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10};
         private static final int[] SUN_FIRE = {0, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10};
         private static final double[] BACKGROUND_DAMAGE = {0, 0, 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4};

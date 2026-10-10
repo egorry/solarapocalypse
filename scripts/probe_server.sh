@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run a dev check on a fresh dev world. Usage: scripts/probe_server.sh [tag] [probe|selftest|bench] [variant]
 # probe: the CubicProbe research probe (docs/RESEARCH.md section 9); selftest: debug/SelfTest (the apocalypse end to end);
-# bench: debug/Bench (throughput of an infinite phase; variant fire0 = no fire).
+# bench: debug/Bench (throughput of an infinite phase; variants in Bench.java, comma-separated: fire0,stone).
 # Deletes run/world_cubic; selftest and bench copy scripts/<mode>.cfg to run/config/solarapocalypse-<mode>.cfg. Logs go to research/ (git-ignored); prints the SOLAR lines.
 cd "$(dirname "$0")/.." && mkdir -p research
 TAG=${1:-run}

@@ -4,6 +4,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- `blocks.solarFireLight` (0-15, default 15): the light solar fire gives off; its flames look as bright either way. Less
+  light is less lighting work while fire moves with infinite erosion. Clients get the server's value.
+- `blocks.solarFireModel` (client): `SIMPLE` draws only the fire's crossed flames (4 faces instead of 12), for slower
+  PCs with much fire in view; `FULL` (default) looks like vanilla fire.
 - `layer=2` / `layer=2-4` on a convert rule: it acts only in those layers below the surface, so a whole gradient of
   stages can run ahead of infinite erosion (`depth=3` still means the top 3 layers).
 - Thrown water bottles (splash and lingering) put out solar fire, as they do vanilla fire.
@@ -32,7 +36,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Selectors can be combined with commas and excluded with `!` (`material:rock, !minecraft:cobblestone`); conversion
   rules that loop are cut, with a warning.
 - No vanilla fire on TNT (`blocks.vanillaFireBlacklist`) or while the gamerule `doFireTick` is false.
-- At most 512 block changes per tick by default (`performance.maxBlockChangesPerTick`), so clients are not flooded.
+- At most 2048 block changes per tick by default (`performance.maxBlockChangesPerTick`), so clients are not flooded.
 - `entities.sunAtNightFromPhase`: with `sunNeedsDaytime`, the sun burns at night too from this phase on (default 7).
 - `/solar status` shows the apocalypse's tick time and block changes; `/solar fire` counts fire around you.
 - Conversion chances: `minecraft:dirt -> minecraft:gravel @ 70%`. Which blocks convert is fixed per block.
@@ -74,6 +78,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Mobs killed by the sun, its heat or solar fire drop nothing unless `blocks.dropItems` (night spawns dying at once
+  piled up hundreds of items). Players drop their things as usual, and a mob a player kills drops as usual.
+- Phase 11 of the defaults has no fire: the world is too hot for fire to burn. Fire was the costliest part of a layer:
+  without it the erosion keeps up with 200 layers a day where it managed about 100.
 - Infinite erosion with fire is faster: about 40 % more layers for the same block-change time. The block the erosion
   takes becomes the new surface's fire in the same change, the old fire goes without a chain of neighbour updates, and
   a layer needs about 30 % fewer block changes.
@@ -85,7 +93,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Phase 11 of the defaults has the gradient running ahead of the erosion (`convertDepth` 6): layer 6 grass to path,
   5 dirt, 4 gravel, 3 sand, 2 vitrified sand.
 - Default fire per phase (solar fire, and vanilla fire on flammables): 0, 5, 10, 25, 30, 40, 50, 60, 70 and 75 %, then
-  85 % solar and 100 % vanilla in phase 11.
+  none in phase 11.
 - Sleeping no longer brings the erosion straight to the present: the engine carries on a layer at a time from where it
   was, so the world stays even and catches up behind the clock. `/time` and `/solar set/add/phase` still jump. Nobody
   dies in their sleep from erosion any more; they fall when it gets there.
@@ -96,6 +104,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Cubic Chunks clients: a destroyed spawner kept making its flames (and other blocks' tile entities kept running
+  where the block was gone): a cube the server resends whole kept its old tile entities on the client.
 - In the first phase on a depth line (such as an infinite SURFACE phase as phase 1), trees, buildings and the sea above
   the terrain all went at the phase start, a whole cube at a time, holding up the erosion for minutes; they now go top
   down over the first tenth of the phase, as in later phases.

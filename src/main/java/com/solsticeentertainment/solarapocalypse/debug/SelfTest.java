@@ -9,6 +9,7 @@ import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
 import com.solsticeentertainment.solarapocalypse.cc.CwgSurface;
 import com.solsticeentertainment.solarapocalypse.SolarApocalypse;
 import com.solsticeentertainment.solarapocalypse.Sky;
+import com.solsticeentertainment.solarapocalypse.SunDamage;
 import com.solsticeentertainment.solarapocalypse.Timeline;
 import com.solsticeentertainment.solarapocalypse.cc.CubeEngine;
 import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
@@ -25,15 +26,18 @@ import net.minecraft.block.BlockTallGrass;
 import net.minecraft.block.BlockTorch;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.passive.EntityPig;
 import net.minecraft.entity.projectile.EntityPotion;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.init.PotionTypes;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.potion.PotionUtils;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
@@ -132,11 +136,14 @@ public final class SelfTest {
                 if (ticks - waited < 25) return;
                 log("pigs after the first hit in phase 4 (expect sun 5, roof 9, deep 10): sun {}, roof {}, deep {}",
                         firstHit[0], firstHit[1], deepPig.getHealth());
+                sunPig.setHealth(1); // the sun or its heat kills it during the jump (dropCheck)
+                sunPig.hurtResistantTime = 0;
                 jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar in total, phase 3's 5 % kept; 75 % of flammables)");
                 break;
             case 4:
                 if (!drained(3000)) return;
                 fireCount = fire("end of phase 4");
+                dropCheck();
                 throwWater();
                 stage++;
                 waited = ticks;
@@ -494,6 +501,28 @@ public final class SelfTest {
         world.spawnEntity(bare = new EntityItem(world, bx + 0.5, by + 0.1, z + 0.5, new ItemStack(Blocks.COBBLESTONE)));
         burning.setNoDespawn();
         bare.setNoDespawn();
+    }
+
+    /** blocks.dropItems false: a pig the sun kills, or fire it set, drops nothing; one other fire kills drops as usual. */
+    private static void dropCheck() {
+        int sun = porkchops();
+        SunDamage.burnt(roofPig, 100);
+        roofPig.hurtResistantTime = 0;
+        roofPig.attackEntityFrom(DamageSource.ON_FIRE, 100);
+        int marked = porkchops() - sun;
+        deepPig.attackEntityFrom(DamageSource.ON_FIRE, 100); // never in the sun or heat
+        log("drops (blocks.dropItems false): pig the sun killed {}, porkchops {} (dead, 0); pig killed by fire the sun set: {} (0);"
+                + " by other fire: {} (1-3)", sunPig.getHealth() <= 0 ? "dead" : "alive", sun, marked, porkchops() - sun - marked);
+    }
+
+    private static int porkchops() {
+        int n = 0;
+        for (Entity e : world.loadedEntityList) {
+            if (!(e instanceof EntityItem) || e.isDead) continue;
+            Item item = ((EntityItem) e).getItem().getItem();
+            if (item == Items.PORKCHOP || item == Items.COOKED_PORKCHOP) n += ((EntityItem) e).getItem().getCount();
+        }
+        return n;
     }
 
     private static EntityPig pig(int x, int y, int z) {

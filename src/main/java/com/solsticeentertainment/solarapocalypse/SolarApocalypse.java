@@ -75,6 +75,8 @@ public class SolarApocalypse {
         Announcer.register();
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.VitrifiedSandModel.class);
+        if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SolarFireModel.class);
+        if (event.getSide().isClient() && CUBIC_CHUNKS) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.StaleTileEntities.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
     }
@@ -113,9 +115,12 @@ public class SolarApocalypse {
     public static void reload() {
         SolarConfig.load();
         rebuild();
+        Announcer.sendFireLight();
     }
 
-    private static void rebuild() {
+    /** Applies the loaded config (also the bench's variations of it). */
+    public static void rebuild() {
+        SolarFire.light = SolarConfig.solarFireLight;
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         RULES.clear();
         summarize();

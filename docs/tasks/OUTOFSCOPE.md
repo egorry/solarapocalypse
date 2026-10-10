@@ -23,3 +23,7 @@
 - **Announcements** reach the players online when a phase starts; players joining later get no replay.
 - **Entities without nearby players** stop ticking (vanilla), so burning does no damage there; sun damage still applies
   but hurt cooldowns do not run down.
+- **Trees in the SURFACE reference** (the user's turn 14 enquiry; their decision, turn 15: the bandaid is enough, and
+  other ways exist, such as `TOP_Y` instead of `SURFACE`): the reference is the generator's terrain before trees, so in a
+  fast first phase trees come down over its first tenth while the terrain under them erodes from the start. Shortcut
+  tests turn them to air with `material:leaves -> air` and `material:wood -> air` in the phase.

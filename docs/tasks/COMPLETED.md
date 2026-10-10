@@ -2,6 +2,24 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 15 (2026-10-10)
+- Defaults (the user's decisions): no fire in phase 11 (too hot for fire to burn), `maxBlockChangesPerTick` 2048.
+- The user's lighter fire options: `blocks.solarFireLight` (0-15, default 15 until the user picks the default; sent
+  to clients; flames drawn full-bright at any level) and `blocks.solarFireModel` (client, `SIMPLE`: crossed flames
+  only, 4 faces instead of 12; optional, as the user asked). Correction: turn 14 put vanilla fire's model at ~40 faces;
+  it is 12.
+- Mobs killed by the sun, its heat or fire the apocalypse set drop nothing unless `blocks.dropItems` (the user: 757
+  items from night spawns dying at once); players drop as usual. Self-test check.
+- Spawner flames left after destruction (the user's report): Cubic Chunks clients keep a cube's tile entities when the
+  cube is resent whole; the client now drops those whose block is gone, once a second.
+- Measured (bench variants, the user's questions): stone stages in phase 11, one vitrified stage, no conversions, no
+  fire, light 4 (SPEC section 4; numbers in the TODO stone stages and light default items). The user's turn 15 test
+  read from their log: ~100 layers a day with fire, kept up with 200 without (SPEC section 7).
+- Answered: the gradient (`layer=` rules) works in non-infinite phases too (the phase's own rules act once its
+  destruction is done, by layer below the surface then; carried into later phases they act as the surface comes down;
+  self-test since turn 10); water options (a) and (b) both change the destruction, not the evaporation (TODO, the
+  user decides next turn); trees: the bandaid is enough (the user; OUTOFSCOPE).
+
 ## Turn 14 (2026-10-10)
 - Cheaper fire in infinite phases, second part (the user's to-do item): the engine removes the old fire before its
   ground goes (it went through a neighbour update, uncounted, and the engine then counted a change that did nothing),

@@ -40,6 +40,7 @@ public final class Announcer {
 
     public static void register() {
         CHANNEL.registerMessage(SplashHandler.class, Splash.class, 0, Side.CLIENT);
+        CHANNEL.registerMessage(FireLight.class, FireLight.class, 1, Side.CLIENT);
         MinecraftForge.EVENT_BUS.register(Announcer.class);
     }
 
@@ -86,7 +87,9 @@ public final class Announcer {
     /** A player who missed the running phase's announcement (offline when it started) gets it shortly after joining. */
     @SubscribeEvent
     public static void onJoin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.player instanceof EntityPlayerMP) JOINED.put(event.player.getUniqueID(), 60); // once the client shows the world
+        if (!(event.player instanceof EntityPlayerMP)) return;
+        JOINED.put(event.player.getUniqueID(), 60); // once the client shows the world
+        CHANNEL.sendTo(new FireLight(), (EntityPlayerMP) event.player);
     }
 
     /** The player's persisted data, which survives death; holds the last phase (1-based) announced to them. */
@@ -107,6 +110,11 @@ public final class Announcer {
             player.connection.sendPacket(new SPacketCustomSound(p.sound, SoundCategory.MASTER, player.posX, player.posY, player.posZ, 1, 1));
         }
         if (!p.splash.isEmpty()) CHANNEL.sendTo(new Splash(format(p.splash), format(p.message)), player);
+    }
+
+    /** Solar fire's light level to every player (after /solar reload). */
+    public static void sendFireLight() {
+        CHANNEL.sendToAll(new FireLight());
     }
 
     /** & formatting codes to Minecraft's section-sign codes. */
@@ -157,6 +165,27 @@ public final class Announcer {
         @Override
         public IMessage onMessage(Splash splash, MessageContext ctx) {
             Minecraft.getMinecraft().addScheduledTask(() -> SplashOverlay.show(splash));
+            return null;
+        }
+    }
+
+    /** The server's solar fire light level: clients light the world themselves too, and must light it alike. */
+    public static final class FireLight implements IMessage, IMessageHandler<FireLight, IMessage> {
+        private int light = SolarFire.light;
+
+        @Override
+        public void toBytes(ByteBuf buf) {
+            buf.writeByte(light);
+        }
+
+        @Override
+        public void fromBytes(ByteBuf buf) {
+            light = buf.readByte();
+        }
+
+        @Override
+        public IMessage onMessage(FireLight message, MessageContext ctx) {
+            SolarFire.light = message.light;
             return null;
         }
     }

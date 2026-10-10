@@ -4,6 +4,8 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockFire;
 import net.minecraft.block.SoundType;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.projectile.EntityPotion;
 import net.minecraft.init.PotionTypes;
 import net.minecraft.init.SoundEvents;
@@ -18,6 +20,8 @@ import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.event.entity.ProjectileImpactEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 
 import java.util.Random;
 
@@ -30,6 +34,8 @@ import java.util.Random;
 public final class SolarFire extends BlockFire {
 
     public static SolarFire BLOCK;
+    /** Light given off: the server's blocks.solarFireLight (set on every config load; clients get it on login and reload). */
+    public static int light = 15;
 
     /**
      * Vanilla fire sounds like wool (SoundType.CLOTH). An entity's step plays the sound of the block 0.2 below its centre,
@@ -74,6 +80,24 @@ public final class SolarFire extends BlockFire {
     @Override
     public void neighborChanged(IBlockState state, World world, BlockPos pos, Block block, BlockPos from) {
         if (!world.getBlockState(pos.down()).getMaterial().blocksMovement()) world.setBlockToAir(pos);
+    }
+
+    @Override
+    public int getLightValue(IBlockState state) {
+        return light;
+    }
+
+    /** The flames look as bright as vanilla fire's, whatever light they give off. */
+    @Override
+    @SideOnly(Side.CLIENT)
+    public int getPackedLightmapCoords(IBlockState state, IBlockAccess source, BlockPos pos) {
+        return source.getCombinedLight(pos, 15);
+    }
+
+    /** Vanilla sets what stands in fire alight for 8 seconds: a death from it then counts as the sun's (no drops). */
+    @Override
+    public void onEntityCollision(World world, BlockPos pos, IBlockState state, Entity entity) {
+        if (!world.isRemote && entity instanceof EntityLivingBase) SunDamage.burnt((EntityLivingBase) entity, 8 * 20);
     }
 
     @Override
