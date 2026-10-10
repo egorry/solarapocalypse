@@ -18,7 +18,7 @@ import net.minecraft.world.World;
  *   column's reference (its terrain surface, or world.topY): a block reached during the rule's phase goes when the depth
  *   passes it (layer by layer); blocks above the reference (trees, buildings, the sea over the terrain) go top down
  *   early in the phase, also in the first phase on a line; other blocks reached before the phase go at a random but
- *   fixed moment within it.
+ *   fixed moment within it. (The engine holds a block with a liquid standing above it until the liquid has gone.)
  * - convert: blocks in the layers of the column's current surface a rule acts in (BlockRules.Step) change, once the
  *   phase's destruction is done, at a random but fixed moment over the rest of the phase. A chain of rules is followed to
  *   its end.
@@ -41,6 +41,7 @@ public final class BlockChanges {
     private final BlockRules rules;
     public final int evaporationTopY;
     private long wake;
+    private boolean destroyed;
 
     public BlockChanges(Timeline timeline, BlockRules rules, int evaporationTopY) {
         this.timeline = timeline;
@@ -51,6 +52,11 @@ public final class BlockChanges {
     /** The deepest layer below a column's surface that a conversion acts in. */
     public int deepestLayer() {
         return rules.deepestLayer();
+    }
+
+    /** Whether the block last passed to {@link #evaluate} went to a destroy rule (not a conversion or evaporation). */
+    public boolean destroyed() {
+        return destroyed;
     }
 
     /** When the block last passed to {@link #evaluate} next needs a look (NEVER if it will not change by itself). */
@@ -66,6 +72,7 @@ public final class BlockChanges {
      */
     public IBlockState evaluate(IBlockState state, BlockPos pos, int ground, int topY, int surface, int sky, long progress) {
         wake = NEVER;
+        destroyed = false;
         int phase = timeline.phaseAt(progress);
         if (phase < 0) return state;
         int x = pos.getX(), y = pos.getY(), z = pos.getZ();
@@ -77,7 +84,10 @@ public final class BlockChanges {
                 if (ground == NO_Y) later(progress + RECHECK); // the surface line may get here once the ground is known
                 else due = Math.min(due, destroyDue(x, y, z, ground, Timeline.SURFACE, destroyedBy));
             }
-            if (progress >= due) return AIR;
+            if (progress >= due) {
+                destroyed = true;
+                return AIR;
+            }
             later(due);
         }
 
@@ -104,6 +114,30 @@ public final class BlockChanges {
             state = step.target(rule);
         }
         return evaporate(state, y, sky, progress);
+    }
+
+    /**
+     * Whether nothing at y or below in a column can change at this progress, so the engine stops going down the column
+     * there (a block under the column's top, so out of the sun: nothing there evaporates). Every depth line is still
+     * above y, and deeper blocks are reached later; no conversion of the running phase reaches that far below the
+     * surface. {@link #wake()} is then when a line reaches y, or with conversions, when it brings the surface within
+     * their layers of it (the pass that lowers the surface looks at the blocks below again anyway).
+     */
+    public boolean stillBelow(int y, int ground, int topY, int surface, long progress) {
+        wake = NEVER;
+        int phase = timeline.phaseAt(progress);
+        if (phase < 0) return false;
+        int deep = rules.convertCount(phase) > 0 ? rules.deepestLayer() : 0;
+        if (deep > 0 && (surface == NO_Y || y > surface - deep)) return false;
+        long reach = NEVER;
+        for (int line = Timeline.SURFACE; line <= Timeline.TOP; line++) {
+            if (!timeline.uses(line)) continue;
+            int ref = line == Timeline.TOP ? topY : ground;
+            if (ref == NO_Y || timeline.reachTime(y, ref, line) <= progress) return false;
+            reach = Math.min(reach, timeline.reachTime(y + deep, ref, line));
+        }
+        if (reach != NEVER) later(Math.max(reach, progress + 1));
+        return true;
     }
 
     /**

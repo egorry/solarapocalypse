@@ -1,7 +1,6 @@
 package com.solsticeentertainment.solarapocalypse;
 
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockGlass;
 import net.minecraft.block.BlockSand;
 import net.minecraft.block.SoundType;
 import net.minecraft.block.material.MapColor;
@@ -13,28 +12,26 @@ import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemMultiTexture;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
 
 import java.util.Random;
 
 /**
- * Sand the sun has melted in place: rough, cloudy glass. Has vanilla sand's {@code variant} property (sand, red_sand),
- * culls faces against itself like glass, shows as its sand on maps, and breaks back into one sand of the same variant
- * (silk touch keeps the block).
+ * Sand the sun has melted in place: rough, cloudy glass, opaque (more sand than glass: no light or sight through it).
+ * Glass material (sound, no tool needed, no mob spawns on it, as on glass). Has vanilla sand's {@code variant} property
+ * (sand, red_sand), shows as its sand on maps, and breaks back into one sand of the same variant (silk touch keeps the
+ * block).
  */
-public final class VitrifiedSand extends BlockGlass {
+public final class VitrifiedSand extends Block {
 
     public static VitrifiedSand BLOCK;
 
     private VitrifiedSand() {
-        super(Material.GLASS, false);
+        super(Material.GLASS);
         setDefaultState(blockState.getBaseState().withProperty(BlockSand.VARIANT, BlockSand.EnumType.SAND));
         setHardness(0.5F);
         setSoundType(SoundType.GLASS);
@@ -58,11 +55,6 @@ public final class VitrifiedSand extends BlockGlass {
     }
 
     @Override
-    public int quantityDropped(Random random) {
-        return 1;
-    }
-
-    @Override
     public Item getItemDropped(IBlockState state, Random rand, int fortune) {
         return Item.getItemFromBlock(Blocks.SAND);
     }
@@ -83,10 +75,10 @@ public final class VitrifiedSand extends BlockGlass {
         return state.getValue(BlockSand.VARIANT).getMapColor();
     }
 
+    /** Opaque although glass material: also makes it a full block with light opacity 255 (set in Block's constructor). */
     @Override
-    @SideOnly(Side.CLIENT)
-    public BlockRenderLayer getRenderLayer() {
-        return BlockRenderLayer.TRANSLUCENT;
+    public boolean isOpaqueCube(IBlockState state) {
+        return true;
     }
 
     @SubscribeEvent

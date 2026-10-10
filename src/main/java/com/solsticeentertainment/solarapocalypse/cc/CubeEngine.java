@@ -16,6 +16,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
@@ -333,10 +334,16 @@ public final class CubeEngine {
                 int ground = needGround ? ground(world, cubes, column, lx, lz, x, z, surface, surfaceKnown) : BlockChanges.NO_Y;
                 int fireY = BlockChanges.NO_Y; // solar fire found in this column of the cube
                 boolean litInPlace = false; // the fire at fireY was lit in place of the block the erosion took (checked then)
+                boolean liquidSeen = false; // a standing liquid left higher up in this column of the cube
+                int liquidOver = 0; // a standing liquid between the cube's top and the column's surface: 1 yes, -1 no, 0 not looked yet
                 for (int ly = 15; ly >= 0 && !empty; ly--) {
+                    int y = minY + ly;
+                    if (y < top && changes.stillBelow(y, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, progress)) {
+                        wake = Math.min(wake, changes.wake());
+                        break; // in an infinite phase most of the cube: the rest of the column waits for the line
+                    }
                     IBlockState from = storage.get(lx, ly, lz);
                     if (from.getMaterial() == Material.AIR) continue;
-                    int y = minY + ly;
                     if (SolarFire.is(from)) {
                         if (fireY == BlockChanges.NO_Y) fireY = y;
                         else if (!manageFire) continue;
@@ -349,6 +356,16 @@ public final class CubeEngine {
                     pos.setPos(x, y, z);
                     IBlockState to = changes.evaluate(from, pos, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
                     wake = Math.min(wake, changes.wake());
+                    if (to != from && changes.destroyed() && y < surface) {
+                        // under standing liquid (a sea floor and what lies below it): waits for the liquid to go, then
+                        // catches up in the pass that takes it, or at the latest RECHECK later
+                        if (!liquidSeen && liquidOver == 0) liquidOver = liquidAbove(cubes, cx, cz, lx, lz, minY + 16, surface) ? 1 : -1;
+                        if (liquidSeen || liquidOver > 0) {
+                            wake = Math.min(wake, progress + BlockChanges.RECHECK);
+                            to = from;
+                        }
+                    }
+                    if (standing(to)) liquidSeen = true;
                     if (to == from) continue;
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     if (!to.getMaterial().blocksMovement()) {
@@ -583,6 +600,24 @@ public final class CubeEngine {
         SurfaceRecord record = column == null ? null : SurfaceRecord.of(column);
         int recorded = record == null ? SurfaceRecord.NONE : record.get(Coords.blockToLocal(x), Coords.blockToLocal(z));
         return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
+    }
+
+    /** Whether a liquid stands in a column from y up to its surface (loaded cubes only: an unloaded one counts as none). */
+    private static boolean liquidAbove(ICubeProvider cubes, int cx, int cz, int lx, int lz, int y, int surface) {
+        for (; y <= surface; y++) {
+            IBlockState state = blockAt(cubes, cx, cz, lx, y, lz);
+            if (state == null) return false;
+            if (standing(state)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * A standing liquid, which the ground under it waits for: a vanilla source block (seas, lakes, pools), or any block of
+     * another fluid. Vanilla water flowing into a cut after a pass does not hold the ground: it ebbs by itself, unseen.
+     */
+    private static boolean standing(IBlockState state) {
+        return state.getMaterial().isLiquid() && !(state.getBlock() instanceof BlockLiquid && state.getValue(BlockLiquid.LEVEL) != 0);
     }
 
     /** A block of a loaded cube, or null if its cube is not loaded. */

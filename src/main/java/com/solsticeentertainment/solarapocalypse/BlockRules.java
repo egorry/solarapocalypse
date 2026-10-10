@@ -73,7 +73,7 @@ public final class BlockRules {
         }
 
         private boolean on(Rule r, int phase) {
-            return (carry ? r.phase <= phase : r.phase == phase) && phase < r.off;
+            return (carry ? r.phase <= phase : r.phase == phase) && phase < r.off && convertDepth[phase] > 0; // 0: none at all
         }
 
         private int lo(Rule r) {
@@ -208,7 +208,7 @@ public final class BlockRules {
         infinite = new boolean[phases.length];
         boolean endless = false;
         for (int i = 0; i < phases.length; i++) {
-            convertDepth[i] = Math.max(1, phases[i].convertDepth);
+            convertDepth[i] = Math.max(0, phases[i].convertDepth);
             infinite[i] = endless |= phases[i].depth == SolarConfig.INFINITE;
         }
     }

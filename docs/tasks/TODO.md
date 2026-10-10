@@ -9,41 +9,14 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- **Water and the SURFACE line** (the user, turn 14, an enquiry: water evaporation and SURFACE erosion do not match up,
-  as SURFACE counts from the ground under the water while evaporation comes down flat from `topY` or goes at once; they
-  set evaporation to `INSTANT` for their SURFACE tests; can SURFACE treat water as its surface, or other ideas?). Turn
-  15, the user: option (c) does not work: with `LAYERS` the floor is cut from its own top while the flat level is still
-  above it, so a cavern opens under the water (held up, as block physics is off); (a) and (b) sound promising; are they
-  changes to the evaporation or to the surface destruction? Decision next turn. Answer: both change the destruction,
-  not the evaporation, which stays as it is (water goes by whichever comes first). (a) changes where the line is: over
-  standing water the SURFACE reference becomes the water's top (CubicWorldGen's sea level where the terrain lies below
-  it; lakes are not in the generator's model and keep their floor), so the `*` destroy rule takes the sea flat from sea
-  level down with the land, and the floor once the line reaches it; small, in the surface model. (b) changes when a
-  block may go: the engine does not destroy a block under standing liquid (any liquid, lakes too) until the liquid
-  has gone, by evaporation or the destroy rule; the floor then catches up its missing layers at once; moderate, in the
-  engine's pass. How it is now: in one phase with both, the destroy rule (`*` takes liquids) takes water above the
-  floor top down over the first tenth of a first phase (at the start of a later one), deepest first;
-  evaporation `LAYERS` flat from `topY` at its own rate (water above `topY` at the start), `INSTANT` at the start (it
-  works, by taking all the water at once). Claude's view: (b): basins keep their shape and drain flat, lakes too; (a)
-  loses the floor's shape, and in the default phases, where the sea evaporates in phase 3, the dry floors would lie
-  below the line of phases 7-10 (1-5 layers) and wait for phase 11.
-- **Solar fire light default** (turn 15: the user asked for a configurable light level, "defaulting to what, 4?";
-  `blocks.solarFireLight` is in, default 15 until the user decides). Measured (bench, 85 % fire in an infinite phase):
-  server time a layer 992 ms at light 15, 599 at 4, 428 at 0, so 4 saves ~70 % of the light's cost. Light below 8 also
-  lets mobs spawn beside fire at night (more night spawns dying in the sun); the flames stay full-bright either way.
-  Claude's view: keep 15 as the default (vanilla's glow, and with no fire in phase 11 the default phases no longer pay
-  for moving fire: fire placed once per phase costs little); 4 in configs with fire in an infinite phase.
-- **Stone stages in phase 11** (the user, turn 15: they plan to add stone -> cobblestone -> gravel -> sand -> vitrified
-  sand to the default gradient later, or instead dirt and stone straight to vitrified sand in layer 1; how much more
-  lag?). Measured (bench, no fire; SPEC section 4): each stage in stone is one more change per column per layer. The
-  four stone stages: 4.4 times the changes of today's gradient, ~3 times the server time a layer, 20 layers a minute
-  instead of 54 (at the user's 2048 and 4 ms ~50-80 a day instead of ~200; keeping 200 needs ~7,500 changes and ~9 ms
-  a tick). One vitrified stage in layer 1 (`convertDepth` 1): 1.8 times the changes, 39 a minute (~115-150 a day).
-  No conversions: 67 a minute (~225-260 a day). Clients re-mesh about as often either way (a cube's stages change in
-  the same pass, one resend a layer, plus the cube below where the stages reach into it). Vitrified sand is see-through:
-  a surface of it lets sky light into the block below (lighting work every layer) and clients draw it in the
-  translucent pass. Claude's view: one stage, to an opaque block or in layer 2 (the top is then already converted when
-  it shows); several stages only with a lower `layersPerDay`.
+- (none)
+
+## Waiting for the user's test (client side: Claude cannot see a client)
+- FPS with `blocks.solarFireModel` `SIMPLE` against `FULL` (turn 15, optional as the user asked), and with
+  `blocks.solarFireLight` 8 (the new default) against 15 (the user, turn 16, offered to measure both; both are in from
+  this turn). The model is read when models bake (game start, F3+T); the light applies to fire placed after a change.
+- The spawner flames fix (turn 15: a destroyed spawner's flames should stop within a second).
+- Opaque vitrified sand (turn 16): how it looks.
 
 ## Will do (Cubic Chunks)
 1. Throughput headroom (the user, turn 13: after SURFACE; their TOP_Y test "works wonderfully" but falls behind: the
@@ -51,11 +24,10 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    with their PC not struggling; turn 14: 77 a day of 200 at 2048 changes and 4 ms) [high, user]: research done (SPEC
    section 4); turn 14: the cheaper fire (~42 % more layers); turn 15: no fire in the default phase 11 (the user), and
    in the user's test their engine then kept up with 200 a day at 2048 and 4 ms (~100 with 85 % fire); default cap
-   2048. Left: skipping blocks that cannot change yet (Claude's suggestion: in an infinite phase every block of a cube
-   the line is in is looked at on every layer, about a quarter of the engine's time; below the line and the
-   conversions' layers nothing changes until the line gets there; needs care with the next-look time of excluded
-   blocks); counting the cap in cubes resent per tick instead of changes (Claude's suggestion: the network and client
-   cost is per cube, as 64 or more changes in a cube in one tick resend it whole).
+   2048; turn 16: no conversions in the default phase 11 either (the user), and the engine stops going down a column at
+   the first block nothing can change yet (Claude's suggestion; bench: 96 layers a minute without fire and conversions,
+   from 72; SPEC section 4). Left: counting the cap in cubes resent per tick instead of changes (Claude's suggestion:
+   the network and client cost is per cube, as 64 or more changes in a cube in one tick resend it whole).
 2. Rain puts out solar fire, per phase (the user, turn 11: players expect it, and our fire should differ from vanilla
    fire only in spreading; agreed by Claude) [high, Claude: players expect it, and it is next to the fire code just
    touched]: `phase_n.rainDousesFire` (default true), solar fire under

@@ -72,10 +72,19 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    first; other blocks reached before the phase go at random but fixed moments within it. That holds in the first
    phase on a depth line too (turn 13: there everything above the reference went at the phase start, so the user's test
    with phase 11 as phase 1 lost each cube's sea and trees in one go, cube by cube for minutes, the "raw chunk
-   deletion", while the erosion waited for that round). In a fast first phase the terrain erodes meanwhile, so the
-   lowest water and tree trunks can hang over eroded ground for that tenth (TODO, waiting for the user's decision).
+   deletion", while the erosion waited for that round). In a fast first phase the terrain erodes meanwhile, so tree
+   trunks can hang over eroded ground for that tenth (the user: the bandaid is enough, OUTOFSCOPE.md). A block under
+   standing liquid (a vanilla water or lava source block, or any block of another fluid, anywhere above it in its
+   column up to the column's surface: seas, lakes, pools) is not destroyed while the liquid is there: the sea floor and everything below it wait until the liquid has gone, by
+   evaporation or a destroy rule, then catch up their missing layers at once, as the pass that takes the liquid carries
+   on down the column (and queues the cube below); a held block is looked at again within 1/20 day at the latest. So a basin keeps its shape and drains flat with `LAYERS` evaporation, lakes too (turn 16,
+   the user's choice, option (b) of their water question: before, the floor eroded from its own top under standing
+   water, and a cavern opened under the sea, held up as block physics is off). Flowing vanilla water does not hold the
+   ground: water that runs into a cut after a pass ebbs by itself, which no pass sees, so it would hold the ground below
+   until the next look (seen in the self-test).
 2. **Convert** (`selector -> target`, target may be `air`): only the **surface layer**, the top `convertDepth` layers
-   (default 1) of the column's current surface. The surface is the topmost opaque block, raised over blocking blocks and
+   (default 1; 0 turns every conversion off while the phase runs, carried and `layer=` rules included, as in phase 11
+   of the defaults) of the column's current surface. The surface is the topmost opaque block, raised over blocking blocks and
    liquids stacked on it (glass, lava); plants, snow layers and the like on it belong to layer 1. Conversions start once
    the phase's destruction is done, at random but fixed moments over `convertDays`. Converting to air makes the block
    below the new surface, so leaves burn through a canopy while grass -> dirt stops at the top. Rules are resolved to
@@ -134,7 +143,10 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    (splash or lingering: the spot it hits and the four beside it, as vanilla does for vanilla fire) puts it out; it
    comes back on the engine's next look at the cube. Its steps are silent: an entity's step plays the sound of the
    block 0.2 below its centre, which is the fire when the centre hangs over it beside a ledge (vanilla fire sounds
-   like wool there). Its light is `blocks.solarFireLight` (default 15, as vanilla fire), sent to clients on login and
+   like wool there). Its light is `blocks.solarFireLight` (default 8, vanilla fire 15; turn 16, the user's choice: less light
+   is less lighting work, and 8 still keeps mobs from spawning in the fire's own space, as they need block light 7 or
+   less, more often the darker; beside it, at 7, 1 try in 8 passes the light check, where 15 kept them off within ~7
+   blocks), sent to clients on login and
    on `/solar reload` (clients light the world too and must agree); the flames are drawn full-bright whatever the
    level, and fire already burning keeps the light it was placed with until something relights the spot. Its model
    (client, `blocks.solarFireModel`): `FULL` is vanilla fire's (four crossed flames plus a flame wall on each side,
@@ -152,8 +164,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    fire dies in rain on its own random tick, which solar fire never gets): planned per phase, see TODO.md.
 
 - **Vitrified sand** (`solarapocalypse:vitrified_sand`, `variant` sand or red_sand like vanilla sand): sand the sun
-  melted in place, a rough, cloudy glass (translucent, culls against itself, sand-coloured on maps; mobs do not spawn on
-  it, as on glass). Breaking it drops one sand of its variant; silk touch keeps the block. Placeholder textures.
+  melted in place, a rough, cloudy glass, opaque (turn 16, the user: more sand than glass; it was see-through until
+  then): no light or sight through it, drawn in the solid pass, the same texture without its transparency. Glass
+  material: glass sounds, no tool needed, mobs do not spawn on it (as on glass); sand-coloured on maps. Breaking it drops one sand of its variant; silk touch keeps the block. Placeholder textures.
 - **Dimensions**: any convert, destroy or evaporate entry can end with `dimensions=-1` (or `dimensions=0,-1`;
   `dimensions=*` or nothing = every dimension in `world.dimensions`). Entries are filtered by dimension first, then the
   usual phase, CARRY and rule-order logic runs, so a rule scoped elsewhere never shadows an older rule, and there is no
@@ -195,9 +208,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   4 a day from sea level); 10 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
   evaporate (`*, !material:lava`); 25 % fire. 5: sand melts to vitrified sand (red sand to red vitrified sand); 30 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 40 %.
   7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 50, 60, 70, 75 %. 11: infinite erosion at 200
-  layers a day (one every 6 s) with the user's gradient running ahead of it (turn 13, `convertDepth` 6: layer 6 grass
-  to path; 5 grass and path to dirt; 4 those and dirt to gravel; 3 those and gravel to sand; 2 those and sand to
-  vitrified sand; the top layer gets the carried rules); no fire (turn 15, the user: too hot for fire to burn; fire was
+  layers a day (one every 6 s) with no conversions (`convertDepth` 0, turn 16, the user: the fancy conversions happen in
+  phases 1-10, and phase 11 should run at decent speed on most PCs; from turn 13 to 15 the user's gradient ran ahead of
+  the erosion, layer 6 grass to path down to vitrified sand in layer 2, the carried rules in the top layer); no fire (turn 15, the user: too hot for fire to burn; fire was
   the costliest part of a layer, and the phase 10 fire goes with the first layer). Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
   phase 7; heat 0.25 from phase 4 rising to 4; Fire Resistance protects from the sun, not the heat. Fire percentages
   (the user's table, turn 13) are the same for solar fire and vanilla fire on flammables; phase 11 has none.
@@ -221,7 +234,12 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   from them (turn 13: rounds came in no particular order, which the user saw as random chunks changing). A pass the budget cuts short resumes first on the next tick (it used to wait behind
   every queued cube, which cut stripes 16 blocks long into the terrain). `/solar status` shows how far behind the
   engine's clock is. Queued cubes are processed
-  once ready (populated, lit, surface-tracked), top-down per x/z. A block's own callbacks (vanilla fire placed, a block
+  once ready (populated, lit, surface-tracked), top-down per x/z. A pass stops going down a column at the first block
+  nothing can change yet: under the column's top (out of the sun, so no liquid there evaporates), below every depth
+  line, and deeper below the surface than the running phase's conversions reach; the cube's next look is then when a
+  line reaches that block (or brings the surface within the conversions' layers of it). Turn 16 (the user's throughput
+  item): until then every block of the cubes the line was in was looked at on every layer, most of the engine's time
+  once fire and conversions were gone. A block's own callbacks (vanilla fire placed, a block
   popping off) can load a neighbouring cube mid-pass; the engine copes (it is queued like any loaded cube), places
   vanilla fire only where its six neighbours are loaded, and logs the first such load once per game with its cause.
 - The mod never slows, skips or alters the server's tick or the world's time (a day-length mod stays in charge); it only
@@ -294,9 +312,21 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   sand 2) 20 / 632 k / 869 ms; no fire, grass, dirt, gravel, sand and stone straight to vitrified sand in layer 1
   (`convertDepth` 1) 39 / 262 k / 362 ms. Each conversion stage costs one change per column per layer in stone (four
   stages: ~4.7 changes a column a layer instead of 1). A cube's stages change in the same pass, so clients get about as
-  many resends (one a layer, plus the cube below where the stages reach into it). Vitrified sand is see-through: a
-  surface of it lets sky light into the block below (lighting work on every layer) and clients draw it in the
-  translucent pass. The no-conversion run started deeper (27 layers in, the others 6-12), below most soil.
+  many resends (one a layer, plus the cube below where the stages reach into it). Vitrified sand was see-through: a
+  surface of it let sky light into the block below (lighting work on every layer) and clients drew it in the
+  translucent pass (opaque from turn 16). The no-conversion run started deeper (27 layers in, the others 6-12), below
+  most soil.
+- Turn 16 (the same bench and seed; layers a minute / changes a layer / engine time a change / server time a layer),
+  with the engine stopping down each column at the first block nothing can change yet: no fire, no conversions 96 /
+  134 k / 0.83 us / 162 ms (turn 15's code on the same day: 72 / 132 k / 1.22 us / 202 ms; over 300 ticks, as in 1200
+  this variant ran through the loaded terrain); no fire, the turn 13-15 gradient 67 / 143 k / 1.17 us / 215 ms (turn
+  15: 54 / 145 k / 1.51 us / 273 ms); no fire, everything to vitrified sand in layer 1, opaque 64 / 266 k / 0.66 us /
+  220 ms, see-through (turn 15's block, the same code) 52 / 267 k / 0.83 us / 268 ms: opaque vitrified sand gives ~23 %
+  more layers, as the sky light no longer goes through it; 85 % fire with the gradient at light 15, 8 and 4: 42 / 42 /
+  40 layers a minute, 839 / 602 / 483 ms of server time a layer (the engine's own time about the same, 1.07-1.13 us a
+  change): less light is less lighting work, outside the engine's budget, so at 8 the server spends ~30 % less time a
+  layer than at 15. The first attempt at the water hold (only the block right under a liquid waited) left a crust over
+  eroded ground and cost a quarter of the layers; it was replaced before release.
 - Clients (Cubic Chunks 0.0.1271): a cube resent whole replaces the client's blocks but keeps its tile entities, also
   where the block is gone (vanilla's chunk packets drop them; Cubic Chunks' `PacketCubes` does not), so a destroyed
   spawner kept making flames for the user (turn 15). The client removes tile entities whose block no longer has one,
@@ -395,6 +425,15 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   bottles, erosion fire 15.1 % of 15 % with only the current layer's, line checks 0, evenness 99.2 %, TOP_Y lag 0 / 0 /
   0). `bench` (above, section 4): fire coverage after a minute of layer-by-layer erosion 84.5-84.8 % for 85 %, as with
   turn 13's engine (85.0 %); ~1 % of fires carry an older layer, as before (ground the line has not reached).
+  Turn 16 (2026-10-11): the self-test's own config pins `blocks.solarFireLight` 15. On seed 14014 the results are the
+  same with and without the engine's stop down each column (line checks 0, evenness 99.7 %, TOP_Y lag 0 / 0 / 0) and
+  the same as turn 15's code; the engine stops going down a column 100 below the ground and looks again when the line
+  gets there. A stone pillar under a water source in the eroded zone (water out of every destroy and evaporate list)
+  keeps 2 of 2 stones; once the water is taken away, 0 of 2. The evenness check names the top block of columns short
+  of the rest; with flowing water holding the ground too, one column on that seed was a layer short right after the
+  catch-up (its water had ebbed by itself), so only standing liquid holds now. Turn 16's first run found the
+  conversion checks at 0 because throwaway phases had `convertDepth` 0, which now means no conversions; a phase's
+  `convertDepth` defaults to 1 in code too.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched. From turn 13, phase 11's settings as the only phase, starting after a quarter
   day, so it runs as in play without skips (no backlog from a jump). Turn 14 ("Phase 11 SURFACE Test 5", 2048 changes

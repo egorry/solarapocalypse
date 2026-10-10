@@ -42,7 +42,7 @@ public final class SolarConfig {
         public Speed speed;
         public double layersPerDay;  // RATE speed, and the descent rate once the depth is infinite
         public String[] convert;
-        public int convertDepth;     // conversions reach this many layers from the column's current surface
+        public int convertDepth = 1; // conversions reach this many layers from the column's current surface (0: none)
         public double convertDays;   // conversions spread over this after destruction; -1 = rest of the phase's days
         public double ignitePercent, igniteFlammablePercent;
         public String[] destroy;
@@ -197,11 +197,11 @@ public final class SolarConfig {
                 "true: night puts the sun's fire out. Each solar fire goes out at its own moment over the sunset (time of day\n" +
                 "12000-14000) and the same spots light again over the sunrise (23000-1000); no new fire is lit at night (vanilla\n" +
                 "fire already burning is left to vanilla). false: fire, once lit, stays (infinite phases redraw it on every layer).");
-        solarFireLight = c.getInt("solarFireLight", cat, 15, 0, 15,
+        solarFireLight = c.getInt("solarFireLight", cat, 8, 0, 15,
                 "Light level solar fire gives off (vanilla fire: 15); its flames look as bright either way. Less light is less\n" +
                 "lighting work for the server and clients while fire moves with infinite erosion, a dimmer glow around it at\n" +
-                "night, and below 8 mobs can spawn beside it. Fire already burning keeps its old light until something relights\n" +
-                "it. Clients get the server's value.");
+                "night, and more mob spawns near it (they need block light 7 or less: at 8 none in its own space, a few beside\n" +
+                "it). Fire already burning keeps its old light until something relights it. Clients get the server's value.");
         solarFireModel = enumValue(c, cat, "solarFireModel", FireModel.FULL,
                 "Client: FULL looks like vanilla fire (crossed flames and a flame wall on each side, 12 faces). SIMPLE draws only\n" +
                 "the crossed flames (4 faces), lighter for slower PCs with much fire in view. Applies when the game starts or\n" +
@@ -361,12 +361,13 @@ public final class SolarConfig {
                 "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
                 "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules\n" +
                 "still apply (per block and layer, the latest phase with a rule acting there wins).");
-        p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 1, 1 << 20,
+        p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 0, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
                 "snow layers and the like on it), earlier phases' rules included (layers they reach for the first time convert\n" +
                 "over this phase's convertDays). Converting a block to air makes the block below the new surface.\n" +
                 "In an infinite phase the conversions run all the time, ahead of the descending destruction; earlier phases' rules\n" +
-                "then act only in layer 1, this phase's own in all of them (or where their layer= says).");
+                "then act only in layer 1, this phase's own in all of them (or where their layer= says).\n" +
+                "0: no conversions at all while this phase runs, earlier phases' rules and layer= rules included.");
         p.convertDays = c.get(cat, "convertDays", d.convertDays,
                 "Conversions start once this phase's destruction is done and land at random but fixed moments over this many\n" +
                 "days: -1 = the rest of the phase's days (at once if none are left), 0 = at once. Infinite phases: at once.").getDouble();
@@ -412,7 +413,8 @@ public final class SolarConfig {
         private static final double[] DAYS = {1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 0};
         private static final String[] DEPTH = {"0", "0", "0", "0", "0", "0", "1", "2", "3", "5", "infinite"};
         private static final double[] LAYERS_PER_DAY = {16, 16, 16, 16, 16, 16, 1, 1, 1, 1, 200};
-        private static final int[] CONVERT_DEPTH = {1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 6};
+        // phase 11: no conversions (0), not even carried ones, so the erosion runs at full speed
+        private static final int[] CONVERT_DEPTH = {1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 0};
         private static final double[] CONVERT_DAYS = {-1, -1, -1, -1, -1, -1, 1, 1, 1, 1, -1};
         // phase 11: too hot for fire to burn any more (and fire is the costliest part of a layer)
         private static final double[] IGNITE = {0, 5, 10, 25, 30, 40, 50, 60, 70, 75, 0};
@@ -431,13 +433,7 @@ public final class SolarConfig {
                 {"material:wood -> air", "minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"},
                 {"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"},
                 {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"},
-                {}, {}, {}, {},
-                // the gradient under the erosion: path, dirt, gravel, sand, then vitrified sand from layer 2 up
-                {"minecraft:grass -> minecraft:grass_path layer=6", "minecraft:grass_path, minecraft:grass -> minecraft:dirt layer=5",
-                        "minecraft:grass_path, minecraft:grass, minecraft:dirt -> minecraft:gravel layer=4",
-                        "minecraft:grass_path, minecraft:grass, minecraft:dirt, minecraft:gravel -> minecraft:sand layer=3",
-                        "minecraft:grass_path, minecraft:grass, minecraft:dirt, minecraft:gravel, minecraft:sand"
-                                + " -> solarapocalypse:vitrified_sand layer=2"}};
+                {}, {}, {}, {}, {}};
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
         static final int COUNT = DAYS.length;

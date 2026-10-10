@@ -4,8 +4,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
-- `blocks.solarFireLight` (0-15, default 15): the light solar fire gives off; its flames look as bright either way. Less
-  light is less lighting work while fire moves with infinite erosion. Clients get the server's value.
+- `blocks.solarFireLight` (0-15, default 8; vanilla fire gives 15): the light solar fire gives off; its flames look as
+  bright either way. Less light is less lighting work while fire moves with infinite erosion; at 8 mobs still cannot
+  spawn in the fire's own space. Clients get the server's value.
+- `convertDepth` 0: no conversions at all while the phase runs, earlier phases' rules included.
 - `blocks.solarFireModel` (client): `SIMPLE` draws only the fire's crossed flames (4 faces instead of 12), for slower
   PCs with much fire in view; `FULL` (default) looks like vanilla fire.
 - `layer=2` / `layer=2-4` on a convert rule: it acts only in those layers below the surface, so a whole gradient of
@@ -78,6 +80,12 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Vitrified sand is opaque: more sand than glass, no light or sight through it (same texture).
+- Ground under standing water or lava (seas, lakes, pools) is no longer eroded while the liquid is there: it waits until
+  the liquid has evaporated or been destroyed, then catches up, so sea and lake floors keep their shape and drain flat
+  instead of leaving the water hanging over a cavern.
+- Erosion is faster: the engine no longer looks at blocks the erosion line has not reached yet (about 30 % more layers
+  without fire and conversions, more with them).
 - Mobs killed by the sun, its heat or solar fire drop nothing unless `blocks.dropItems` (night spawns dying at once
   piled up hundreds of items). Players drop their things as usual, and a mob a player kills drops as usual.
 - Phase 11 of the defaults has no fire: the world is too hot for fire to burn. Fire was the costliest part of a layer:
@@ -90,8 +98,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carries on where the engine was; `/solar reload` keeps it (it used to bring everything to the present).
 - Fire in infinite phases is no longer redrawn on every layer: each surface block rolls once, so fire on ground the
   line has not reached yet stays as it is, and a TOP_Y line still in the sky costs nothing.
-- Phase 11 of the defaults has the gradient running ahead of the erosion (`convertDepth` 6): layer 6 grass to path,
-  5 dirt, 4 gravel, 3 sand, 2 vitrified sand.
+- Phase 11 of the defaults has no conversions (`convertDepth` 0): the fancy conversions happen in phases 1-10, and the
+  erosion runs faster without them.
 - Default fire per phase (solar fire, and vanilla fire on flammables): 0, 5, 10, 25, 30, 40, 50, 60, 70 and 75 %, then
   none in phase 11.
 - Sleeping no longer brings the erosion straight to the present: the engine carries on a layer at a time from where it

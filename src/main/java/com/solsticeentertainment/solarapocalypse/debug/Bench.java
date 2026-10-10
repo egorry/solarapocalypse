@@ -23,11 +23,13 @@ import java.util.List;
  * changes per layer and the time per change, then stops the server. Variants, comma-separated
  * (-Dsolarapocalypse.bench=fire0,stone): fire0 no fire; light<n> solar fire light n; noconv no conversions; stone adds
  * stone -> cobblestone -> gravel -> sand -> vitrified sand to the gradient (layers 5 to 2); vit1 replaces the gradient
- * with dirt and stone to vitrified sand in layer 1.
+ * with dirt and stone to vitrified sand in layer 1; measure<n> measures n ticks (default 1200: a fast variant can run
+ * out of loaded terrain, after which the clock steps through empty rounds).
  */
 public final class Bench {
 
-    private static final int WARMUP = 600, MEASURE = 1200; // ticks
+    private static final int WARMUP = 600; // ticks
+    private static int MEASURE = 1200;
     private static MinecraftServer server;
     private static WorldServer world;
     private static int ticks;
@@ -44,6 +46,7 @@ public final class Bench {
         convert.removeIf(rule -> rule.contains("layer=")); // the gradient; the trees' rules stay
         for (String variant : System.getProperty("solarapocalypse.bench").split(",")) {
             if (variant.equals("fire0")) p.ignitePercent = p.igniteFlammablePercent = 0;
+            if (variant.startsWith("measure")) MEASURE = Integer.parseInt(variant.substring(7));
             if (variant.startsWith("light")) SolarConfig.solarFireLight = Integer.parseInt(variant.substring(5)); // outside the engine's budget
             if (variant.equals("noconv")) p.convert = new String[0];
             if (variant.equals("stone")) {

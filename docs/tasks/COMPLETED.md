@@ -2,6 +2,21 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 16 (2026-10-11)
+- Vitrified sand is opaque (the user: more sand than glass; same texture without its transparency); bench: ~23 % more
+  layers where it is the surface, as sky light no longer goes through it.
+- `blocks.solarFireLight` default 8 (the user's rule: lower light lags less, so 8; measured 839 / 602 / 483 ms of
+  server time a layer at 15 / 8 / 4 with 85 % fire).
+- Phase 11 of the defaults has no conversions (the user), through the new `convertDepth` 0 (no conversions at all
+  while the phase runs, carried ones included; otherwise the carried rules still act in layer 1).
+- Water against the erosion, option (b) (the user): ground under standing liquid waits until the liquid has gone, then
+  catches up. Self-test check (a pillar under water stays, goes once the water is gone).
+- Throughput (to-do item 1): the engine stops going down a column at the first block nothing can change yet (96
+  layers a minute without fire and conversions, from 72; same results on the same seed). Bench variant `measure<n>`.
+- Answered: lower fire light lags less; opaque vitrified sand helps, but phase 11 now has no conversions anyway; the
+  one-layer vitrified test was benched by Claude (turn 15 see-through, turn 16 both); the client FPS tests (simple fire
+  model, light 8) are for the user (TODO, waiting for the user's test).
+
 ## Turn 15 (2026-10-10)
 - Defaults (the user's decisions): no fire in phase 11 (too hot for fire to burn), `maxBlockChangesPerTick` 2048.
 - The user's lighter fire options: `blocks.solarFireLight` (0-15, default 15 until the user picks the default; sent

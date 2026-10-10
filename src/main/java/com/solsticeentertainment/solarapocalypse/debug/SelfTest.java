@@ -249,6 +249,21 @@ public final class SelfTest {
                 caveCheck();
                 SolarConfig.maxBlockChangesPerTick = cap;
                 SolarConfig.tickBudgetMs = 10;
+                poolSetup();
+                stage++;
+                waited = ticks;
+                break;
+            case 16:
+                if (!drained(3000)) return;
+                log("a stone pillar under water in the eroded zone (water's destroy and evaporation off): {} of 2 stones kept (2)", poolStones());
+                world.setBlockState(poolAt.up(2), Blocks.AIR.getDefaultState(), 2);
+                SolarApocalypse.requeueAll();
+                stage++;
+                waited = ticks;
+                break;
+            case 17:
+                if (!drained(3000)) return;
+                log("the same pillar once its water is gone: {} of 2 stones kept (0)", poolStones());
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -264,6 +279,7 @@ public final class SelfTest {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
         Map<Integer, Integer> lost = new java.util.TreeMap<>();
+        Map<Integer, Map<String, Integer>> tops = new java.util.HashMap<>(); // layers lost -> the columns' blocks on top
         int columns = 0, below = 0;
         long depth = (long) SolarApocalypse.timeline().depthAt(CubeEngine.clock(world), Timeline.SURFACE); // the engine's line
         Map<Long, java.util.BitSet> after = solidColumns();
@@ -272,7 +288,11 @@ public final class SelfTest {
                 Chunk column = cubes.getLoadedColumn(x >> 4, z >> 4);
                 int ground = CubeEngine.groundAt(world, x, z);
                 if (column == null || ground == BlockChanges.NO_Y) continue;
-                lost.merge(ground - (((IColumn) column).getHeightValue(x & 15, z & 15) - 1), 1, Integer::sum);
+                int top = ((IColumn) column).getHeightValue(x & 15, z & 15) - 1;
+                lost.merge(ground - top, 1, Integer::sum);
+                BlockPos above = new BlockPos(x, top + 1, z); // lava is see-through: on top, not in the height map
+                IBlockState on = world.isBlockLoaded(above) && BlockRules.isLiquid(world.getBlockState(above)) ? world.getBlockState(above) : world.getBlockState(above.down());
+                tops.computeIfAbsent(ground - top, k -> new java.util.TreeMap<>()).merge(name(on), 1, Integer::sum);
                 columns++;
                 long key = ((long) x << 32) | (z & 0xFFFFFFFFL);
                 java.util.BitSet gone = (java.util.BitSet) solidBefore.getOrDefault(key, new java.util.BitSet()).clone();
@@ -288,11 +308,15 @@ public final class SelfTest {
                 mode = e.getKey();
             }
         }
+        Map<String, Integer> shortOf = new java.util.TreeMap<>(); // columns that lost less than the most common value
+        for (Map.Entry<Integer, Map<String, Integer>> e : tops.entrySet()) {
+            if (e.getKey() < mode) e.getValue().forEach((block, n) -> shortOf.merge(block, n, Integer::sum));
+        }
         log("evenness, {}: line at {} layers, engine behind by {} layers; layers lost by column {} (more: caves and lakes under"
                         + " the line, opened); {} % of {} columns within two neighbouring values ({}-{}); terrain gone below the engine's"
-                        + " line {} (0)", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
+                        + " line {} (0); columns short of the rest by the block on top {} (liquids: their floor waits)", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
                 String.format("%.1f", CubeEngine.behind(world) * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
-                columns, mode, mode + 1, below);
+                columns, mode, mode + 1, below, shortOf);
     }
 
     /** Posts a load event for every loaded cube of 2 x 2 columns near spawn, as if a player had come back to them. */
@@ -408,6 +432,37 @@ public final class SelfTest {
     }
 
     private static final List<BlockPos> splashed = new ArrayList<>();
+    private static BlockPos poolAt;
+
+    /**
+     * Water on a two-stone pillar in the zone the TOP_Y line has eroded (turn 16, the user's choice for water against the
+     * line: nothing under standing liquid goes before the liquid). Water is taken out of every destroy and evaporate list,
+     * so it stays; the stones are due.
+     */
+    private static void poolSetup() {
+        for (SolarConfig.Phase p : SolarConfig.phases) {
+            if (p.destroy.length > 0) {
+                List<String> destroy = new ArrayList<>(java.util.Arrays.asList(p.destroy));
+                destroy.add("!minecraft:water");
+                p.destroy = destroy.toArray(new String[0]);
+            }
+            p.evaporate = new String[0];
+        }
+        int line = SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(CubeEngine.clock(world), Timeline.TOP) + 1;
+        poolAt = world.getSpawnPoint().add(3, 0, 3);
+        poolAt = new BlockPos(poolAt.getX(), line + 4, poolAt.getZ());
+        log("pool at {} (TOP_Y line at Y {}), loaded {}", poolAt, line, world.isBlockLoaded(poolAt.up(2)));
+        SolarConfig.maxBlockChangesPerTick = 0;
+        world.setBlockState(poolAt, Blocks.STONE.getDefaultState(), 2);
+        world.setBlockState(poolAt.up(), Blocks.STONE.getDefaultState(), 2);
+        world.setBlockState(poolAt.up(2), Blocks.WATER.getDefaultState(), 2);
+        SolarApocalypse.rebuild(); // the new rules
+        SolarApocalypse.requeueAll(true); // every loaded cube, the engine straight to the present
+    }
+
+    private static int poolStones() {
+        return (world.getBlockState(poolAt).getBlock() == Blocks.STONE ? 1 : 0) + (world.getBlockState(poolAt.up()).getBlock() == Blocks.STONE ? 1 : 0);
+    }
 
     /** Throws a water bottle down onto a few solar fires near spawn (entities tick for 300 ticks after this, players or not). */
     private static void throwWater() {
@@ -725,13 +780,18 @@ public final class SelfTest {
         IBlockState water = Blocks.WATER.getDefaultState(), stone = Blocks.STONE.getDefaultState();
         log("above the terrain in a first phase (one infinite SURFACE phase): at its start water 1 above the ground {} (water), 20 above {}"
                         + " (water), {} above {} (air), the ground {} (stone); a tenth of the phase in, water 1 above {} (air), 20 above"
-                        + " gone before 1 above {} (true)",
+                        + " gone before 1 above {} (true); the ground then {} (air), by the depth line {} (true);"
+                        + " the engine stops going down a column 100 below the ground {} (true), next look when the line gets there {}"
+                        + " (true), not at the reached ground {} (false)",
                 name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
                 name(c.evaluate(water, new BlockPos(0, ground + 20, 0), ground, 256, ground + 20, Sky.EXPOSED, start)), high,
                 name(c.evaluate(stone, new BlockPos(0, ground + high, 0), ground, 256, ground + high, Sky.EXPOSED, start)),
                 name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
                 name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, tenth)),
-                due(c, water, ground + 20, ground, start) < due(c, water, ground + 1, ground, start));
+                due(c, water, ground + 20, ground, start) < due(c, water, ground + 1, ground, start),
+                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground, Sky.EXPOSED, tenth)), c.destroyed(),
+                c.stillBelow(ground - 100, ground, 256, ground, tenth), c.wake() == t.reachTime(ground - 100, ground, Timeline.SURFACE),
+                c.stillBelow(ground, ground, 256, ground + 1, tenth));
     }
 
     /** When a block next needs a look (its removal time, for a block that only a destroy rule changes). */

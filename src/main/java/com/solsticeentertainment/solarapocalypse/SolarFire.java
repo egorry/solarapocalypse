@@ -35,7 +35,7 @@ public final class SolarFire extends BlockFire {
 
     public static SolarFire BLOCK;
     /** Light given off: the server's blocks.solarFireLight (set on every config load; clients get it on login and reload). */
-    public static int light = 15;
+    public static int light = 8;
 
     /**
      * Vanilla fire sounds like wool (SoundType.CLOTH). An entity's step plays the sound of the block 0.2 below its centre,
