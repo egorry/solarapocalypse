@@ -48,25 +48,26 @@ import java.util.WeakHashMap;
  * evaluates {@link BlockChanges} for each block from the top down, so a removal can expose the block below in the same
  * pass. Nothing here loads or generates a cube.
  *
- * A cube whose look is due while the engine is behind (more due than the time budget allows) is brought up to its due
- * time only, and queued again for its next step: every cube then moves one step (one layer in an infinite phase) per
- * round, so the terrain comes down evenly at the speed the engine manages instead of in patches (a phase start keeps
- * those steps). Loads, placed blocks, time skips and reloads bring a cube straight to the present. A pass the budget
- * cuts short resumes first on the next tick.
+ * One clock per world: every cube is brought up to the world's engine clock, which moves on only once every cube due
+ * by it has been processed (a round). While the engine keeps up the clock is the present. While it cannot, the clock
+ * moves one step (a layer in an infinite phase) per round, so the whole world comes down evenly at the speed the engine
+ * manages, and cubes that load or wake meanwhile join at the same layer as their neighbours. The clock steps into each
+ * phase at its start, and is saved, so a restart carries on where the engine was. Time skips and /solar time commands
+ * bring it straight to the present. A pass the budget cuts short resumes first on the next tick.
  */
 public final class CubeEngine {
 
     private static final class State {
-        final Set<CubePos> queue = new LinkedHashSet<>();
-        final Set<CubePos> resume = new LinkedHashSet<>(); // passes cut short: before the queue on the next tick
-        final Map<CubePos, Long> due = new HashMap<>();     // queued cubes behind the present: brought up to this time
-        final Set<CubePos> notReady = new HashSet<>(); // looked at again every 20 ticks
+        final Set<CubePos> queue = new LinkedHashSet<>();   // this round
+        final Set<CubePos> resume = new LinkedHashSet<>();  // passes cut short: before the queue on the next tick
+        final Set<CubePos> next = new LinkedHashSet<>();    // loaded, placed into or ready since the round began: the next round
+        final Set<CubePos> notReady = new HashSet<>();      // looked at again every 20 ticks
         final Map<CubePos, Long> wake = new HashMap<>();
         final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column
-        long scanned;      // progress at the last wake check (every 20 ticks)
-        long window = 20;  // progress over the last 20 ticks: a cube due within it is on time, not behind
-        long behind;       // how far behind the present the last cube brought up to a due time was (progress units)
+        long clock = UNSET; // the time every cube is brought up to
     }
+
+    private static final long UNSET = Long.MIN_VALUE;
 
     /** CC's client heightmap packet counts changed x/z in a byte: keep a column under 256 per tick. */
     private static final int MAX_COLUMN_EDITS_PER_TICK = 255;
@@ -84,45 +85,51 @@ public final class CubeEngine {
     }
 
     /**
-     * Queue every loaded cube of a world: straight to the present (jump: time changes by command, config reload), or
-     * keeping the steps of cubes that are behind (a phase start, which must not cut the terrain unevenly).
+     * Queue every loaded cube of a world (config load or reload: at the engine's clock), and with jump bring the clock
+     * straight to the present (/solar set, add, phase).
      */
     public static void queueAll(WorldServer world, boolean jump) {
         State state = state(world);
+        queueLoaded(world, state);
+        if (jump) setClock(world, state, ApocalypseClock.progress());
+    }
+
+    private static void queueLoaded(WorldServer world, State state) {
         for (Chunk column : world.getChunkProvider().getLoadedChunks()) {
             for (ICube cube : ((IColumn) column).getLoadedCubes()) state.queue.add(cube.getCoords());
         }
-        if (jump) state.due.clear();
-        else for (Map.Entry<CubePos, Long> e : state.wake.entrySet()) state.due.merge(e.getKey(), e.getValue(), Math::min);
         state.wake.clear();
     }
 
-    /** A time skip (sleeping, /time): what is due comes straight to the present, without steps. */
+    /** A time skip (sleeping, /time): the clock comes straight to the present, without steps. */
     public static void jump(WorldServer world, long progress) {
         State state = state(world);
-        state.due.clear();
-        for (Iterator<Map.Entry<CubePos, Long>> it = state.wake.entrySet().iterator(); it.hasNext(); ) {
-            Map.Entry<CubePos, Long> e = it.next();
-            if (e.getValue() <= progress) {
-                state.queue.add(e.getKey());
-                it.remove();
-            }
-        }
+        Timeline timeline = SolarApocalypse.timeline();
+        boolean newPhase = state.clock == UNSET || timeline.phaseAt(state.clock) != timeline.phaseAt(progress);
+        setClock(world, state, progress);
+        if (newPhase) queueLoaded(world, state);
+        else wakeUntil(state, progress);
     }
 
     /** Ready cubes waiting to be processed (not counting cubes not yet lit or scheduled for a later time). */
     public static int queued(World world) {
         State state = STATES.get(world);
-        return state == null ? 0 : state.queue.size() + state.resume.size();
+        return state == null ? 0 : state.queue.size() + state.resume.size() + state.next.size();
     }
 
     /** Totals since server start, for /solar status and tests. */
     public static long nanos, cubesProcessed;
 
-    /** How far behind the present the engine is in a world (progress units, 0 while it keeps up), for /solar status. */
-    public static long behind(World world) {
+    /** The time a world's engine has brought its cubes up to (the present while it keeps up), or -1 before it runs. */
+    public static long clock(World world) {
         State state = STATES.get(world);
-        return state == null ? 0 : state.behind;
+        return state == null || state.clock == UNSET ? -1 : state.clock;
+    }
+
+    /** How far behind the present the engine is in a world, in progress units: 0 while it keeps up (within a step). */
+    public static long behind(World world) {
+        long clock = clock(world), progress = ApocalypseClock.progress();
+        return clock < 0 || progress - clock <= SolarApocalypse.changes(world).minWake(clock) ? 0 : progress - clock;
     }
 
     private static boolean processing, loadDuringProcessingReported;
@@ -132,7 +139,7 @@ public final class CubeEngine {
     public static void onCubeLoad(CubeEvent.Load event) {
         World world = event.getWorld();
         if (world.isRemote || !SolarApocalypse.isActive(world)) return;
-        state(world).queue.add(event.getCube().getCoords());
+        state(world).next.add(event.getCube().getCoords());
         if (processing && !loadDuringProcessingReported) {
             loadDuringProcessingReported = true; // once per game: names the block callback that read an unloaded neighbour
             SolarApocalypse.LOGGER.warn("Cube {} loaded while the apocalypse was changing blocks (reported once)",
@@ -140,16 +147,12 @@ public final class CubeEngine {
         }
     }
 
-    /** A block a player (or wand, enderman...) placed changes on the engine's next pass, so placing cannot hold it off. */
+    /** A block a player (or wand, enderman...) placed changes in the engine's next round, so placing cannot hold it off. */
     @SubscribeEvent
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
         World world = event.getWorld();
         if (world.isRemote || !SolarApocalypse.isActive(world) || !CubicSky.isCubic(world)) return;
-        State state = state(world);
-        CubePos pos = CubePos.fromBlockCoords(event.getPos());
-        state.queue.add(pos);
-        state.due.remove(pos); // straight to the present, even if the cube is behind
-        state.wake.remove(pos);
+        state(world).next.add(CubePos.fromBlockCoords(event.getPos()));
     }
 
     @SubscribeEvent
@@ -159,7 +162,7 @@ public final class CubeEngine {
         CubePos pos = event.getCube().getCoords();
         state.queue.remove(pos);
         state.resume.remove(pos);
-        state.due.remove(pos);
+        state.next.remove(pos);
         state.notReady.remove(pos);
         state.wake.remove(pos);
     }
@@ -176,35 +179,32 @@ public final class CubeEngine {
     private static void run(WorldServer world, long progress) {
         State state = state(world);
         state.columnEdits.clear();
-        if (world.getTotalWorldTime() % 20 == 0) {
-            state.window = Math.max(20, progress - state.scanned);
-            state.scanned = progress;
-            state.queue.addAll(state.notReady);
-            state.notReady.clear();
-            for (Iterator<Map.Entry<CubePos, Long>> it = state.wake.entrySet().iterator(); it.hasNext(); ) {
-                Map.Entry<CubePos, Long> e = it.next();
-                if (e.getValue() <= progress) {
-                    state.queue.add(e.getKey());
-                    state.due.merge(e.getKey(), e.getValue(), Math::min);
-                    it.remove();
-                }
-            }
-        }
-        if (state.queue.isEmpty() && state.resume.isEmpty()) {
-            state.behind = 0;
-            return;
-        }
-        Timeline timeline = SolarApocalypse.timeline();
-        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockChanges changes = SolarApocalypse.changes(world);
+        if (state.clock == UNSET || state.clock > progress) { // first run (the saved clock, else the present), or set back
+            long saved = ApocalypseClock.engineClock(world.provider.getDimension());
+            state.clock = saved < 0 || saved > progress ? progress : saved;
+        }
+        boolean second = world.getTotalWorldTime() % 20 == 0;
+        if (second) {
+            state.next.addAll(state.notReady);
+            state.notReady.clear();
+        }
+        // a round is done: the next one takes what came in meanwhile, at a clock moved on (straight away while behind)
+        if (state.queue.isEmpty() && state.resume.isEmpty() && (second || progress - state.clock > changes.minWake(state.clock))) {
+            state.queue.addAll(state.next);
+            state.next.clear();
+            if (state.clock < progress) advance(world, state, changes, progress);
+        }
+        if (state.queue.isEmpty() && state.resume.isEmpty()) return;
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        long at = state.clock;
         List<CubePos> later = new ArrayList<>(), cut = new ArrayList<>();
         while ((!state.resume.isEmpty() || !state.queue.isEmpty()) && SolarApocalypse.hasBudget()) {
             // no iterator held across process(): a block's own callbacks can load a cube, which queues it (onCubeLoad)
             Iterator<CubePos> it = (state.resume.isEmpty() ? state.queue : state.resume).iterator();
             CubePos pos = it.next();
             it.remove();
-            Long due = state.due.remove(pos);
-            long at = due == null || progress - due <= state.window ? progress : due; // due within the last check: on time
+            state.wake.remove(pos);
             ICube cube = cubes.getLoadedCube(pos);
             if (cube == null) continue;
             if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !cube.isSurfaceTracked()) {
@@ -221,27 +221,49 @@ public final class CubeEngine {
             }
             nanos += System.nanoTime() - t0;
             cubesProcessed++;
-            if (at < progress) state.behind = progress - at;
             if (wake == PARTIAL) {
                 cut.add(pos); // not again this tick: the column limit that stopped it holds until the next one
-                if (at < progress) state.due.put(pos, at);
                 continue;
             }
             // ponytail: one look per cube per MIN_WAKE (a layer in infinite phases) at most: spread conversions land in
             // batches; per-block timers if that shows
-            long next = wake == BlockChanges.NEVER ? wake : Math.max(wake, at + changes.minWake(at));
-            int phase = timeline.phaseAt(at);
-            if (phase != timeline.phaseAt(progress)) next = Math.min(next, timeline.start(phase + 1)); // step into the next phase
-            if (next == BlockChanges.NEVER) continue;
-            if (next > progress) {
-                state.wake.put(pos, next);
-            } else { // still behind: its next step, after the cubes already waiting
-                state.queue.add(pos);
-                state.due.merge(pos, next, Math::min);
-            }
+            if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, at + changes.minWake(at)));
         }
         state.resume.addAll(cut);
-        state.queue.addAll(later);
+        state.queue.addAll(later); // cubes below opened this round: the same round
+    }
+
+    /**
+     * Moves a world's clock on after a round: one step (a layer in an infinite phase), or straight to the next look due
+     * if that is later, never past the present or into the next phase's start (where every loaded cube is looked at),
+     * and queues the cubes due by then.
+     */
+    private static void advance(WorldServer world, State state, BlockChanges changes, long progress) {
+        // ponytail: a scan of every waiting cube per round; a time-ordered map if many short rounds show in the profile
+        long first = BlockChanges.NEVER;
+        for (long time : state.wake.values()) first = Math.min(first, time);
+        long to = Math.min(progress, Math.max(state.clock + changes.minWake(state.clock), first));
+        Timeline timeline = SolarApocalypse.timeline();
+        int phase = timeline.phaseAt(state.clock);
+        boolean newPhase = phase + 1 < timeline.phaseCount() && to >= timeline.start(phase + 1);
+        setClock(world, state, newPhase ? timeline.start(phase + 1) : to);
+        if (newPhase) queueLoaded(world, state);
+        else wakeUntil(state, state.clock);
+    }
+
+    private static void setClock(WorldServer world, State state, long clock) {
+        state.clock = clock;
+        ApocalypseClock.setEngineClock(world.provider.getDimension(), clock);
+    }
+
+    private static void wakeUntil(State state, long time) {
+        for (Iterator<Map.Entry<CubePos, Long>> it = state.wake.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<CubePos, Long> e = it.next();
+            if (e.getValue() <= time) {
+                state.queue.add(e.getKey());
+                it.remove();
+            }
+        }
     }
 
     private static final long PARTIAL = Long.MIN_VALUE;
@@ -260,7 +282,7 @@ public final class CubeEngine {
         int minY = cy << 4;
         boolean needGround = SolarApocalypse.timeline().uses(Timeline.SURFACE);
         int topY = SolarApocalypse.topY(world);
-        boolean redrawFire = changes.redrawsFire(progress), manageFire = changes.managesFire(progress);
+        boolean manageFire = changes.managesFire(progress);
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         int deep = changes.deepestLayer();
@@ -303,16 +325,12 @@ public final class CubeEngine {
                         // queued now, as a pass can stop early (PARTIAL) and never get back to this column
                         if (!openedBelow && (top < minY || surface - minY + 2 <= deep)) {
                             openedBelow = true;
-                            if (cubes.getLoadedCube(cx, cy - 1, cz) != null) {
-                                CubePos below = new CubePos(cx, cy - 1, cz);
-                                later.add(below);
-                                state.due.merge(below, progress, Math::min); // the same step as this cube
-                            }
+                            if (cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
                         }
                     }
                 }
-                // Fire: placed on the surface once the phase's conversions are done; removed when its layer is over
-                // (infinite phases) or at night (blocks.nightDousesFire). Fire that loses its ground goes with it.
+                // Fire: placed on the surface once the phase's conversions are done; removed when its ground goes (infinite
+                // phases) or at night (blocks.nightDousesFire). Fire that stays where it should is left alone.
                 IBlockState fire = null;
                 if (surfaceKnown && Coords.blockToCube(surface + 1) == cy) {
                     IBlockState below = blockAt(cubes, cx, cz, lx, surface, lz);
@@ -322,8 +340,7 @@ public final class CubeEngine {
                         if (fire != null && SolarFire.is(fire) && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
-                boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1
-                        && (!redrawFire || SolarFire.epochOf(storage.get(lx, Coords.blockToLocal(fireY), lz)) == SolarFire.epochOf(fire)));
+                boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1);
                 if (stale) {
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     BlockChanges.apply(world, pos.setPos(x, fireY, z), storage.get(lx, Coords.blockToLocal(fireY), lz), AIR);

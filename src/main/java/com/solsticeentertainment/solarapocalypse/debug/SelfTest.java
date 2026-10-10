@@ -217,6 +217,27 @@ public final class SelfTest {
                 lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
                 log("weather in phase 6 (THUNDER): raining {} (true), thundering {} (true), vanilla's rain counter {} (at most 12000)",
                         world.getWorldInfo().isRaining(), world.getWorldInfo().isThundering(), world.getWorldInfo().getRainTime());
+                int lagY = Math.min(planeY, lowestTop()) - 2; // solid in nearly every column from here down
+                jump(t.reachTime(lagY, SolarApocalypse.topY(world), Timeline.TOP), "phase 6, TOP_Y line down to Y " + lagY
+                        + " (just below the lowest ground)");
+                break;
+            case 14:
+                if (!drained(3000)) return;
+                solidBefore = solidColumns();
+                SolarConfig.maxBlockChangesPerTick = 4096; // fast enough to step many layers in the run, still slower than the clock
+                SolarConfig.tickBudgetMs = 30;
+                log("--- the clock runs at a phase 6 layer every 20 ticks for 800 ticks, block changes capped at 4096 per tick and 30 ms:"
+                        + " the TOP_Y line through terrain falls behind; at tick 400 the cubes of 2 x 2 columns near spawn reload (load events)");
+                stage++;
+                waited = ticks;
+                break;
+            case 15:
+                ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 64 / 20);
+                if (ticks - waited == 400) reloadCubes();
+                if (ticks - waited < 800) return;
+                caveCheck();
+                SolarConfig.maxBlockChangesPerTick = cap;
+                SolarConfig.tickBudgetMs = 10;
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -256,6 +277,116 @@ public final class SelfTest {
                 columns, mode, mode + 1);
     }
 
+    /** Posts a load event for every loaded cube of 2 x 2 columns near spawn, as if a player had come back to them. */
+    private static void reloadCubes() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int n = 0;
+        for (int cx = (spawn.getX() >> 4) + 2; cx <= (spawn.getX() >> 4) + 3; cx++) {
+            for (int cz = (spawn.getZ() >> 4) + 2; cz <= (spawn.getZ() >> 4) + 3; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    MinecraftForge.EVENT_BUS.post(new io.github.opencubicchunks.cubicchunks.api.world.CubeEvent.Load(cube));
+                    n++;
+                }
+            }
+        }
+        log("  reloaded {} cubes", n);
+    }
+
+    /** The lowest top (heightmap) of the spawn columns. */
+    private static int lowestTop() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int lowest = Integer.MAX_VALUE;
+        for (int x = spawn.getX() - RADIUS * 16; x < spawn.getX() + RADIUS * 16; x++) {
+            for (int z = spawn.getZ() - RADIUS * 16; z < spawn.getZ() + RADIUS * 16; z++) {
+                Chunk column = cubes.getLoadedColumn(x >> 4, z >> 4);
+                if (column != null) lowest = Math.min(lowest, ((IColumn) column).getHeightValue(x & 15, z & 15) - 1);
+            }
+        }
+        return lowest;
+    }
+    private static Map<Long, java.util.BitSet> solidBefore;
+    private static final int SOLID_LOW = -128; // Y of bit 0 in solidColumns
+
+    /**
+     * Terrain blocks (rock, dirt, sand, grass, clay: what only the erosion removes; carried rules burn wood, leaves and
+     * ice at the surface) of the loaded cubes of the spawn columns, per x/z: bit y - SOLID_LOW.
+     */
+    private static Map<Long, java.util.BitSet> solidColumns() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        Map<Long, java.util.BitSet> solid = new java.util.HashMap<>();
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty() || cube.getY() * 16 < SOLID_LOW) continue;
+                    for (int i = 0; i < 4096; i++) {
+                        IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
+                        Material m = s.getMaterial();
+                        if (m != Material.ROCK && m != Material.GROUND && m != Material.SAND && m != Material.GRASS && m != Material.CLAY) continue;
+                        long key = ((long) ((cx << 4) + (i & 15)) << 32) | (((cz << 4) + ((i >> 4) & 15)) & 0xFFFFFFFFL);
+                        solid.computeIfAbsent(key, k -> new java.util.BitSet()).set(cube.getY() * 16 + (i >> 8) - SOLID_LOW);
+                    }
+                }
+            }
+        }
+        return solid;
+    }
+
+    /**
+     * The TOP_Y line while the engine is behind. Caverns: blocks gone below a block of the same column that still stands
+     * (the user's caverns and pits, turn 12). Then against the engine's clock: nothing gone below its line, and nothing
+     * standing above it (cubes not yet done this round still hold the line's own layer).
+     */
+    private static void caveCheck() {
+        long clock = CubeEngine.clock(world);
+        int line = SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(clock, Timeline.TOP) + 1;
+        Map<Long, java.util.BitSet> after = solidColumns();
+        int caverns = 0, cavernColumns = 0, below = 0, above = 0;
+        List<String> strays = new ArrayList<>();
+        Map<Integer, Integer> deepest = new java.util.TreeMap<>(); // columns by the lowest Y they lost
+        for (Map.Entry<Long, java.util.BitSet> e : solidBefore.entrySet()) {
+            java.util.BitSet now = after.getOrDefault(e.getKey(), new java.util.BitSet());
+            java.util.BitSet kept = (java.util.BitSet) e.getValue().clone();
+            kept.and(now);
+            java.util.BitSet gone = (java.util.BitSet) e.getValue().clone();
+            gone.andNot(now);
+            if (!gone.isEmpty()) deepest.merge(gone.nextSetBit(0) + SOLID_LOW, 1, Integer::sum);
+            int under = gone.get(0, Math.max(0, kept.length() - 1)).cardinality();
+            caverns += under;
+            if (under > 0) cavernColumns++;
+            java.util.BitSet sunk = gone.get(0, Math.max(0, line - SOLID_LOW));
+            below += sunk.cardinality();
+            for (int b = sunk.nextSetBit(0); b >= 0 && strays.size() < 5; b = sunk.nextSetBit(b + 1)) {
+                BlockPos at = new BlockPos((int) (e.getKey() >> 32), b + SOLID_LOW, (int) (long) e.getKey());
+                strays.add(at + " now " + world.getBlockState(at) + ", above " + world.getBlockState(at.up()));
+            }
+            int from = Math.max(0, line + 1 - SOLID_LOW);
+            if (from < now.length()) above += now.get(from, now.length()).cardinality();
+        }
+        int mode = 0, best = 0, deeper = 0;
+        for (Map.Entry<Integer, Integer> e : deepest.entrySet()) {
+            if (e.getValue() > best) {
+                best = e.getValue();
+                mode = e.getKey();
+            }
+        }
+        for (Map.Entry<Integer, Integer> e : deepest.entrySet()) if (e.getKey() < mode - 1) deeper += e.getValue();
+        log("TOP_Y line behind the clock: present line Y {}, engine line Y {} (behind by {} layers), {} cubes queued; blocks gone"
+                        + " under standing ground {} in {} columns (0); columns by the lowest Y lost {}: {} cut more than a layer below"
+                        + " the most common (0); against the engine line: gone below it {} (0), left above it {} (0)",
+                SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1,
+                line, String.format("%.1f", CubeEngine.behind(world) * 64.0 / Timeline.DAY), CubeEngine.queued(world), caverns,
+                cavernColumns, deepest, deeper, below, above);
+        if (!strays.isEmpty()) log("  gone below the engine line: {}", strays);
+    }
+
     private static final List<BlockPos> splashed = new ArrayList<>();
 
     /** Throws a water bottle down onto a few solar fires near spawn (entities tick for 300 ticks after this, players or not). */
@@ -284,7 +415,7 @@ public final class SelfTest {
 
     private static void jump(long progress, String what) {
         ApocalypseClock.set(progress);
-        SolarApocalypse.requeueAll();
+        SolarApocalypse.requeueAll(true);
         log("--- jump to {} (day {}, depth {} layers), {} cubes queued", what, String.format("%.2f", progress / (double) Timeline.DAY),
                 (long) SolarApocalypse.timeline().depthAt(progress, Timeline.SURFACE), CubeEngine.queued(world));
         engineNanos = CubeEngine.nanos;
@@ -661,6 +792,7 @@ public final class SelfTest {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
         int left = 0, checked = 0, noReference = 0, cubesSeen = 0, highest = Integer.MIN_VALUE;
+        List<String> leftover = new ArrayList<>();
         for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
             for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
                 Chunk column = cubes.getLoadedColumn(cx, cz);
@@ -684,7 +816,10 @@ public final class SelfTest {
                             if (y < gone) continue;
                             checked++;
                             IBlockState left0 = storage.get(i & 15, ly, i >> 4);
-                            if (left0.getMaterial() != Material.AIR && !SolarFire.is(left0)) left++; // solar fire stands on the surface
+                            if (left0.getMaterial() == Material.AIR || SolarFire.is(left0)) continue; // solar fire stands on the surface
+                            left++;
+                            if (leftover.size() < 4) leftover.add(new BlockPos(x, y, z) + " " + left0 + " line Y " + gone + " cube populated "
+                                    + cube.isFullyPopulated() + " lit " + cube.isInitialLightingDone() + " queued " + CubeEngine.queued(world));
                         }
                     }
                 }
@@ -692,6 +827,7 @@ public final class SelfTest {
         }
         log("line check, {}: {} positions above the line in {} ready cubes (highest block Y {}), {} still hold a block, {} without reference",
                 what, checked, cubesSeen, highest, left, noReference);
+        if (!leftover.isEmpty()) log("  left above the line: {}", leftover);
     }
 
     /** The highest terrain surface (SURFACE reference) among the spawn columns. */

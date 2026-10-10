@@ -2,6 +2,16 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 12 (2026-10-10)
+- Engine clock per world (the user's SURFACE "raw chunk deletion" and TOP_Y pits and caverns): every cube is brought up
+  to one clock, which moves a layer per round while the engine is behind; loads and late-waking cubes join at their
+  neighbours' layer; saved per dimension so restarts carry on; `/solar reload` keeps it.
+- Cheaper fire in infinite phases, first part (user upgraded it to a to-do item): one roll per surface block instead of
+  a redraw on every layer.
+- Gradient as the default phase 11 (user: yes).
+- Self-test: TOP_Y line through solid terrain with the clock running ahead of the engine and a 2 x 2-column area
+  reloading mid-way; the same check on the turn 11 engine reproduces the user's caverns.
+
 ## Turn 11 (2026-10-10)
 - Carried rules per layer (user's design): top layer only in infinite phases, all `convertDepth` layers otherwise;
   latest phase decides per layer; `layer=` modifier (Claude's form instead of `@ 2`, user asked for a recommendation).

@@ -8,10 +8,14 @@ import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * The apocalypse's own clock: progress units (24000 per day) saved in the overworld's data/solarapocalypse.dat. Advanced
  * at the end of every server tick, from the overworld's worldTime (SUN) or from ticks (TICKS). Skipping time (sleeping,
- * /time add, /time set) moves it forward; nothing rewinds it.
+ * /time add, /time set) moves it forward; nothing rewinds it. Also saved: each dimension's engine clock (the time the
+ * block engine has brought that world up to, behind progress while it cannot keep up), so a restart carries on evenly.
  */
 public final class ApocalypseClock extends WorldSavedData {
 
@@ -23,6 +27,7 @@ public final class ApocalypseClock extends WorldSavedData {
     private boolean paused;
     private long lastWorldTime = Long.MIN_VALUE;
     private long tickRemainder;
+    private final Map<Integer, Long> engine = new HashMap<>();
 
     public ApocalypseClock(String name) {
         super(name);
@@ -53,6 +58,18 @@ public final class ApocalypseClock extends WorldSavedData {
 
     public static void set(long value) {
         current.progress = Math.max(0, value);
+        current.markDirty();
+    }
+
+    /** A dimension's saved engine clock, or -1 if none. */
+    public static long engineClock(int dimension) {
+        Long clock = current == null ? null : current.engine.get(dimension);
+        return clock == null ? -1 : clock;
+    }
+
+    public static void setEngineClock(int dimension, long value) {
+        if (current == null) return;
+        current.engine.put(dimension, value);
         current.markDirty();
     }
 
@@ -119,12 +136,17 @@ public final class ApocalypseClock extends WorldSavedData {
     public void readFromNBT(NBTTagCompound nbt) {
         progress = nbt.getLong("progress");
         paused = nbt.getBoolean("paused");
+        NBTTagCompound engines = nbt.getCompoundTag("engine");
+        for (String key : engines.getKeySet()) engine.put(Integer.valueOf(key), engines.getLong(key));
     }
 
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         nbt.setLong("progress", progress);
         nbt.setBoolean("paused", paused);
+        NBTTagCompound engines = new NBTTagCompound();
+        for (Map.Entry<Integer, Long> e : engine.entrySet()) engines.setLong(String.valueOf(e.getKey()), e.getValue());
+        nbt.setTag("engine", engines);
         return nbt;
     }
 }

@@ -93,7 +93,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    grass, grass_path and dirt `-> gravel layer=3`; grass, dirt and gravel `-> sand layer=2`, and
    `grass_path -> solarapocalypse:vitrified_sand layer=2`. Each layer below the surface is then one stage further
    along, and whatever reaches layer 1 becomes vitrified sand through the carried rules (dirt there turns to vitrified
-   sand at once). Chances work in every layer, infinite phases included: a block rolls once per deciding phase and
+   sand at once). With a single phase (or `ISOLATED`) nothing is carried, so layer 1 has only the phase's own rules: the
+   user's one-phase copy of phase 11 (turn 12) left the grass on top as it was over vitrified sand at layer 2, until
+   the erosion took it; a `layer=1` rule fills that in. Chances work in every layer, infinite phases included: a block rolls once per deciding phase and
    state, so `dirt -> gravel @ 50% layer=3` makes a patchy stage. A carried rule that reaches deeper in a later
    non-infinite phase (a bigger `convertDepth`) converts those new layers over that phase's `convertDays`; layers it
    reached before catch up at once. A block below every rule's layers is looked at again once the depth line has come
@@ -115,8 +117,10 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    any surface that blocks movement (paths, glass, vitrified sand, slabs too) and goes only when that ground goes. Flammable surface
    blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Outside infinite
    phases one roll serves every phase, so the percent is the total alight: 25 % then 50 % keeps the first 25 % and
-   lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases fire is
-   tagged with its layer and redrawn on every new layer. Punching the block under it, water, or a thrown water bottle
+   lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases each
+   surface block rolls once, so fire on a surface the line has not reached yet stays as it is, and when the erosion takes
+   the block, the one below rolls for the new surface (turn 12: fire used to be redrawn on every layer of the line,
+   which cost two changes per column per layer even while a TOP_Y line was still in the sky). Punching the block under it, water, or a thrown water bottle
    (splash or lingering: the spot it hits and the four beside it, as vanilla does for vanilla fire) puts it out; it
    comes back on the engine's next look at the cube. Its steps are silent: an entity's step plays the sound of the
    block 0.2 below its centre, which is the fire when the centre hangs over it beside a ledge (vanilla fire sounds
@@ -168,31 +172,36 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   makes where it cannot live (a dead bush on grass or path; vanilla keeps dead bushes on sand, dirt and hardened clay
   only) is removed at once instead of popping off later with drops. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
   off (Forge's `restoringBlockSnapshots` switch is set during the change).
-- Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). 1: grass, mycelium, farmland to Every phase announces itself with placeholder defaults for testing: message "Phase n", the thunder sound,
-  splash "Phase One" (the number as a word).
-  paths. 2: 30 % of paths to dirt, 30 % of snow burns, TNT goes; 25 % fire.
+- Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). Every phase announces itself
+  with placeholder defaults for testing: message "Phase n", the thunder sound, splash "Phase One" (the number as a
+  word). 1: grass, mycelium, farmland to paths. 2: 30 % of paths to dirt, 30 % of snow burns, TNT goes; 25 % fire.
   3: the rest of those, wool and carpets, dirt to gravel, plants, leaves, gourds, webs, vines, ice, cacti burn; water evaporates (LAYERS,
   4 a day from sea level); 50 % fire. 4: wood burns, clay hardens, gravel to sand, conversions 2 deep; other liquids
   evaporate (`*, !material:lava`); 75 % fire. 5: sand melts to vitrified sand (red sand to red vitrified sand); 80 %. 6: stone and stone bricks crack to cobblestone; lava evaporates; 85 %.
   7-10: erosion of 1, 2, 3, 5 layers at one a day, conversions 2-5 deep; 90-95 %. 11: infinite erosion at 200 layers a
-  day (one every 6 s); 100 %. Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
+  day (one every 6 s) with the user's gradient running ahead of it (layer 5 grass to path, 4 grass and path to dirt, 3
+  to gravel, 2 to sand and path to vitrified sand; the top layer gets the carried rules, ending in vitrified sand);
+  100 %. Sun damage 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10 per second by day, at night too from
   phase 7; heat 0.25 from phase 4 rising to 4; Fire Resistance protects from the sun, not the heat. Fire percentages
   are the same for solar fire and vanilla fire on flammables.
 
 ## 4. Engine (Cubic Chunks worlds)
-- Cubes are queued on load (new and reloaded: the retroactive part), when a player (or a wand, an enderman...) places
-  a block in them (so placing cannot hold the apocalypse off), on phase starts, on `/solar` time changes and
-  reloads, and when their earliest pending change falls due (checked every 20 ticks, at most one look per cube per
-  1/20 day, or per layer in an infinite phase, so erosion and its fire move layer by layer). When more is due than the
-  budget allows, a cube whose look was due is brought up to its due time only and queued again for its next step, so
-  every cube moves one step (a layer in an infinite phase) per round: the terrain comes down evenly at the speed the
-  engine manages, a layer at a time, instead of in patches several layers deep (the user's trenches, turn 11); a phase
-  start keeps those steps. Loads, placed blocks, time skips (sleeping, `/time`, `/solar set` and `add`) and reloads
-  bring a cube straight to the present, and so does a look due within the last wake check (20 ticks: the engine is then
-  keeping up). A cube still stepping through an earlier phase steps into the next phase at its start, so the new
-  phase's rules reach it. A pass the budget cuts short
-  resumes first on the next tick (it used to wait behind every queued cube, which cut stripes 16 blocks long into the
-  terrain and evaporated water in slivers). `/solar status` shows how far behind the engine is. Queued cubes are processed
+- One clock per world (the engine clock): every cube is brought up to it, and it moves on only after a round, once
+  every cube due by it has been processed. A round takes the cubes whose earliest pending change falls due by the clock
+  (at most one look per cube per 1/20 day, or per layer in an infinite phase), the cubes below that a pass opened, and
+  the cubes that loaded (new and reloaded: the retroactive part) or had a block placed in them (by a player, a wand, an
+  enderman..., so placing cannot hold the apocalypse off) since the round before. While the engine keeps up, the clock
+  is the present (moved every 20 ticks). While it cannot, the clock moves one step per round (a layer in an infinite
+  phase; straight to the next change due when nothing is due before it), so the whole loaded world comes down evenly at
+  the speed the engine manages, an onion layer at a time, and a cube that loads or wakes meanwhile joins at its
+  neighbours' layer. Turn 11's per-cube steps could not do that: a cube that loaded, or woke for its own first layer,
+  went straight to the present, which cut whole cubes out (the user's pits, and caverns under standing ground, turn
+  12). The clock stops at each phase's start, where every loaded cube is looked at, and is saved per dimension
+  (`data/solarapocalypse.dat`), so a restart carries on where the engine was. Time skips (sleeping, `/time`) and
+  `/solar set`, `add` and `phase` bring it straight to the present (one round then catches every cube up, cube by
+  cube); a config reload keeps it. A pass the budget cuts short resumes first on the next tick (it used to wait behind
+  every queued cube, which cut stripes 16 blocks long into the terrain). `/solar status` shows how far behind the
+  engine's clock is. Queued cubes are processed
   once ready (populated, lit, surface-tracked), top-down per x/z. A block's own callbacks (vanilla fire placed, a block
   popping off) can load a neighbouring cube mid-pass; the engine copes (it is queued like any loaded cube), places
   vanilla fire only where its six neighbours are loaded, and logs the first such load once per game with its cause.
@@ -204,7 +213,13 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   (a cube with many slow changes, e.g. lighting after trees burn, stops and continues next tick). A busy server slows the
   apocalypse instead of lagging.
 - ...and at most `performance.maxBlockChangesPerTick` (512) changes per tick, also inside a cube, which caps what
-  clients are sent and must redraw. A big ocean evaporating (2.2 M sources in the self-test's loaded area) then takes
+  clients are sent and must redraw. What that allows (turn 12, the user's test): a change costs the server about 5 µs
+  (most of it lighting); 64 or more changes in a cube in one tick make Cubic Chunks resend the whole cube (Forge's
+  `clumpingThreshold`), and each changed cube is re-meshed by clients. Infinite SURFACE erosion with fire makes about 3
+  changes per column per layer (block, old fire, new fire), so a render distance of 12 (625 columns) needs ~480 k
+  changes a layer: ~940 ticks (~47 s) at 512 per tick, about 25 layers a 20-minute day. Vertical view distance hardly
+  matters (only cubes at the line work). Faster: raise `maxBlockChangesPerTick` and `tickBudgetMs`, or lower
+  `layersPerDay` to what the engine manages (`/solar status` shows how far behind it is). A big ocean evaporating (2.2 M sources in the self-test's loaded area) then takes
   ~4400 ticks instead of ~160.
 - Every config load logs the phase plan (days, depth, layer interval, rule and block-state counts) and warns about
   decreasing depths.
@@ -275,6 +290,15 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   layers behind and 100 % of columns still lost 32 or 33, across the phase 6 start (before the phase-start fix, 488
   columns jumped to the line there). Turn 10's run printed 0 for the chance and anvil checks and null for red sand
   (its throwaway phases had `convertDepth` 0, now counted as 1); it was reported as passing by mistake.
+  Turn 12 (2026-10-10): TOP_Y line through solid terrain (from just below the lowest ground), the clock a layer every
+  20 ticks for 800 ticks and the engine at 4096 changes per tick (still slower), a 2 x 2-column area reloading at tick
+  400: 0 terrain blocks gone under standing ground and 0 below the engine's line; the turn 11 engine on the same check
+  (`t12old5`): 84,510 blocks gone under standing ground in 42,849 columns, the user's caverns (cubes below woke for
+  their own first layer while the ground above lagged). Two blocks counted before the check kept to terrain materials
+  were mineshaft planks the carried `wood -> air` rule burnt once they became the surface (correct). Evenness under a
+  capped engine 98.3-99.8 % (several seeds). On one hilly seed the SURFACE line check found 72-85 blocks above the line:
+  flowing water (levels 4-5) that ran into the cut after the pass (the next layer's look removes it), not blocks the
+  erosion missed; the check now names what it finds.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched.
 - `./gradlew runServer -Pno_dev_mods`: runs without Cubic Chunks. The user has checked splash, message, sound and

@@ -69,17 +69,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `/time add` counts in full (no `maxSunJump` any more); after `/time set` or `/time add` the engine catches up faster
   for 30 s (`performance.skip*`); sleeping keeps the normal budget.
 - Sleeping (or skipping time) where an infinite phase's erosion passes kills the player.
-- Blocks players place change on the engine's next pass, instead of on their cube's next scheduled look.
+- Blocks players place change in the engine's next round, instead of on their cube's next scheduled look.
 - Red vitrified sand from red sand (drops red sand).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Erosion the engine cannot keep up with comes down evenly over the whole loaded world, an onion layer at a time:
+  one clock per world, which moves a layer once every cube has done the one before. The clock is saved, so a restart
+  carries on where the engine was; `/solar reload` keeps it (it used to bring everything to the present).
+- Fire in infinite phases is no longer redrawn on every layer: each surface block rolls once, so fire on ground the
+  line has not reached yet stays as it is, and a TOP_Y line still in the sky costs nothing.
+- Phase 11 of the defaults has the gradient running ahead of the erosion: layer 5 grass to path, 4 dirt, 3 gravel,
+  2 sand, vitrified sand on top.
 - Carried convert rules act in the running phase's `convertDepth` layers (they kept their own phase's depth), and only
   in the top layer during infinite phases; per block and layer the latest phase with a rule there wins.
 - Infinite erosion comes down evenly, a layer at a time, when the engine cannot keep up with `layersPerDay`: it then
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Pits a cube wide cut through the terrain, and caverns under standing ground, while the engine was behind: a cube that
+  loaded, or woke for its first layer, went straight to the present instead of its neighbours' layer.
 - Trenches and stripes in infinite erosion, and water evaporating in slivers: a cube the time budget cut short waited
   behind every other queued cube.
 - When erosion emptied a cube's columns over several ticks, the cube below could miss its look, leaving its

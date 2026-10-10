@@ -154,12 +154,12 @@ public class SolarApocalypse {
         return String.format(" at %.4g layers a day (a layer every %.4g s%s)", perDay, seconds, sun ? " at 20-minute days" : "");
     }
 
-    /** After a jump in time or a config reload: every loaded cube may have work again, straight to the present. */
+    /** After a config load or reload: every loaded cube may have work again, at the engine's clock. */
     public static void requeueAll() {
-        requeueAll(true);
+        requeueAll(false);
     }
 
-    /** Every loaded cube may have work again; jump false (a new phase) keeps cubes that are behind stepping. */
+    /** Every loaded cube may have work again; jump (the time was changed by command) brings the engine to the present. */
     public static void requeueAll(boolean jump) {
         if (!CUBIC_CHUNKS) return;
         for (WorldServer world : DimensionManager.getWorlds()) {
@@ -281,7 +281,7 @@ public class SolarApocalypse {
             if (lastPhase != Integer.MIN_VALUE) {
                 if (phase < 0) LOGGER.info("The sun is calm again");
                 else Announcer.phasesStarted(phase > lastPhase ? Math.max(lastPhase + 1, 0) : phase, phase, progress);
-                requeueAll(false);
+                // the engine looks at every loaded cube itself when its clock gets to the phase's start
             }
             lastPhase = phase;
         }

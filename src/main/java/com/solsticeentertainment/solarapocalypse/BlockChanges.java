@@ -135,8 +135,9 @@ public final class BlockChanges {
      * The fire that belongs above a column's surface block now: solar fire, vanilla fire (flammable surface), or null.
      * Fire comes after the phase's conversions (none while the surface block still has a conversion pending). Outside
      * infinite phases one roll serves every phase, so a phase's percent is the total alight (25 % then 50 % keeps the
-     * first 25 %) and lit fire is left alone. In an infinite phase fire is tagged with its layer and redrawn on each one.
-     * With blocks.nightDousesFire there is no fire at night (see dark).
+     * first 25 %) and lit fire is left alone. In an infinite phase each surface block rolls once: when the erosion takes
+     * it, the block below rolls for the new surface; fire on a surface the line has not reached stays as it is. Solar fire
+     * is tagged with the depth it was lit at (/solar fire). With blocks.nightDousesFire there is no fire at night (see dark).
      */
     public IBlockState fire(World world, BlockPos surfacePos, IBlockState surface, long progress) {
         wake = NEVER;
@@ -150,10 +151,9 @@ public final class BlockChanges {
         boolean infinite = timeline.infinite(phase);
         int line = timeline.track(phase);
         int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;
-        if (infinite) later(timeline.reachTime(-epoch, 0, line)); // the next layer redraws the fire
         boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
         double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
-        if (Timeline.hash(x, y, z, infinite ? FIRE_SALT + epoch : TOTAL_FIRE_SALT) * 100 >= percent) return null;
+        if (Timeline.hash(x, y, z, infinite ? FIRE_SALT : TOTAL_FIRE_SALT) * 100 >= percent) return null;
         if (!flammable && !surface.getMaterial().blocksMovement()) return null; // paths, glass, slabs too; not liquids
         long due = infinite ? progress : spread(timeline.convertStart(phase), timeline.convertSpread(phase), x, y, z, FIRE_SALT - epoch);
         if (progress < due) {
@@ -186,21 +186,16 @@ public final class BlockChanges {
 
     private static final int FIRE_SALT = 1 << 20, TOTAL_FIRE_SALT = 0x7F1E0000;
 
-    /** Whether fire follows the layer (infinite phases: redrawn on each one). */
-    public boolean redrawsFire(long progress) {
-        int phase = timeline.phaseAt(progress);
-        return phase >= 0 && timeline.infinite(phase);
-    }
-
     /**
-     * Whether solar fire that should not be there now is removed: in infinite phases (the layer moved on), and with
-     * blocks.nightDousesFire (night). Otherwise fire, once lit, is left alone.
+     * Whether solar fire that should not be there now is removed: in infinite phases (its ground went, or the phase's
+     * roll differs from the one before), and with blocks.nightDousesFire (night). Otherwise fire, once lit, is left alone.
      */
     public boolean managesFire(long progress) {
-        return SolarConfig.nightDousesFire || redrawsFire(progress);
+        int phase = timeline.phaseAt(progress);
+        return SolarConfig.nightDousesFire || phase >= 0 && timeline.infinite(phase);
     }
 
-    /** The shortest gap between two looks at a cube: MIN_WAKE, or a layer's time in an infinite phase (fire per layer). */
+    /** The shortest gap between two looks at a cube, and the engine clock's step: MIN_WAKE, or a layer's time in an infinite phase. */
     public long minWake(long progress) {
         int phase = timeline.phaseAt(progress);
         double perDay = phase < 0 || !timeline.infinite(phase) ? 0 : timeline.layersPerDay(phase);

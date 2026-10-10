@@ -415,7 +415,14 @@ public final class SolarConfig {
                         "material:ice -> air", "material:packed_ice -> air", "material:cactus -> air"},
                 {"material:wood -> air", "minecraft:clay -> minecraft:hardened_clay", "minecraft:gravel -> minecraft:sand"},
                 {"minecraft:sand -> solarapocalypse:vitrified_sand preserveState"},
-                {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"}};
+                {"minecraft:stone:0 -> minecraft:cobblestone", "minecraft:stonebrick -> minecraft:cobblestone"},
+                {}, {}, {}, {},
+                // the gradient under the erosion: path, dirt, gravel, sand, then vitrified sand on top (carried rules, layer 1)
+                {"minecraft:grass -> minecraft:grass_path layer=5", "minecraft:grass -> minecraft:dirt layer=4",
+                        "minecraft:grass_path -> minecraft:dirt layer=4",
+                        "minecraft:grass, minecraft:grass_path, minecraft:dirt -> minecraft:gravel layer=3",
+                        "minecraft:grass, minecraft:dirt, minecraft:gravel -> minecraft:sand layer=2",
+                        "minecraft:grass_path -> solarapocalypse:vitrified_sand layer=2"}};
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
         static final int COUNT = DAYS.length;

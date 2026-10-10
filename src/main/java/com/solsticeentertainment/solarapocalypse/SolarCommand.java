@@ -52,13 +52,13 @@ public final class SolarCommand extends CommandBase {
                 if (args.length < 2) throw new WrongUsageException(getUsage(sender));
                 long amount = Math.round(parseDouble(args[1]) * Timeline.DAY);
                 ApocalypseClock.set(sub.equals("set") ? amount : ApocalypseClock.progress() + amount);
-                SolarApocalypse.requeueAll();
+                SolarApocalypse.requeueAll(true);
                 break;
             case "phase":
                 if (args.length < 2) throw new WrongUsageException(getUsage(sender));
                 int n = parseInt(args[1], 0, timeline.phaseCount());
                 ApocalypseClock.set(n == 0 ? 0 : timeline.start(n - 1));
-                SolarApocalypse.requeueAll();
+                SolarApocalypse.requeueAll(true);
                 break;
             case "pause":
             case "resume":
@@ -134,7 +134,7 @@ public final class SolarCommand extends CommandBase {
                 + (Sky.heat(world, pos) ? ", in the heat" : ", out of the heat");
     }
 
-    /** ", engine behind by 0.05 days (10 layers)" while the engine cannot keep up (it then moves every cube step by step). */
+    /** ", engine behind by 0.05 days (10 layers)" while the engine cannot keep up (its clock then moves a layer per round). */
     private static String behind(World world, Timeline timeline, int phase) {
         long behind = com.solsticeentertainment.solarapocalypse.cc.CubeEngine.behind(world);
         if (behind <= 0) return "";
