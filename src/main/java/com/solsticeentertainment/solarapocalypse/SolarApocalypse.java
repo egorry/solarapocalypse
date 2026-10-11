@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 // Cubic Chunks is optional: "after:" only orders loading, it never requires the mod.
-@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "after:cubicchunks")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "after:cubicchunks;after:simpledifficulty")
 public class SolarApocalypse {
 
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
@@ -80,6 +80,7 @@ public class SolarApocalypse {
         if (event.getSide().isClient() && CUBIC_CHUNKS) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.StaleTileEntities.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();
+        if (Loader.isModLoaded("simpledifficulty")) com.solsticeentertainment.solarapocalypse.compat.SimpleDifficultyHeat.register();
     }
 
     @Mod.EventHandler

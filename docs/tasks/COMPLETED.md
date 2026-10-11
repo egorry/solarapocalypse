@@ -2,6 +2,18 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 23 (2026-10-11)
+- The user's request: the optional to-do items and the block-breaking effects (vanilla style only; their own sounds
+  later), to test together. Done this turn: break effects, Simple Difficulty, burning liquids. The pre-first-light
+  hook (Cubic Chunks mixin) is next.
+- Break effects (`blocks.breakEffects`, radius, per-tick cap per player). Server side wiring only; the user tests it.
+- Simple Difficulty integration (DESIGN.md): `phase_n.sunTemperature` / `backgroundTemperature` (default values are
+  Claude's, in TODO.md for the user's say). Self-test with Simple Difficulty loaded (temporarily, in `run/mods`): the
+  modifier is registered and adds 4 in the sun, 1 under the roof, 0 deep in phase 4.
+- Burning liquids: already handled by the fire rules once a fluid says it burns (BuildCraft oil and fuels do,
+  flammability 200: vanilla fire burns them away). Fixed on the way: BuildCraft's fluids say they block movement, so a
+  non-burning one could get solar fire and an oil pool counted as ground in a recorded surface.
+
 ## Turn 22 (2026-10-11)
 - Block ID renamed to `solarapocalypse:settled_block` (the user: says what it is; plain "settled" could clash with a
   future vanilla name). The client check stays in TODO.md for the user, as they asked.

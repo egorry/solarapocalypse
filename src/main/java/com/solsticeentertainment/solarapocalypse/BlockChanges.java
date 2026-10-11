@@ -1,11 +1,17 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Blocks;
+import net.minecraft.network.play.server.SPacketEffect;
+import net.minecraft.network.play.server.SPacketParticles;
+import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -19,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.function.IntFunction;
 
 /**
@@ -220,7 +227,8 @@ public final class BlockChanges {
         boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
         double roll = Timeline.hash(x, y, z, infinite ? FIRE_SALT : TOTAL_FIRE_SALT) * 100;
         if (roll >= share(phase, flammable)) return null;
-        if (!flammable && !surface.getMaterial().blocksMovement()) return null; // paths, glass, slabs too; not liquids
+        // paths, glass, slabs too; not liquids (BuildCraft's say they block movement), unless they burn (oil)
+        if (!flammable && (!surface.getMaterial().blocksMovement() || BlockRules.isLiquid(surface))) return null;
         int lit = phase; // the phase that lit the spot: the earliest of the finite phases in a row whose share covers the roll
         while (!infinite && lit > 0 && !timeline.infinite(lit - 1) && roll < share(lit - 1, flammable)) lit--;
         int epoch = infinite ? (int) timeline.depthAt(progress, line) : lit;
@@ -380,9 +388,42 @@ public final class BlockChanges {
         }
         if (!SolarConfig.dropItems && from.getBlock().canSustainLeaves(from, world, pos) && !to.getBlock().canSustainLeaves(to, world, pos))
             zapLeaves(world, pos);
+        if (SolarConfig.breakEffects) effects(world, pos, from);
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
         else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
+    }
+
+    private static final Map<EntityPlayer, Integer> effectsSent = new WeakHashMap<>(); // this tick, per player
+    private static long effectsTick;
+
+    /**
+     * blocks.breakEffects: a change as vanilla shows a broken block (event 2001: its particles and break sound) or, for a
+     * liquid, the fizz and smoke of water poured in the Nether, sent to the players within breakEffectsRadius, at most
+     * breakEffectsPerTick each per tick. Nothing for air or fire.
+     */
+    private static void effects(World world, BlockPos pos, IBlockState from) {
+        if (from.getMaterial() == Material.AIR || from.getMaterial() == Material.FIRE || world.playerEntities.isEmpty()) return;
+        if (world.getTotalWorldTime() != effectsTick) {
+            effectsTick = world.getTotalWorldTime();
+            effectsSent.clear();
+        }
+        boolean liquid = from.getMaterial().isLiquid();
+        double r = SolarConfig.breakEffectsRadius, x = pos.getX() + 0.5, y = pos.getY() + 0.5, z = pos.getZ() + 0.5;
+        for (EntityPlayer player : world.playerEntities) {
+            if (!(player instanceof EntityPlayerMP) || player.getDistanceSq(x, y, z) > r * r) continue;
+            int sent = effectsSent.getOrDefault(player, 0);
+            if (sent >= SolarConfig.breakEffectsPerTick) continue;
+            effectsSent.put(player, sent + 1);
+            EntityPlayerMP to = (EntityPlayerMP) player;
+            if (!liquid) {
+                to.connection.sendPacket(new SPacketEffect(2001, pos, Block.getStateId(from), false));
+                continue;
+            }
+            to.connection.sendPacket(new SPacketEffect(1009, pos, 0, false)); // fire extinguish: the fizz
+            to.connection.sendPacket(new SPacketParticles(EnumParticleTypes.SMOKE_LARGE, false, (float) x, (float) y, (float) z,
+                    0.3F, 0.3F, 0.3F, 0, 8));
+        }
     }
 
     /**
@@ -475,8 +516,8 @@ public final class BlockChanges {
     /** Terrain for a recorded reference surface: like isSurface, without trees, liquids and ice (see groundBelow). */
     public static boolean isGround(IBlockState state) {
         Material m = state.getMaterial();
-        return m.blocksMovement() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS && m != Material.GOURD
-                && m != Material.ICE;
+        return m.blocksMovement() && !m.isLiquid() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS
+                && m != Material.GOURD && m != Material.ICE;
     }
 
     /**

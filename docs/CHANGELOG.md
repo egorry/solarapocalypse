@@ -4,6 +4,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- Block-breaking effects: players near the apocalypse's block changes see and hear them as vanilla breaks a block,
+  and liquids that evaporate fizz and smoke (`blocks.breakEffects`, `breakEffectsRadius` 16, `breakEffectsPerTick` 8).
+- Simple Difficulty integration (optional): the sun and its heat raise the temperature there
+  (`phase_n.sunTemperature`, `phase_n.backgroundTemperature`).
+- Burning liquids: flammable liquids (BuildCraft oil and fuels) catch the sun's vanilla fire, which burns them away.
 - `performance.statusLogSeconds` (0 = off): a verbose debug log, the `/solar status` lines written to the log every
   that many seconds while a phase runs, per affected dimension.
 - `phase_n.backgroundConvert`: conversions at surface level out of the sun, wherever sky light reaches a block's top
@@ -128,6 +133,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Liquids that say they block movement (BuildCraft's) could get solar fire, and counted as ground in a recorded
+  surface (Cubic Chunks without CubicWorldGen).
 - Cubic Chunks worlds: ground uncovered two or more cubes below (a tree crown or a roof gone, an air gap between) got
   no fire, conversion or evaporation until the next phase or day; its cube now gets a look straight away.
 - Modded leaves without the vanilla `decayable` property no longer crash the leaf removal (turn 19's leaves going with

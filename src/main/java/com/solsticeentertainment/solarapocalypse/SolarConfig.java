@@ -52,6 +52,7 @@ public final class SolarConfig {
         public int sunFireSeconds;
         public double backgroundDamage;
         public int backgroundFireSeconds;
+        public double sunTemperature, backgroundTemperature; // Simple Difficulty only
         public String message, sound, splash;
         public DepthReference depthReference; // null = the previous phase's (phase 1: world.depthReference)
         public Weather weather;               // null (INHERIT) until load resolves it
@@ -80,7 +81,8 @@ public final class SolarConfig {
     public static int sunFloorY;
     // blocks
     public static boolean dropItems;
-    public static boolean blockPhysics;
+    public static boolean blockPhysics, breakEffects;
+    public static int breakEffectsRadius, breakEffectsPerTick;
     public static String[] vanillaFireBlacklist;
     public static boolean nightDousesFire;
     public static int solarFireLight;
@@ -190,6 +192,14 @@ public final class SolarConfig {
         blockPhysics = c.getBoolean("blockPhysics", cat, false,
                 "Changes notify neighbours: sand and gravel fall, liquids flow into removed space. In Cubic Chunks this can\n" +
                 "generate neighbouring cubes at cube edges.");
+        breakEffects = c.getBoolean("breakEffects", cat, true,
+                "Players near a change see and hear it as vanilla shows a block broken (its particles and break sound); a liquid\n" +
+                "that goes fizzes and smokes, as water poured in the Nether. Placing and putting out fire makes none.");
+        breakEffectsRadius = c.getInt("breakEffectsRadius", cat, 16, 1, 256,
+                "...within this many blocks of the player (vanilla shows fire's smoke within 16 to 32).");
+        breakEffectsPerTick = c.getInt("breakEffectsPerTick", cat, 8, 1, 4096,
+                "...at most this many changes per player per tick; the rest change silently (a whole layer near a player is\n" +
+                "hundreds of changes at once, and each break is up to 64 particles on the client).");
         vanillaFireBlacklist = c.getStringList("vanillaFireBlacklist", cat, new String[]{"minecraft:tnt"},
                 "Flammable blocks that never get vanilla fire from the sun (selectors, as in the phases' destroy lists); they are\n" +
                 "treated like other blocks (solar fire, which never lights anything). With the gamerule doFireTick false no block\n" +
@@ -408,6 +418,12 @@ public final class SolarConfig {
         p.backgroundDamage = c.get(cat, "backgroundDamage", d.backgroundDamage,
                 "Damage per interval to mobs wherever sky light reaches (entities.backgroundMinSkyLight), sun or not.").getDouble();
         p.backgroundFireSeconds = c.getInt("backgroundFireSeconds", cat, 0, 0, 3600, "Seconds background heat sets mobs on fire.");
+        p.sunTemperature = c.get(cat, "sunTemperature", d.sunTemperature,
+                "With Simple Difficulty: degrees added to the temperature in direct sunlight (as sunDamage: by day unless the sun\n" +
+                "burns at night). Its scale: 11-14 normal, 15-19 hot, 20-25 burning; a desert adds a few.").getDouble();
+        p.backgroundTemperature = c.get(cat, "backgroundTemperature", d.backgroundTemperature,
+                "With Simple Difficulty: degrees added wherever background heat reaches (as backgroundDamage), on top of\n" +
+                "sunTemperature in the sun.").getDouble();
         p.message = c.getString("message", cat, "Phase " + n,
                 "Chat message to every player when the phase starts; empty = none. (Defaults are placeholders for testing.)");
         p.sound = c.getString("sound", cat, "minecraft:entity.lightning.thunder",
@@ -438,6 +454,9 @@ public final class SolarConfig {
         private static final double[] SUN_DAMAGE = {0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10};
         private static final int[] SUN_FIRE = {0, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10};
         private static final double[] BACKGROUND_DAMAGE = {0, 0, 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4};
+        // Simple Difficulty degrees (its normal is 11-14): in the sun with the heat, hot from phase 4, burning from phase 8
+        private static final double[] SUN_TEMPERATURE = {1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9};
+        private static final double[] BACKGROUND_TEMPERATURE = {0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7};
         private static final String[][] CONVERT = {
                 {"minecraft:grass -> minecraft:grass_path", "minecraft:mycelium -> minecraft:grass_path",
                         "minecraft:farmland -> minecraft:grass_path"},
@@ -463,7 +482,7 @@ public final class SolarConfig {
         String[] convert = new String[0], backgroundConvert = new String[0];
         String[] destroy = new String[0];
         String[] evaporate = new String[0];
-        double ignite, igniteFlammable, sunDamage, backgroundDamage;
+        double ignite, igniteFlammable, sunDamage, backgroundDamage, sunTemperature, backgroundTemperature;
         int sunFire;
 
         static Defaults of(int n) {
@@ -485,6 +504,8 @@ public final class SolarConfig {
             d.sunDamage = SUN_DAMAGE[i];
             d.sunFire = SUN_FIRE[i];
             d.backgroundDamage = BACKGROUND_DAMAGE[i];
+            d.sunTemperature = SUN_TEMPERATURE[i];
+            d.backgroundTemperature = BACKGROUND_TEMPERATURE[i];
             return d;
         }
     }

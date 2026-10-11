@@ -13,6 +13,7 @@ import com.solsticeentertainment.solarapocalypse.Sky;
 import com.solsticeentertainment.solarapocalypse.SunDamage;
 import com.solsticeentertainment.solarapocalypse.Timeline;
 import com.solsticeentertainment.solarapocalypse.cc.CubeEngine;
+import com.solsticeentertainment.solarapocalypse.compat.SimpleDifficultyHeat;
 import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
@@ -49,6 +50,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -149,6 +151,11 @@ public final class SelfTest {
                 if (ticks - waited < 25) return;
                 log("pigs after the first hit in phase 4 (expect sun 5, roof 9, deep 10): sun {}, roof {}, deep {}",
                         firstHit[0], firstHit[1], deepPig.getHealth());
+                if (Loader.isModLoaded("simpledifficulty")) { // phase 4 defaults: 3 degrees in the sun, 1 in the heat
+                    log("Simple Difficulty: modifier registered {} (true), degrees added at the sun pig {} (4.0), roof pig {} (1.0),"
+                                    + " deep pig {} (0.0)", SimpleDifficultyHeat.registered(), SimpleDifficultyHeat.heat(world, sunPig.getPosition()),
+                            SimpleDifficultyHeat.heat(world, roofPig.getPosition()), SimpleDifficultyHeat.heat(world, deepPig.getPosition()));
+                }
                 sunPig.setHealth(1); // the sun or its heat kills it during the jump (dropCheck)
                 sunPig.hurtResistantTime = 0;
                 jump(t.end(3) - 1, "end of phase 4 (fire: 10 % solar in total, phase 3's 5 % kept; 75 % of flammables)");

@@ -40,8 +40,7 @@ public final class SunDamage {
         if (phase < 0) return;
         SolarConfig.Phase p = SolarConfig.phases[phase];
         if (p.sunDamage <= 0 && p.sunFireSeconds <= 0 && p.backgroundDamage <= 0 && p.backgroundFireSeconds <= 0) return;
-        boolean dayOnly = SolarConfig.sunNeedsDaytime && (SolarConfig.sunAtNightFromPhase <= 0 || phase + 1 < SolarConfig.sunAtNightFromPhase);
-        boolean sunUp = !dayOnly || world.isDaytime();
+        boolean sunUp = sunUp(world, phase);
         int interval = SolarConfig.damageIntervalTicks;
         long tick = world.getTotalWorldTime();
         List<Entity> entities = world.loadedEntityList;
@@ -51,6 +50,12 @@ public final class SunDamage {
                 burn(world, (EntityLivingBase) e, p, sunUp);
             }
         }
+    }
+
+    /** Whether the sun burns in a phase (0-based) now: by day, or always with sunNeedsDaytime off or from sunAtNightFromPhase. */
+    public static boolean sunUp(World world, int phase) {
+        boolean dayOnly = SolarConfig.sunNeedsDaytime && (SolarConfig.sunAtNightFromPhase <= 0 || phase + 1 < SolarConfig.sunAtNightFromPhase);
+        return !dayOnly || world.isDaytime();
     }
 
     private static void burn(World world, EntityLivingBase e, SolarConfig.Phase p, boolean sunUp) {

@@ -9,9 +9,18 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- (none)
+- Simple Difficulty default temperatures (turn 23, Claude's values): sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0, 0,
+  1, 1, 2, 2, 3, 4, 5, 6, 7 over phases 1 to 11, added up in the sun (its normal is 11-14, hot 15-19, burning 20-25).
+  Change them as you like after testing [low, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
+- The optional items and break effects (turn 23; the user tests them together):
+  - Break effects: near a change, vanilla break particles and sounds (a fizz and smoke for liquids), none beyond 16
+    blocks, and no client lag when a whole layer goes near you (at most 8 a tick).
+  - Simple Difficulty: hotter in the sun and under cover open to the sky as the phases go on; sealed rooms and caves
+    normal. Note: in a self-test with Simple Difficulty loaded, the sun pig died faster than without it (its cause not
+    looked into; the pig checks assume a pack without it).
+  - Burning liquids: a BuildCraft oil pool in the sun in phase 2 or 3 catches fire and burns away.
 - Settled sand and gravel (turn 21; the user will test it later, turn 22) in a client: they should look exactly like vanilla sand, red sand and gravel (same
   models, random rotation), with the same break particles and sounds, and pick block giving the vanilla item. Seen
   with F3 as `solarapocalypse:settled_block[type=...]` where conversions made them.
@@ -32,19 +41,12 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    ground the engine treats as covered.
 2. Pre-first-light hook (optional CC mixin): process new cubes before their first light, no pop-in, no light or packet
    cost [low, Claude: a performance nicety; needs a mixin into CC].
-3. Simple Difficulty integration (optional, soft dependency) [low, Claude: optional].
-4. Burning liquids (oil catching fire), if wanted [low, user].
-5. Block-breaking effects near the player (the user, turn 14, "later to-do item") [low, user: later]: breaking
-   particles and sounds for the apocalypse's block changes, only within a limited radius of each player (as vanilla
-   shows fire smoke only near the player when lots of fire is on the ground), configurable (on/off and radius). Much
-   later the user will add their own breaking sounds, not one per block but mono or positionally panned, so this
-   vanilla-style setting will then default to off.
-6. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
+3. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
     later"): recheck after the turn 11 engine fix, which removed one cause (cut-short passes waiting behind every
     queued cube) [low, user].
-7. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
+4. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
     `textures/font/splash.png`) [lowest until the user has made them, user].
-8. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
+5. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
     user]. Turn 19's offset on seed -5479930802988752619 (1,701 positions above the ground, up to 6) was CWG's snow
     populator turning surface water into ice after the model, so the self-test counted it as ground; turn 20 rerun with
     ice not counted: 0.

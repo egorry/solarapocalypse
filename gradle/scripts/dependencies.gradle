@@ -93,6 +93,8 @@ dependencies {
     // CubicWorldGen 1.12.2-0.0.152.0-SNAPSHOT: also soft (cc/CwgSurface reads its terrain density; only loaded with it)
     compileOnly rfg.deobf('curse.maven:cubicworldgen-304171:3546646')
     devMods rfg.deobf('curse.maven:cubicworldgen-304171:3546646')
+    // SimpleDifficulty 1.12.2-0.3.9: also soft (compat/SimpleDifficultyHeat, its temperature modifier; only loaded with it)
+    compileOnly rfg.deobf('curse.maven:simpledifficulty-360779:3613814')
 }
 
 // Need reobfJar to use uber jars, so dependencies that are shaded in are present

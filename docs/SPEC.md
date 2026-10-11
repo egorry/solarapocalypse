@@ -204,7 +204,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    sound, light and entity burning (mobs and players catch fire, dropped items burn up; it tells Forge it burns, as
    vanilla's check only knows vanilla fire: before turn 13 nothing caught fire from touching it), but it never ticks, so it never spreads, burns out or burns blocks. It stands on
    any surface that blocks movement (paths, glass, vitrified sand, slabs too) and goes only when that ground goes. Flammable surface
-   blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Outside infinite
+   blocks get vanilla fire instead at `igniteFlammablePercent` %, which then behaves as vanilla fire. Flammable liquids
+   count (turn 23, the user's burning liquids item): a fluid block that says it burns (BuildCraft's oil and fuels,
+   flammability 200) gets vanilla fire on top, which spreads over the pool and burns it away as vanilla fire burns any
+   block; other liquids get no fire (BuildCraft's fluids also say they block movement: before turn 23 a non-burning one
+   could get solar fire, and an oil pool counted as ground in a recorded surface). Outside infinite
    phases one roll serves every phase, so the percent is the total alight: 25 % then 50 % keeps the first 25 % and
    lights as many again; fire is never put out between phases, only when its ground goes. In infinite phases each
    surface block rolls once, so fire on a surface the line has not reached yet stays as it is, and when the erosion takes
@@ -278,6 +282,12 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   the `SUN` clock counts); rain puts out burning mobs and vanilla fire under the open sky, and solar fire with
   `phase_n.rainDousesFire` (above), so a `RAIN` or `THUNDER` phase has solar fire only where no rain falls (snowy and
   dry biomes).
+- Break effects (`blocks.breakEffects`, default on; the user's turn 14 item, made in turn 23): players within
+  `blocks.breakEffectsRadius` (16) of a change see and hear it as vanilla shows a broken block (event 2001: the old
+  block's particles and break sound), and a liquid that goes fizzes and smokes as water poured in the Nether (event 1009
+  and large smoke). Nothing for air or fire. At most `blocks.breakEffectsPerTick` (8) per player per tick; the rest
+  change silently. Each player gets their own packets, so players farther away are sent nothing. The user's own
+  breaking sounds will come later; this setting is then to default to off.
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
@@ -471,6 +481,12 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
 - Background heat: sky light at the eyes at least `entities.backgroundMinSkyLight` (4), day or night: `backgroundDamage`,
   `backgroundFireSeconds`. Overhangs, trees and houses with openings are no refuge; sealed rooms and caves are. Both
   add up in the sun.
+- Simple Difficulty (soft dependency, turn 23; DESIGN.md's optional integration): a temperature modifier adds
+  `phase_n.sunTemperature` degrees where the direct sun reaches (as `sunDamage`, by day while the sun needs daytime) and
+  `phase_n.backgroundTemperature` where background heat does (as `backgroundDamage`); both add up in the sun. Simple
+  Difficulty's scale: 11-14 normal, 15-19 hot, 20-25 burning. Defaults: sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0,
+  0, 1, 1, 2, 2, 3, 4, 5, 6, 7 over the eleven phases (Claude's; in the sun hot from phase 4 or so, burning from 8). Fire
+  Resistance does not cool it (Simple Difficulty has its own means).
 - Damage source `solarapocalypse.sun` bypasses armour and is not fire damage; Fire Resistance protects as
   `entities.fireResistance` says (default `DIRECT`: the sun, not the heat). Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
   fire-immune mobs only if `entities.spareFireImmune` (default false).
