@@ -12,7 +12,9 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
 - (none)
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-- (none)
+- Settled sand and gravel (turn 21) in a client: they should look exactly like vanilla sand, red sand and gravel (same
+  models, random rotation), with the same break particles and sounds, and pick block giving the vanilla item. Seen
+  with F3 as `solarapocalypse:settled[type=...]` where conversions made them.
 
 ## Will do (Cubic Chunks)
 1. Dark spots: why ground counts as under cover in open sky at all on a vanilla-like Cubic Chunks preset (the user,
