@@ -623,16 +623,13 @@ public final class CubeEngine {
         if (record == null) return BlockChanges.NO_Y;
         int recorded = record.get(lx, lz);
         if (recorded != SurfaceRecord.NONE || !surfaceKnown) return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
-        for (int y = surface; y > surface - 64; y--) { // first sight: the ground under trees, plants and liquids
-            IBlockState state = blockAt(cubes, column.x, column.z, lx, y, lz);
-            if (state == null) return BlockChanges.NO_Y;
-            if (BlockChanges.isGround(state)) {
-                record.set(lx, lz, y);
-                column.markDirty();
-                return y;
-            }
+        // first sight: the ground under trees, plants and liquids
+        int y = BlockChanges.groundBelow(surface, 64, at -> blockAt(cubes, column.x, column.z, lx, at, lz));
+        if (y != BlockChanges.NO_Y) {
+            record.set(lx, lz, y);
+            column.markDirty();
         }
-        return BlockChanges.NO_Y;
+        return y;
     }
 
     /** The terrain surface (SURFACE depth reference) at x, z without recording one (for /solar status), or NO_Y. */

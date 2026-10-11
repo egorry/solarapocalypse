@@ -3,6 +3,7 @@ package com.solsticeentertainment.solarapocalypse.debug;
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
 import com.solsticeentertainment.solarapocalypse.BlockRules;
+import com.solsticeentertainment.solarapocalypse.Settled;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
@@ -40,6 +41,7 @@ import net.minecraft.potion.PotionUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.EnumSkyBlock;
@@ -100,12 +102,14 @@ public final class SelfTest {
                 configCheck();
                 modelCheck();
                 rulesCheck();
+                settledRules();
                 depthCheck();
                 carryCheck();
                 aboveCheck();
                 settleCheck();
                 leafCheck();
                 backgroundSetup();
+                settledSetup();
                 rainCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
@@ -119,6 +123,7 @@ public final class SelfTest {
                 if (!drained(600)) return;
                 census("after phase 1");
                 backgroundCheck();
+                settledCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
                 pigs("phase 1 (fire only)");
                 for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) pig.setEntityInvulnerable(true); // live through phase 3
@@ -885,7 +890,13 @@ public final class SelfTest {
     }
 
     /** What a block becomes in a layer while a phase runs (one rule, the first look), or null if it stays. */
+    /** The target of a state's conversion, as the vanilla block for settled sand and gravel (see settledRules). */
     private static IBlockState to(BlockRules r, int phase, IBlockState state, int x, int z, int layer) {
+        IBlockState to = placed(r, phase, state, x, z, layer);
+        return to == null ? null : Settled.real(to);
+    }
+
+    private static IBlockState placed(BlockRules r, int phase, IBlockState state, int x, int z, int layer) {
         BlockRules.Step step = r.convert(phase, state);
         int rule = step == null ? -1 : step.pick(x, 64, z, state, layer, phase);
         return rule < 0 ? null : step.target(rule);
@@ -1011,6 +1022,55 @@ public final class SelfTest {
         for (int x = x0 - 1; x <= x0 + 8; x++) world.setBlockState(new BlockPos(x, y, z), Blocks.AIR.getDefaultState(), 18);
     }
 
+    /**
+     * blocks.blockPhysics false: rules place settled sand and gravel, which follow the vanilla block's rules and drop what
+     * it drops. Then the ground under ice (BlockChanges.groundBelow) on made-up columns, from Y 100 down.
+     */
+    private static void settledRules() {
+        SolarConfig.Phase p = new SolarConfig.Phase();
+        p.convert = new String[]{"minecraft:dirt -> minecraft:gravel", "minecraft:gravel -> minecraft:sand:1",
+                "minecraft:sand -> solarapocalypse:vitrified_sand preserveState"};
+        p.destroy = new String[0];
+        p.evaporate = new String[0];
+        BlockRules r = BlockRules.compile(new SolarConfig.Phase[]{p}, 0);
+        IBlockState gravel = placed(r, 0, Blocks.DIRT.getDefaultState(), 0, 0, 1);
+        IBlockState sand = gravel == null ? null : placed(r, 0, gravel, 0, 0, 1);
+        IBlockState glass = sand == null ? null : placed(r, 0, sand, 0, 0, 1);
+        NonNullList<ItemStack> drops = NonNullList.create();
+        if (sand != null) sand.getBlock().getDrops(drops, world, BlockPos.ORIGIN, sand, 0);
+        log("settled: dirt -> {} (solarapocalypse:settled[type=gravel]), it -> {} (settled[type=red_sand]), it -> {}"
+                        + " (vitrified_sand[variant=red_sand]); the red sand drops {} (1xtile.sand@1), picks {} (1xtile.sand@1)",
+                gravel, sand, glass, drops, sand == null ? null : sand.getBlock().getItem(world, BlockPos.ORIGIN, sand));
+        IBlockState ice = Blocks.ICE.getDefaultState(), water = Blocks.WATER.getDefaultState(), air = Blocks.AIR.getDefaultState();
+        IBlockState[][] columns = {{ice, water, water}, {ice, ice}, {ice, air, air}};
+        int[] ground = new int[columns.length];
+        for (int c = 0; c < columns.length; c++) {
+            IBlockState[] column = columns[c];
+            ground[c] = BlockChanges.groundBelow(100, 64, y -> 100 - y < column.length ? column[100 - y] : Blocks.STONE.getDefaultState());
+        }
+        log("ground under ice: a frozen lake {} (97, its floor), ice on stone {} (100, the ice), ice over a cave {} (100)",
+                ground[0], ground[1], ground[2]);
+    }
+
+    private static BlockPos vanillaGravel, settledGravel;
+
+    /** Vanilla gravel and settled gravel placed in mid-air with the engine's flags (2 | 16): only the vanilla one falls. */
+    private static void settledSetup() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int x = spawn.getX() + 12, z = spawn.getZ() - 12;
+        vanillaGravel = new BlockPos(x, Math.max(top(cubes, x, z), top(cubes, x + 3, z)) + 8, z);
+        settledGravel = vanillaGravel.east(3);
+        world.setBlockState(vanillaGravel, Blocks.GRAVEL.getDefaultState(), 2 | 16);
+        world.setBlockState(settledGravel, Settled.placed(Blocks.GRAVEL.getDefaultState()), 2 | 16);
+    }
+
+    private static void settledCheck() {
+        log("in mid-air after phase 1: vanilla gravel -> {} (air: it fell), settled gravel -> {} (settled[type=gravel])",
+                world.getBlockState(vanillaGravel), world.getBlockState(settledGravel));
+        world.setBlockState(settledGravel, Blocks.AIR.getDefaultState(), 18);
+    }
+
     private static BlockPos[] backgroundGrass; // in the sun, under a roof open at the sides, under a sealed lid
 
     /**
@@ -1092,15 +1152,14 @@ public final class SelfTest {
                 columns, String.format("%.1f", ms), exact, near, lower, higher, worst, unknown);
     }
 
-    /** Topmost ground block (BlockChanges.isGround) under the column's top, from loaded cubes; MIN_VALUE if not loaded. */
+    /** Ground under the column's top (BlockChanges.groundBelow), from loaded cubes; MIN_VALUE if not loaded. */
     private static int ground(ICubeProvider cubes, int x, int z) {
-        for (int y = top(cubes, x, z), n = 0; n < 64; y--, n++) {
+        return BlockChanges.groundBelow(top(cubes, x, z), 64, y -> {
             ICube cube = cubes.getLoadedCube(x >> 4, y >> 4, z >> 4);
-            if (cube == null) return Integer.MIN_VALUE;
+            if (cube == null) return null;
             ExtendedBlockStorage storage = cube.getStorage();
-            if (storage != null && BlockChanges.isGround(storage.get(x & 15, y & 15, z & 15))) return y;
-        }
-        return Integer.MIN_VALUE;
+            return storage == null ? Blocks.AIR.getDefaultState() : storage.get(x & 15, y & 15, z & 15);
+        });
     }
 
     /** After erosion to `depth` layers: counts blocks left above reference - depth + 1 in the loaded spawn columns. */

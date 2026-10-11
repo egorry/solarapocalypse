@@ -38,9 +38,12 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
 - `world.depthReference`:
   - `SURFACE` (default): each column's own terrain surface, so layers follow the land like a 3D printer's layers in
     reverse. In CubicWorldGen worlds it is computed from the generator (`cc/CwgSurface`); elsewhere it is recorded the
-    first time the column's top is known (the ground under trees and water, frozen water too: since turn 20 ice is not
-    ground, so a frozen river's floor is the reference, as it is for an open one) and saved with the column
-    (`SurfaceRecord`). Columns whose surface is not known yet wait.
+    first time the column's top is known (the ground under trees and water) and saved with the column
+    (`SurfaceRecord`). Columns whose surface is not known yet wait. Ice (`material:ice`) resting on a liquid is frozen
+    water and looked through, so a frozen river's floor is the reference, as for an open one (turn 20); ice resting on
+    ground (an icy biome's terrain, vanilla or modded) is ground (turn 21). Packed ice is ground. CubicWorldGen's model
+    needs none of this: whatever a biome generates as its surface blocks (ice included) is part of the modelled
+    terrain, and what is made later (frozen water, ice spikes, decorations) sits above it like trees.
   - `TOP_Y`: `world.topY` for every column (`auto` = the height the generator reports).
 - Per phase, `depthReference` (`INHERIT` default, `SURFACE`, `TOP_Y`) switches. Each reference has its own depth line,
   moved only by its own phases (the other stays where it is), and a block goes when either line reaches it. A `TOP_Y`
@@ -136,14 +139,28 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    block's layer: grass under overhangs and trees, the inside of a canopy, the floor and walls of caves open to the
    sky. Sealed rooms and caves sky light does not reach are spared (the user's choice). The light comes from the cubes'
    own light data (nothing is generated); a block under an empty or unloaded cube counts as dark, the column's top
-   block as lit. Chances, carrying (`convertRuleMode`), timing (`convertDays`), `convertDepth` 0 and loop cutting work
-   as for `convert`; a carried background rule acts in every later phase, infinite ones included. Empty by default.
+   block as lit. Chances (`@ n%`), selectors and `!` exclusions, `dimensions=`, `preserveState`, carrying
+   (`convertRuleMode`), timing (`convertDays`) and loop cutting work as for `convert`; a carried background rule acts in
+   every later phase, infinite ones included. They have no layers: `layer=` and `depth=` are ignored with a warning, and
+   `convertDepth` does not limit them, only turns them off at 0 (as in the default phase 11; the user, turn 21: no layers
+   for them). Defaults (the user's, turn 21): phases 4 to 9 have the `convert` rules of phases 1 to 6, so out of the sun
+   the ground follows the open ground three phases later; carried, phase 10 has every one (phases 7 to 10 have no
+   `convert` rules of their own); phases 1 to 3 have none.
    With background rules in the running phase, a cube's pass looks at every block of it instead of stopping where
    the depth line and the layer rules cannot reach. Where the column's surface is not known yet (a cube above it not
    loaded), only blocks below every `convert` rule's layers take background rules; the others wait for the surface.
    A rule off in its own phase (`convertDepth` 0) times from the first later phase that converts. Sky light is updated
    after a pass, so a change that lets more light through gets its cube another look at the next short wake. No fire is
    placed on a surface block whose background conversion is still pending.
+   **Settled sand and gravel** (the user's idea, turn 9; made in turn 21): without `blocks.blockPhysics`, a rule whose
+   target is vanilla sand, red sand or gravel places `solarapocalypse:settled` (`type=sand`, `red_sand`, `gravel`)
+   instead. It looks, sounds, breaks and drops like the vanilla block (gravel gives flint at times, silk touch and pick
+   block give the vanilla item; it has no item of its own) and never falls. Vanilla sand and gravel check for a fall when
+   placed whatever the flags (`onBlockAdded`), so converted ground over a cave fell (and where the 32 blocks around were
+   not all loaded, as far below a player, it vanished and landed lower at once: turn 17's terrain cut ahead of the
+   line). Every rule treats a settled block as its vanilla block (selectors, `preserveState`, destroy), so
+   `minecraft:sand -> solarapocalypse:vitrified_sand` takes settled sand too. With `blocks.blockPhysics` rules place the
+   vanilla blocks, which fall.
 3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
@@ -263,10 +280,7 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   dry biomes).
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
-- Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows, and nothing falls because of a
-  neighbour; but a block converted into sand or gravel still checks for a fall by itself, as vanilla's `onBlockAdded`
-  runs whatever the flags: over a cave it falls, and where the 32 blocks around are not all loaded, as far below a
-  player, it vanishes and lands lower at once; turn 20); `blocks.blockPhysics`
+- Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
   switches to flag 3. The blocks on top of and beside a change still get their neighbour update when their own neighbours
   are loaded (full blocks are not told; nothing around a change of air or fire, which hold nothing; solar fire beside
   a change, which only minds its ground), so what the new block cannot hold (plants and crops on paths, torches on top or

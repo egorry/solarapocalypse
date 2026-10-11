@@ -366,7 +366,9 @@ public final class SolarConfig {
                 "Block conversions out of the sun at surface level: blocks whose top gets at least entities.backgroundMinSkyLight\n" +
                 "sky light (under overhangs and trees, in caves open to the sky; not sealed rooms or caves sky light does not\n" +
                 "reach), where no convert rule acts in the block's layer. Same format as convert, without layer= or depth=.\n" +
-                "Carried like convert (phases.convertRuleMode), over this phase's convertDays; convertDepth 0 turns them off too.");
+                "Carried like convert (phases.convertRuleMode), over this phase's convertDays; convertDepth only turns them off (0).\n" +
+                "Default: phases 4 to 9 have the convert rules of phases 1 to 6, three phases behind the open ground; carried, phase\n" +
+                "10 has them all.");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 0, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
                 "snow layers and the like on it), earlier phases' rules included (layers they reach for the first time convert\n" +
@@ -417,7 +419,8 @@ public final class SolarConfig {
     /**
      * Defaults for a fresh config: eleven phases. Plants, snow and cloth burn first (some by chance), wood and leaves
      * next, the ground degrades (dirt, gravel, sand, vitrified sand; stone cracks), then erosion: a few layers at one a day, and
-     * from phase 11 infinite at 200 layers a day. Phases above 11 are empty.
+     * from phase 11 infinite at 200 layers a day. Phases above 11 are empty. Out of the sun (backgroundConvert) each
+     * phase's conversions follow three phases later (the user's choice, turn 21).
      */
     private static final class Defaults {
         private static final double[] DAYS = {1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 0};
@@ -471,6 +474,7 @@ public final class SolarConfig {
             d.convertDepth = CONVERT_DEPTH[i];
             d.convertDays = CONVERT_DAYS[i];
             if (i < CONVERT.length) d.convert = CONVERT[i];
+            if (i >= 3 && i - 3 < CONVERT.length) d.backgroundConvert = CONVERT[i - 3];
             if (i >= 6) d.destroy = new String[]{"*"};
             if (i < EVAPORATE.length) d.evaporate = EVAPORATE[i];
             d.ignite = IGNITE[i];

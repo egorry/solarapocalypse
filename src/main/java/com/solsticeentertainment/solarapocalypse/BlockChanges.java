@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntFunction;
 
 /**
  * What the apocalypse does to one block at a given progress: a pure function of (block, position, the column's
@@ -471,10 +472,32 @@ public final class BlockChanges {
         return m.blocksMovement() || m.isLiquid();
     }
 
-    /** Terrain for a recorded reference surface: like isSurface, without trees and liquids (frozen ones included: ice). */
+    /** Terrain for a recorded reference surface: like isSurface, without trees, liquids and ice (see groundBelow). */
     public static boolean isGround(IBlockState state) {
         Material m = state.getMaterial();
         return m.blocksMovement() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS && m != Material.GOURD
                 && m != Material.ICE;
+    }
+
+    /**
+     * The ground of a column, looking down from y {@code from} for at most {@code n} blocks ({@code at} gives each block,
+     * null if not loaded): the first isGround block, or the top of the ice resting on it (terrain ice, as a modded icy
+     * biome may make). Ice resting on a liquid is frozen water and looked through as water is. NO_Y if none or not loaded.
+     */
+    public static int groundBelow(int from, int n, IntFunction<IBlockState> at) {
+        int ice = NO_Y; // the top of the ice just above
+        for (int y = from; y > from - n; y--) {
+            IBlockState state = at.apply(y);
+            if (state == null) return NO_Y;
+            Material m = state.getMaterial();
+            if (m == Material.ICE) {
+                if (ice == NO_Y) ice = y;
+            } else if (isGround(state)) {
+                return ice != NO_Y ? ice : y;
+            } else if (m.isLiquid()) {
+                ice = NO_Y;
+            }
+        }
+        return NO_Y;
     }
 }

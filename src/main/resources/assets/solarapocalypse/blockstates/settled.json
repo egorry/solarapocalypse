@@ -1,0 +1,16 @@
+{
+    "variants": {
+        "type=sand": [
+            { "model": "minecraft:sand" }, { "model": "minecraft:sand", "y": 90 },
+            { "model": "minecraft:sand", "y": 180 }, { "model": "minecraft:sand", "y": 270 }
+        ],
+        "type=red_sand": [
+            { "model": "minecraft:red_sand" }, { "model": "minecraft:red_sand", "y": 90 },
+            { "model": "minecraft:red_sand", "y": 180 }, { "model": "minecraft:red_sand", "y": 270 }
+        ],
+        "type=gravel": [
+            { "model": "minecraft:gravel" }, { "model": "minecraft:gravel", "y": 90 },
+            { "model": "minecraft:gravel", "y": 180 }, { "model": "minecraft:gravel", "y": 270 }
+        ]
+    }
+}

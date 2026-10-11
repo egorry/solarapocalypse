@@ -8,6 +8,11 @@
   clock until loaded terrain is done is dropped).
 - **Never-generated terrain in Cubic Chunks** counts as air. Without the CubicWorldGen model, a column's surface is only
   known once its top has been loaded; deep areas under never-seen surfaces wait (no erosion, no sun) until then.
+- **Features in a recorded surface** (without the CubicWorldGen model; Claude, turn 21): the first look records the
+  column's topmost ground block, so ground-like features standing on the terrain count as its ground: vanilla ice spikes
+  (packed ice), boulders, buildings. The terrain under them then erodes as many layers late as they are tall. Frozen
+  water does not count (ice on a liquid is looked through); ice on solid ground does (icy terrain), which also covers a
+  pond frozen to its floor (one layer late).
 - **CubicWorldGen presets with cube areas, or terrain floating more than 64 blocks above the rest**: no surface model;
   the recorded surface is used.
 - **Floating transparent roofs** (a glass dome with air under it) are not the "surface" for conversions; the surface

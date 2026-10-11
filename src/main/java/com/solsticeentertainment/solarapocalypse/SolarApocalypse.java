@@ -72,6 +72,7 @@ public class SolarApocalypse {
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
         MinecraftForge.EVENT_BUS.register(SolarFire.class);
         MinecraftForge.EVENT_BUS.register(VitrifiedSand.class);
+        MinecraftForge.EVENT_BUS.register(Settled.class);
         Announcer.register();
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.VitrifiedSandModel.class);

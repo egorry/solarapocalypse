@@ -2,6 +2,17 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 21 (2026-10-11)
+- The user's ice question (icy biomes, vanilla and modded): in CubicWorldGen worlds the surface model decides, so ice a
+  biome generates as its surface is ground and ice made later is not. For the recorded surface (no CWG), ice resting
+  on ground now counts as ground; ice on a liquid (frozen water) is still looked through. Ground-like features in a
+  recorded surface (ice spikes, boulders) filed in OUTOFSCOPE.md.
+- Default background conversions (the user's scheme): phases 4 to 9 have phases 1 to 6's convert rules; phase 10 has
+  them all through carrying (phases 7 to 10 have no convert rules of their own, so nothing is left to add there).
+- The user's modifier question answered: background rules take every modifier except layers (`layer=`, `depth=`
+  ignored with a warning; `convertDepth` only turns them off at 0), as the user voted.
+- Non-falling sand and gravel (the user's item, raised to medium by them): `solarapocalypse:settled`. Self-test checks: rules place it and treat it as vanilla (settled red sand vitrifies), drops and pick block are vanilla sand, in mid-air vanilla gravel fell and settled stayed; on turn 17's seed the 4 blocks that fell into a cave are 0. Self-test passes.
+
 ## Turn 20 (2026-10-11)
 - Floating water item closed: the user saw malformed beaches near the player, not distant terrain, and is happy with
   it as it is; their point that the default phases' catch-up takes newly loaded water at once confirmed in code.

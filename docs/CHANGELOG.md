@@ -4,9 +4,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
-- `phase_n.backgroundConvert` (empty by default): conversions at surface level out of the sun, wherever sky light
-  reaches a block's top (`entities.backgroundMinSkyLight`): under overhangs and trees, inside canopies, in caves open
-  to the sky; sealed rooms and dark caves are spared. Same rule form as `convert`, without layers (Cubic Chunks).
+- `phase_n.backgroundConvert`: conversions at surface level out of the sun, wherever sky light reaches a block's top
+  (`entities.backgroundMinSkyLight`): under overhangs and trees, inside canopies, in caves open to the sky; sealed rooms
+  and dark caves are spared. Same rule form as `convert`, without layers (Cubic Chunks). By default phases 4 to 9 have
+  the `convert` rules of phases 1 to 6, so shaded ground follows the open ground three phases later (configs written
+  before keep an empty list: delete the config or add the rules to get them).
+- Settled sand and gravel (`solarapocalypse:settled`): without `blocks.blockPhysics` (the default), conversions place
+  these instead of vanilla sand and gravel. They look, sound and drop the same but never fall, so converted ground over
+  a cave no longer drops into it.
 - With `blocks.dropItems` off (the default), the leaves a log held go with it when the apocalypse removes the log,
   instead of hanging in the air and decaying over the next minutes with sapling and apple drops.
 - `blocks.solarFireLight` (0-15, default 8; vanilla fire gives 15): the light solar fire gives off; its flames look as
@@ -126,7 +131,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Modded leaves without the vanilla `decayable` property no longer crash the leaf removal (turn 19's leaves going with
   their log).
 - Cubic Chunks worlds without CubicWorldGen: a column first seen with frozen water recorded the ice as its ground, so
-  its floor eroded as many layers late as the water was deep, for good; the ice is now looked through like water.
+  its floor eroded as many layers late as the water was deep, for good; ice on water is now looked through like water
+  (ice on solid ground, as in an icy biome's terrain, still counts as ground).
 - Cubic Chunks: a sea floor (or anything under standing liquid) whose water was in a cube not loaded at the time, such
   as far above a player deep down, was eroded, and the water floated over the hole when it loaded again; it now waits,
   as does other ground under a cube not loaded.
