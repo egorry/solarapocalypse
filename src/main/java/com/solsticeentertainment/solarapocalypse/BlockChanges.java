@@ -2,6 +2,7 @@ package com.solsticeentertainment.solarapocalypse;
 
 import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockFalling;
+import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
@@ -9,6 +10,15 @@ import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
+
+import java.util.ArrayDeque;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * What the apocalypse does to one block at a given progress: a pure function of (block, position, the column's
@@ -351,6 +361,8 @@ public final class BlockChanges {
         } finally {
             world.restoringBlockSnapshots = restoring;
         }
+        if (!SolarConfig.dropItems && from.getBlock().canSustainLeaves(from, world, pos) && !to.getBlock().canSustainLeaves(to, world, pos))
+            zapLeaves(world, pos);
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
         else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
@@ -372,6 +384,54 @@ public final class BlockChanges {
                     || !aroundLoaded(world, n)) continue;
             state.neighborChanged(world, n, to.getBlock(), pos);
         }
+    }
+
+    private static final int LEAF_REACH = 4; // vanilla's: leaves more steps (through leaves) from a log decay
+
+    /**
+     * Without blocks.dropItems, the leaves a removed log held go with it, as counted changes (vanilla would decay them
+     * over the next minutes, dropping saplings and apples): decayable vanilla-style leaves within LEAF_REACH steps of it
+     * that no other log reaches within LEAF_REACH. Nothing happens unless the whole area is loaded.
+     */
+    private static void zapLeaves(World world, BlockPos log) {
+        int r = 3 * LEAF_REACH + 1; // the leaves near it, the logs that may hold them, and how far those logs reach
+        if (!world.isAreaLoaded(log.add(-r, -r, -r), log.add(r, r, r))) return;
+        Map<BlockPos, Integer> near = leavesWithin(world, Collections.singleton(log), 2 * LEAF_REACH);
+        Set<BlockPos> logs = new HashSet<>();
+        for (BlockPos leaf : near.keySet()) {
+            for (EnumFacing side : EnumFacing.values()) {
+                BlockPos n = leaf.offset(side);
+                IBlockState state = world.getBlockState(n);
+                if (!near.containsKey(n) && state.getBlock().canSustainLeaves(state, world, n)) logs.add(n);
+            }
+        }
+        Map<BlockPos, Integer> held = leavesWithin(world, logs, LEAF_REACH);
+        for (Map.Entry<BlockPos, Integer> e : near.entrySet()) {
+            if (e.getValue() > LEAF_REACH || held.containsKey(e.getKey())) continue;
+            IBlockState state = world.getBlockState(e.getKey());
+            if (state.getBlock() instanceof BlockLeaves && state.getValue(BlockLeaves.DECAYABLE)) apply(world, e.getKey(), state, AIR);
+        }
+    }
+
+    /** Leaves reachable from the given blocks through leaves in at most the given steps, by steps (the blocks at 0). */
+    private static Map<BlockPos, Integer> leavesWithin(World world, Collection<BlockPos> from, int steps) {
+        Map<BlockPos, Integer> dist = new HashMap<>();
+        Deque<BlockPos> queue = new ArrayDeque<>(from);
+        for (BlockPos p : from) dist.put(p, 0);
+        while (!queue.isEmpty()) {
+            BlockPos p = queue.poll();
+            int d = dist.get(p);
+            if (d == steps) continue;
+            for (EnumFacing side : EnumFacing.values()) {
+                BlockPos n = p.offset(side);
+                if (dist.containsKey(n)) continue;
+                IBlockState state = world.getBlockState(n);
+                if (!state.getBlock().isLeaves(state, world, n)) continue;
+                dist.put(n, d + 1);
+                queue.add(n);
+            }
+        }
+        return dist;
     }
 
     /** Nothing rests on or hangs from air or fire, so changing them needs no settle. */

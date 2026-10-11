@@ -27,3 +27,7 @@
   other ways exist, such as `TOP_Y` instead of `SURFACE`): the reference is the generator's terrain before trees, so in a
   fast first phase trees come down over its first tenth while the terrain under them erodes from the start. Shortcut
   tests turn them to air with `material:leaves -> air` and `material:wood -> air` in the phase.
+- **Vanilla fire seed cap** (`maxVanillaFireSeedsPerChunk`, to-do since turn 14; dropped in turn 19, the user's call,
+  Claude agrees): one vanilla fire burns a dense forest (jungles, mushroom and packed birch forests) however few seeds
+  there are, so a cap only changes sparse biomes, which `igniteFlammablePercent` already does. The cost is vanilla
+  fire's spread checks; vanilla flammability is the modpack's to set.

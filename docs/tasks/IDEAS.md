@@ -22,3 +22,12 @@
   1.11.140, which the user tried first, failed in the dev client on a mixin accessor for Minecraft's thread field
   (`field_152352_aC` not found: the dev workspace runs with readable names, not the obfuscated ones the mod targets),
   so it probably works in the real pack.
+- Water-aware SURFACE erosion (the user, turn 19: "a potential thing we could re-look at later"; players could want
+  it, but it is a big change). In a phase that both erodes and evaporates, the land beside a sea or lake erodes on
+  time while the water comes down from the top, so the water stands as a wall and beaches erode oddly. The floor under
+  the water itself waits for it (per column, since turn 16), so this is about the ground around the water. The user's
+  two ways: SURFACE destruction delayed near water while it drains, or water counted as the surface. Claude's view: the
+  cheap form of the first holds dry ground within a few blocks of standing water too (a look at nearby columns, no
+  flood fill of the water body), so a beach goes with its water; counting water as the surface would leave sea floors
+  as plateaus above the eroded land once drained. Meanwhile a lead-in phase that only evaporates does it (SPEC section
+  3, Seas before the land).

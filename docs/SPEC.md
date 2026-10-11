@@ -156,8 +156,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    a day (or `INSTANT` and a short phase; whole seas then go top down cube by cube at its start). The user's turn 18
    test of the one-phase way (turn 16 code): the water came down a layer at a time while the ground around it was cut,
    with water floating over caverns and odd beaches; they chose the lead-in phase (water drained fully before the
-   erosion). The bench above loads its terrain before the phase and saw no water over air, so where the floating water
-   came from is not known; the unloaded cubes above are one way (fixed in turn 18).
+   erosion). Turn 19: what they describe (the floor eaten under the water while evaporation comes down from the top)
+   is how it went before turn 16's hold; scans of their saves found sheets of floating sea only in a test from before
+   it (41,293 blocks), and in a test with it 90 blocks in four spots where the player had been far below (the
+   unloaded cubes above, fixed in turn 18). The land beside the water still erodes on time: water-aware erosion is an
+   idea for later (IDEAS.md).
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
    positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
    sound, light and entity burning (mobs and players catch fire, dropped items burn up; it tells Forge it burns, as
@@ -245,6 +248,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   makes where it cannot live (a dead bush on grass or path; vanilla keeps dead bushes on sand, dirt and hardened clay
   only) is removed at once instead of popping off later with drops. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
   off (Forge's `restoringBlockSnapshots` switch is set during the change).
+- Leaves go with their log (turn 19, the user: only without `blocks.dropItems`, as the player has given up what the
+  apocalypse takes): a change that removes a block that holds leaves (a log) also removes, as counted changes, the
+  decayable leaves within 4 steps (through leaves) of it that no other log reaches within 4 steps: vanilla's decay
+  rule, at once instead of over the next minutes with saplings and apples. Player-placed leaves stay; nothing happens
+  unless the area 13 blocks around is loaded. With `dropItems` on, leaves decay as in vanilla.
 - Defaults (the user's phase set): 1 safe day, 11 phases (days 1, 1, 2 x 7, 3, then 2). Every phase announces itself
   with placeholder defaults for testing: message "Phase n", the thunder sound, splash "Phase One" (the number as a
   word). 1: grass, mycelium, farmland to paths; no fire. 2: 30 % of paths to dirt, 30 % of snow burns, TNT goes; 5 % fire.

@@ -20,6 +20,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockAnvil;
 import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoublePlant;
+import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockSand;
 import net.minecraft.block.BlockStairs;
 import net.minecraft.block.BlockTallGrass;
@@ -100,6 +101,7 @@ public final class SelfTest {
                 carryCheck();
                 aboveCheck();
                 settleCheck();
+                leafCheck();
                 rainCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
@@ -960,6 +962,35 @@ public final class SelfTest {
                 world.getBlockState(c.up()).getBlock().getRegistryName(), world.getBlockState(d.up()).getBlock().getRegistryName(),
                 world.getBlockState(d.up(2)).getBlock().getRegistryName(),
                 world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
+    }
+
+    /**
+     * blocks.dropItems false: removing a log takes the leaves only it held. A row in open air: a player's leaf, log A, seven
+     * leaves, log B; A goes, so the three leaves more than 4 steps from B go too, B's four and the player's leaf stay.
+     */
+    private static void leafCheck() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int x0 = spawn.getX() - 12, z = spawn.getZ() - 6, y = Integer.MIN_VALUE;
+        for (int x = x0 - 1; x <= x0 + 8; x++) y = Math.max(y, top(cubes, x, z) + 6);
+        IBlockState log = Blocks.LOG.getDefaultState(), leaves = Blocks.LEAVES.getDefaultState();
+        world.setBlockState(new BlockPos(x0 - 1, y, z), leaves.withProperty(BlockLeaves.DECAYABLE, false), 18);
+        world.setBlockState(new BlockPos(x0, y, z), log, 18);
+        for (int x = x0 + 1; x <= x0 + 7; x++) world.setBlockState(new BlockPos(x, y, z), leaves, 18);
+        world.setBlockState(new BlockPos(x0 + 8, y, z), log, 18);
+        AxisAlignedBB box = new AxisAlignedBB(new BlockPos(x0 - 1, y, z), new BlockPos(x0 + 8, y + 1, z + 1)).grow(4);
+        int before = world.getEntitiesWithinAABB(EntityItem.class, box).size();
+        BlockChanges.apply(world, new BlockPos(x0, y, z), log, Blocks.AIR.getDefaultState());
+        int gone = 0, kept = 0;
+        for (int x = x0 + 1; x <= x0 + 7; x++) {
+            boolean leaf = world.getBlockState(new BlockPos(x, y, z)).getBlock() == Blocks.LEAVES;
+            if (x <= x0 + 3 && !leaf) gone++;
+            if (x > x0 + 3 && leaf) kept++;
+        }
+        log("leaves: log A's own leaves gone {} of 3 (3), log B's kept {} of 4 (4), a player's leaf -> {} (minecraft:leaves),"
+                + " items dropped {} (0)", gone, kept, world.getBlockState(new BlockPos(x0 - 1, y, z)).getBlock().getRegistryName(),
+                world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
+        for (int x = x0 - 1; x <= x0 + 8; x++) world.setBlockState(new BlockPos(x, y, z), Blocks.AIR.getDefaultState(), 18);
     }
 
     /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */

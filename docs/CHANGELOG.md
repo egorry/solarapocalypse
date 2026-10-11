@@ -4,6 +4,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- With `blocks.dropItems` off (the default), the leaves a log held go with it when the apocalypse removes the log,
+  instead of hanging in the air and decaying over the next minutes with sapling and apple drops.
 - `blocks.solarFireLight` (0-15, default 8; vanilla fire gives 15): the light solar fire gives off; its flames look as
   bright either way. Less light is less lighting work while fire moves with infinite erosion; at 8 mobs still cannot
   spawn in the fire's own space. Clients get the server's value.

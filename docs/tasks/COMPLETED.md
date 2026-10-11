@@ -2,6 +2,15 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 19 (2026-10-11)
+- The user's question on mixed destruction and evaporation (the floor eaten under the water, evaporation reaching it
+  later): answered, that is the behaviour before turn 16's hold. Scanned copies of their test saves for liquid on air
+  (new `scripts/cubescan.py`): floating sea sheets only in the save from before the hold, a few spots in one after it
+  from unloaded cubes (fixed in turn 18). Water-aware erosion filed in IDEAS.md as asked.
+- Leaf culling (to-do, the user's call: only without `blocks.dropItems`): leaves only a removed log held go with it.
+  Self-test check added; the self-test passes.
+- Vanilla fire seed cap dropped (OUTOFSCOPE.md); the under-cover spot item widened to dark spots in general.
+
 ## Turn 18 (2026-10-11)
 - The user's water report (turn 16 code: the water shaved a layer at a time while the ground went under and around it,
   water floating over caverns, odd beaches): they had expected the erosion to wait for all water to drain, and chose

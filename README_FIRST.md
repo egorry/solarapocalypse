@@ -34,6 +34,7 @@ bash scripts/probe_server.sh <tag> selftest   # fresh dev world, phases end to e
 bash scripts/probe_server.sh <tag> bench [fire0,stone,...]   # throughput of an infinite phase (scripts/bench.cfg; variants in debug/Bench), SOLAR BENCH lines
 bash scripts/probe_server.sh <tag>            # fresh dev world + research probe, prints SOLAR PROBE lines
 bash scripts/smoke_server.sh <tag>            # start/stop the dev server, copy its log to research/
+python -I scripts/cubescan.py <save dir>       # liquid resting on air in a Cubic Chunks save (scan a copy, not a world in use)
 ./gradlew runServer -Pno_dev_mods             # dev server without Cubic Chunks; the next normal run restores it
 javap -p -c -cp ../SRPCCC/research/deobf/opencubicchunks-292243-5135427-deobf.jar <class>   # exact CC signatures
 ```
