@@ -12,6 +12,11 @@ Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CH
   with a warning and cubes change from the queue as before. The method is unchanged at Cubic Chunks' latest source
   (2025-11). A mixin could hook the same spot, but a normal mod can only add one through MixinBooter; the coremod needs
   nothing.
+- The user's next ask: with a different Cubic Chunks version, do not crash and tell the player what to change. Done:
+  the patch skips itself (or switches off for the session if Cubic Chunks' classes differ), everything else runs, and
+  the log and the host or operators in chat get the version and the fixes (the tested Cubic Chunks, or the option off).
+  Self-test: the warning text with a simulated mismatch, none with the real one. Not Forge's error screen: that one
+  stops the game from loading (TODO.md, the user's decision).
 - The hook before players get a cube (Claude's optional to-do item, "pre-first-light hook"): done after the first light
   instead (before it would need the engine to run without the column's height map). Saves the pop-in and the packets,
   not the lighting.

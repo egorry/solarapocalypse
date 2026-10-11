@@ -81,6 +81,11 @@ public final class Announcer {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(e.getKey());
             int phase = SolarApocalypse.timeline().phaseAt(ApocalypseClock.progress());
             if (player != null && phase >= 0 && seen(player).getInteger(SEEN) < phase + 1) announce(player, phase);
+            String warning = SolarApocalypse.hookWarning();
+            if (player != null && warning != null && (player.getName().equals(server.getServerOwner())
+                    || server.getPlayerList().canSendCommands(player.getGameProfile()))) { // the host or an operator
+                player.sendMessage(new TextComponentString("\u00a76[Solar Apocalypse]\u00a7r " + warning));
+            }
         }
     }
 

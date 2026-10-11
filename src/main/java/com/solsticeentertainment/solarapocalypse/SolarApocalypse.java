@@ -88,11 +88,18 @@ public class SolarApocalypse {
         event.registerServerCommand(new SolarCommand());
     }
 
+    /** For the log and operators: a Cubic Chunks version the mod's hook does not fit (CubeEngine.hookWarning), or null. */
+    public static String hookWarning() {
+        return CUBIC_CHUNKS ? CubeEngine.hookWarning() : null;
+    }
+
     @Mod.EventHandler
     public void serverStarted(FMLServerStartedEvent event) {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         ApocalypseClock.attach(server);
         rebuild();
+        String warning = hookWarning(); // the spawn cubes have loaded Cubic Chunks' Cube class by now
+        if (warning != null) LOGGER.warn(warning);
         // Dev checks (scripts/probe_server.sh); they reference CC classes, so they are only loaded with CC present.
         if (System.getProperty("solarapocalypse.probe") != null && CUBIC_CHUNKS) {
             com.solsticeentertainment.solarapocalypse.debug.CubicProbe.run(server);

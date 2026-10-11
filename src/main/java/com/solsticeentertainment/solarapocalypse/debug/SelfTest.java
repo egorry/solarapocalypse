@@ -364,6 +364,10 @@ public final class SelfTest {
         log("Cubic Chunks patch in {} (true); fresh land columns at the end of phase 1, exposed grass / blocks changed / cubes"
                 + " updated on loading: option off {} / {} / {} (some, 0, 0), on {} / {} / {} (0, some, 4)", SolarCore.patched,
                 off[0], off[1], off[2], on[0], on[1], on[2]);
+        SolarCore.missing = true;
+        log("warning for a Cubic Chunks version the hook does not fit: {}", SolarApocalypse.hookWarning());
+        SolarCore.missing = false;
+        log("and none with this one: {} (null)", SolarApocalypse.hookWarning());
     }
 
     /**

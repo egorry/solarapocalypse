@@ -352,8 +352,12 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   load during another cube's pass, wait in the queue as before. Lighting still runs after the changes: doing them before
   the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
   the mod is also a Forge coremod (`core/SolarCore`; no mixin mod or other dependency) that adds one call at the end of
-  Cubic Chunks' `Cube.trackSurface`; nothing else, and nothing without Cubic Chunks. If a Cubic Chunks version lacks
-  that method, the patch is skipped with a warning. The option takes effect in game at once; the patch itself is always
+  Cubic Chunks' `Cube.trackSurface`; nothing else, and nothing without Cubic Chunks. A Cubic Chunks version the hook
+  does not fit never stops the game (turn 24, the user's ask): without that method, or if patching fails, the class
+  stays as it is; if its classes differ at run time, the hook switches itself off for the session. Cubes then change
+  from the queue as with the option off, the server log says why at start, and the host (single player) and operators
+  get it in chat on joining: the installed Cubic Chunks version, and the fixes (Cubic Chunks 1.12.2-0.0.1271, tested,
+  or the option off). No warning with the option off. The option takes effect in game at once; the patch itself is always
   in and does nothing with the option off. `/solar status` shows how many cubes were updated before sending, or that the
   patch is not loaded.
 - The mod never slows, skips or alters the server's tick or the world's time (a day-length mod stays in charge); it only

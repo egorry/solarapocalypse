@@ -9,6 +9,9 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
+- Cubic Chunks version mismatch for `performance.updateBeforeSending` (turn 24): done as a warning in the log and in chat
+  to the host or operators, the game running on without the feature. Forge's error screen (as for incompatible mods)
+  would instead stop the game from loading, for an optional feature; Claude's view: keep the chat warning [low, user].
 - Simple Difficulty default temperatures (turn 23, Claude's values): sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0, 0,
   1, 1, 2, 2, 3, 4, 5, 6, 7 over phases 1 to 11, added up in the sun (its normal is 11-14, hot 15-19, burning 20-25).
   Change them as you like after testing [low, user].

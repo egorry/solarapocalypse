@@ -8,6 +8,7 @@ import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.SurfaceRecord;
 import com.solsticeentertainment.solarapocalypse.Timeline;
+import com.solsticeentertainment.solarapocalypse.core.SolarCore;
 import io.github.opencubicchunks.cubicchunks.api.util.Coords;
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
 import io.github.opencubicchunks.cubicchunks.api.world.CubeEvent;
@@ -31,6 +32,8 @@ import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.fml.common.Loader;
+import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -215,9 +218,31 @@ public final class CubeEngine {
      * map, before any player is sent it: with performance.updateBeforeSending it is brought up to the engine's clock
      * now, so players never see it change and are sent nothing for it. Otherwise, and when it cannot be done now (the
      * engine not started or set back, during another cube's pass, no budget left), the queue its load event put it in
-     * does it as before.
+     * does it as before. A Cubic Chunks version whose classes differ from the ones the mod was built for switches it off
+     * for the session instead of crashing (hookWarning).
      */
     public static void surfaceTracked(ICube cube) {
+        if (hookBroken) return;
+        try {
+            prepare(cube);
+        } catch (LinkageError e) {
+            hookBroken = true;
+            SolarApocalypse.LOGGER.error("Updating cubes before sending stops for this session: " + hookWarning(), e);
+        }
+    }
+
+    private static boolean hookBroken;
+
+    /** Why performance.updateBeforeSending cannot work with the installed Cubic Chunks, or null (it can, or it is off). */
+    public static String hookWarning() {
+        if (!SolarConfig.updateBeforeSending || !(SolarCore.missing || hookBroken)) return null;
+        ModContainer cc = Loader.instance().getIndexedModList().get("cubicchunks");
+        return "performance.updateBeforeSending is on, but Cubic Chunks" + (cc == null ? "" : " " + cc.getVersion())
+                + " does not fit the mod's hook (Cube.trackSurface), so terrain changes in view as players explore."
+                + " Everything else works. To fix: Cubic Chunks 1.12.2-0.0.1271 (tested), or turn the option off.";
+    }
+
+    private static void prepare(ICube cube) {
         World world = cube.getWorld();
         if (!SolarConfig.updateBeforeSending || processing || !(world instanceof WorldServer) || !SolarApocalypse.isActive(world)) return;
         if (!world.getMinecraftServer().isCallingFromMinecraftThread()) return;

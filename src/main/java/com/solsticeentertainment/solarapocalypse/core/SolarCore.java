@@ -32,9 +32,23 @@ public final class SolarCore implements IFMLLoadingPlugin, IClassTransformer {
     /** Whether Cubic Chunks' Cube class was patched (for /solar status and the self-test). */
     public static boolean patched;
 
+    /** Cubic Chunks' Cube class loaded without the method to patch (a version the hook does not fit). */
+    public static boolean missing;
+
     @Override
     public byte[] transform(String name, String transformedName, byte[] bytes) {
         if (bytes == null || !CUBE.equals(transformedName)) return bytes;
+        try {
+            return patch(bytes);
+        } catch (RuntimeException e) { // never stop the game over it: the class stays as Cubic Chunks made it
+            patched = false;
+            missing = true;
+            LogManager.getLogger("solarapocalypse").error("Could not patch Cubic Chunks' Cube class", e);
+            return bytes;
+        }
+    }
+
+    private static byte[] patch(byte[] bytes) {
         ClassNode node = new ClassNode();
         new ClassReader(bytes).accept(node, 0);
         for (MethodNode method : node.methods) {
@@ -50,6 +64,7 @@ public final class SolarCore implements IFMLLoadingPlugin, IClassTransformer {
             }
         }
         if (!patched) {
+            missing = true;
             LogManager.getLogger("solarapocalypse").warn("Cubic Chunks' Cube.trackSurface not found: cubes change after players get them");
             return bytes;
         }
