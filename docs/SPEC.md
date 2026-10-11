@@ -38,7 +38,8 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
 - `world.depthReference`:
   - `SURFACE` (default): each column's own terrain surface, so layers follow the land like a 3D printer's layers in
     reverse. In CubicWorldGen worlds it is computed from the generator (`cc/CwgSurface`); elsewhere it is recorded the
-    first time the column's top is known (the ground under trees and water) and saved with the column
+    first time the column's top is known (the ground under trees and water, frozen water too: since turn 20 ice is not
+    ground, so a frozen river's floor is the reference, as it is for an open one) and saved with the column
     (`SurfaceRecord`). Columns whose surface is not known yet wait.
   - `TOP_Y`: `world.topY` for every column (`auto` = the height the generator reports).
 - Per phase, `depthReference` (`INHERIT` default, `SURFACE`, `TOP_Y`) switches. Each reference has its own depth line,
@@ -122,11 +123,27 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    non-infinite phase (a bigger `convertDepth`) converts those new layers over that phase's `convertDays`; layers it
    reached before catch up at once. A block below every rule's layers is looked at again once the depth line has come
    close enough, and the cube below is queued as soon as a column's surface is within the deepest rule's layers of it.
+   When a pass uncovers ground two or more cubes down (a crown or roof gone over an air gap), that ground's cube and
+   the one above it (which places its fire) are queued too (turn 20; before, they waited for their next look).
    **Modifiers** follow the target in any order: `@ n%`, `layer=`, `depth=`, `dimensions=`, and `preserveState`, which keeps the source block's properties
    the target block has too (by name: facing, half, shape...) unless the target sets them:
    `minecraft:anvil[damage=0] -> minecraft:anvil[damage=1] @ 25% preserveState` damages a quarter of anvils and keeps
    their facing. The top half of a two-block plant or door (`half=upper`) never converts by itself: it pops off when
    its bottom half changes.
+   **Background conversions** (turn 20, the user's to-do item): `phase_n.backgroundConvert`, rules in the same form
+   (no `layer=` or `depth=`), act at surface level out of the sun: on a block whose top gets at least
+   `entities.backgroundMinSkyLight` sky light (4; as for background heat on mobs), where no `convert` rule acts in the
+   block's layer: grass under overhangs and trees, the inside of a canopy, the floor and walls of caves open to the
+   sky. Sealed rooms and caves sky light does not reach are spared (the user's choice). The light comes from the cubes'
+   own light data (nothing is generated); a block under an empty or unloaded cube counts as dark, the column's top
+   block as lit. Chances, carrying (`convertRuleMode`), timing (`convertDays`), `convertDepth` 0 and loop cutting work
+   as for `convert`; a carried background rule acts in every later phase, infinite ones included. Empty by default.
+   With background rules in the running phase, a cube's pass looks at every block of it instead of stopping where
+   the depth line and the layer rules cannot reach. Where the column's surface is not known yet (a cube above it not
+   loaded), only blocks below every `convert` rule's layers take background rules; the others wait for the surface.
+   A rule off in its own phase (`convertDepth` 0) times from the first later phase that converts. Sky light is updated
+   after a pass, so a change that lets more light through gets its cube another look at the next short wake. No fire is
+   placed on a surface block whose background conversion is still pending.
 3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
@@ -160,7 +177,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    is how it went before turn 16's hold; scans of their saves found sheets of floating sea only in a test from before
    it (41,293 blocks), and in a test with it 90 blocks in four spots where the player had been far below (the
    unloaded cubes above, fixed in turn 18). The land beside the water still erodes on time: water-aware erosion is an
-   idea for later (IDEAS.md).
+   idea for later (IDEAS.md). The user (turn 20): what they saw was those malformed beaches, near the player; happy
+   with it as it is, as it only shows when a phase both erodes and evaporates. In the default phases the water is gone
+   long before the erosion (it evaporates from phase 3, the erosion starts in phase 7), and newly loaded terrain loses
+   its water in its cube's first pass: the destroy list's `*` (from phase 7) takes every water block above the floor
+   at once, top cube first, and the floor with it.
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
    positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
    sound, light and entity burning (mobs and players catch fire, dropped items burn up; it tells Forge it burns, as
@@ -224,7 +245,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   carried from earlier phases. Within a phase the first matching rule wins.
 - Loops (A -> B -> A in one layer, also across phases in `CARRY`) are cut when the rules are compiled: the deciding
   rules of the loop member with the oldest phase are turned off from that phase on, with a warning in the log. Rules in
-  different layers never loop (`dirt -> sand layer=1` with `sand -> dirt layer=2` is fine).
+  different layers never loop (`dirt -> sand layer=1` with `sand -> dirt layer=2` is fine). A loop between a layer rule
+  and a background rule (`grass -> dirt` in `convert`, `dirt -> grass` in `backgroundConvert`) is not cut: a block can
+  only meet one of them at a time, and the chain stops after 16 steps anyway.
 - **Weather** (`phase_n.weather`): `UNCHANGED` (as usual), `NONE` (no rain), `RAIN` (always raining), `THUNDER` (always
   a thunderstorm), or `INHERIT` (the default: the previous phase's; phase 1 `UNCHANGED`), so the defaults leave the
   weather alone and two settings give dry early phases and storms later. Held every second in the apocalypse's
@@ -240,7 +263,10 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   dry biomes).
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
-- Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
+- Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows, and nothing falls because of a
+  neighbour; but a block converted into sand or gravel still checks for a fall by itself, as vanilla's `onBlockAdded`
+  runs whatever the flags: over a cave it falls, and where the 32 blocks around are not all loaded, as far below a
+  player, it vanishes and lands lower at once; turn 20); `blocks.blockPhysics`
   switches to flag 3. The blocks on top of and beside a change still get their neighbour update when their own neighbours
   are loaded (full blocks are not told; nothing around a change of air or fire, which hold nothing; solar fire beside
   a change, which only minds its ground), so what the new block cannot hold (plants and crops on paths, torches on top or

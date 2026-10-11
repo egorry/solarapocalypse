@@ -4,6 +4,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- `phase_n.backgroundConvert` (empty by default): conversions at surface level out of the sun, wherever sky light
+  reaches a block's top (`entities.backgroundMinSkyLight`): under overhangs and trees, inside canopies, in caves open
+  to the sky; sealed rooms and dark caves are spared. Same rule form as `convert`, without layers (Cubic Chunks).
 - With `blocks.dropItems` off (the default), the leaves a log held go with it when the apocalypse removes the log,
   instead of hanging in the air and decaying over the next minutes with sapling and apple drops.
 - `blocks.solarFireLight` (0-15, default 8; vanilla fire gives 15): the light solar fire gives off; its flames look as
@@ -118,6 +121,12 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Cubic Chunks worlds: ground uncovered two or more cubes below (a tree crown or a roof gone, an air gap between) got
+  no fire, conversion or evaporation until the next phase or day; its cube now gets a look straight away.
+- Modded leaves without the vanilla `decayable` property no longer crash the leaf removal (turn 19's leaves going with
+  their log).
+- Cubic Chunks worlds without CubicWorldGen: a column first seen with frozen water recorded the ice as its ground, so
+  its floor eroded as many layers late as the water was deep, for good; the ice is now looked through like water.
 - Cubic Chunks: a sea floor (or anything under standing liquid) whose water was in a cube not loaded at the time, such
   as far above a player deep down, was eroded, and the water floated over the hole when it loaded again; it now waits,
   as does other ground under a cube not loaded.

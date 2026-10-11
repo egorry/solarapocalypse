@@ -30,4 +30,5 @@
   cheap form of the first holds dry ground within a few blocks of standing water too (a look at nearby columns, no
   flood fill of the water body), so a beach goes with its water; counting water as the surface would leave sea floors
   as plateaus above the eroded land once drained. Meanwhile a lead-in phase that only evaporates does it (SPEC section
-  3, Seas before the land).
+  3, Seas before the land). The user, turn 20: happy with it as it is (only a phase that both erodes and evaporates
+  shows it; the default phases drain the water long before the erosion).

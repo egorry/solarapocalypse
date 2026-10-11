@@ -40,20 +40,25 @@ import java.util.regex.Pattern;
  */
 public final class BlockRules {
 
+    /** The layer a background conversion acts in: a block that no rule of its own layer reaches, with sky light on top. */
+    public static final int BACKGROUND = 0;
+
     /** One convert rule as it applies to one block state: its target, chance ('@ n%'), phase and layers. */
     private static final class Rule {
         final IBlockState target;
         final double share;
         final int phase;
         final int lo, hi; // layer= / depth=, or lo 0: the default layers
+        final boolean background; // a backgroundConvert rule: acts in layer BACKGROUND only
         int off = Integer.MAX_VALUE; // a loop cut turns the rule off from this phase on
 
-        Rule(IBlockState target, double share, int phase, int lo, int hi) {
+        Rule(IBlockState target, double share, int phase, int lo, int hi, boolean background) {
             this.target = target;
             this.share = share;
             this.phase = phase;
             this.lo = lo;
             this.hi = hi;
+            this.background = background;
         }
     }
 
@@ -87,11 +92,11 @@ public final class BlockRules {
         }
 
         private boolean acts(Rule r, int layer, int phase) {
-            return on(r, phase) && layer >= lo(r) && layer <= hi(r, phase);
+            return on(r, phase) && (r.background ? layer == BACKGROUND : layer >= lo(r) && layer <= hi(r, phase));
         }
 
         /** The phase whose rules decide a layer while a phase runs (the latest with a rule acting there), or -1. */
-        private int decider(int layer, int phase) {
+        public int decider(int layer, int phase) {
             for (Rule r : rules) if (acts(r, layer, phase)) return r.phase;
             return -1;
         }
@@ -134,7 +139,10 @@ public final class BlockRules {
          */
         public int timing(int rule, int layer, int phase) {
             Rule r = rules[rule];
-            if (r.lo > 0) return r.phase;
+            if (r.lo > 0 || r.background) { // the first phase it acts in (convertDepth 0 turns every rule off)
+                for (int k = r.phase; k < phase; k++) if (convertDepth[k] > 0) return k;
+                return phase;
+            }
             for (int k = r.phase; k < phase; k++) if (layer <= hi(r, k)) return k;
             return phase;
         }
@@ -146,7 +154,7 @@ public final class BlockRules {
         public int nextLayer(int layer, int phase) {
             int next = 0;
             for (Rule r : rules) {
-                if (!on(r, phase)) continue;
+                if (!on(r, phase) || r.background) continue;
                 int hi = hi(r, phase);
                 if (hi < layer) next = Math.max(next, hi);
                 else if (lo(r) <= layer) next = Math.max(next, lo(r) - 1);
@@ -160,7 +168,7 @@ public final class BlockRules {
             for (Rule r : rules) {
                 s.append(s.length() == 0 ? "" : ", ").append(r.target);
                 if (r.share < 1) s.append(String.format(Locale.ROOT, " @ %.4g%%", r.share * 100));
-                s.append(" (phase_").append(r.phase + 1).append(r.lo > 0 ? " layer=" + r.lo + "-" + r.hi : "").append(')');
+                s.append(" (phase_").append(r.phase + 1).append(r.background ? " background" : r.lo > 0 ? " layer=" + r.lo + "-" + r.hi : "").append(')');
             }
             return s.toString();
         }
@@ -195,7 +203,7 @@ public final class BlockRules {
 
     private final Map<IBlockState, Step> convert = new IdentityHashMap<>();
     private final boolean carry = SolarConfig.convertRuleMode == SolarConfig.RuleMode.CARRY;
-    private final int[] convertDepth, convertCount;
+    private final int[] convertDepth, convertCount, backgroundCount;
     private final boolean[] infinite; // the phase's depth is infinite (it and every later phase)
     private int deepestLayer = 1;
     private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
@@ -205,6 +213,7 @@ public final class BlockRules {
     private BlockRules(SolarConfig.Phase[] phases) {
         convertDepth = new int[phases.length];
         convertCount = new int[phases.length];
+        backgroundCount = new int[phases.length];
         infinite = new boolean[phases.length];
         boolean endless = false;
         for (int i = 0; i < phases.length; i++) {
@@ -228,12 +237,16 @@ public final class BlockRules {
             List<Target> to = new ArrayList<>();
             List<Double> share = new ArrayList<>();
             List<int[]> layers = new ArrayList<>();
+            List<Boolean> background = new ArrayList<>();
             Map<IBlockState, List<Rule>> matched = new IdentityHashMap<>();
-            for (String raw : scoped(phases[i].convert, dimension)) {
+            String[] own = scoped(phases[i].convert, dimension), shade = scoped(phases[i].backgroundConvert, dimension);
+            for (int e = 0; e < own.length + shade.length; e++) {
+                boolean back = e >= own.length;
+                String raw = back ? shade[e - own.length] : own[e], list = where + (back ? ".backgroundConvert" : ".convert");
                 String line = raw.replaceAll("\\s+(?=[^\\[\\]]*\\])", ""); // no spaces inside [...]
                 int arrow = line.indexOf("->");
                 if (arrow < 0) {
-                    SolarApocalypse.LOGGER.warn("{}.convert: '{}' has no '->'", where, raw);
+                    SolarApocalypse.LOGGER.warn("{}: '{}' has no '->'", list, raw);
                     continue;
                 }
                 // target, then modifiers in any order: '@ n%', preserveState, layer=k, layer=a-b, depth=k (= layer=1-k)
@@ -245,16 +258,18 @@ public final class BlockRules {
                     Matcher depth = LAYERS.matcher(words[w]);
                     if (words[w].equals("@") && w + 1 < words.length) chance = percent(words[++w], where);
                     else if (words[w].equalsIgnoreCase("preserveState")) preserve = true;
-                    else if (depth.matches()) {
+                    else if (depth.matches() && back) {
+                        SolarApocalypse.LOGGER.warn("{}: '{}' in '{}' ignored: background conversions have no layers", list, words[w], raw);
+                    } else if (depth.matches()) {
                         int a = Integer.parseInt(depth.group(2)), b = depth.group(3) == null ? a : Integer.parseInt(depth.group(3));
                         boolean top = depth.group(1).equalsIgnoreCase("depth") && depth.group(3) == null; // depth=k: the top k
                         layer = new int[]{top ? 1 : Math.min(a, b), Math.max(a, b)};
                         if (Math.min(a, b) < 1) {
-                            SolarApocalypse.LOGGER.warn("{}.convert: '{}' in '{}': layers count from 1 (the surface block)", where, words[w], raw);
+                            SolarApocalypse.LOGGER.warn("{}: '{}' in '{}': layers count from 1 (the surface block)", list, words[w], raw);
                             layer = null;
                             break;
                         }
-                    } else SolarApocalypse.LOGGER.warn("{}.convert: unknown modifier '{}' in '{}'", where, words[w], raw);
+                    } else SolarApocalypse.LOGGER.warn("{}: unknown modifier '{}' in '{}'", list, words[w], raw);
                 }
                 if (layer == null) continue;
                 Predicate<IBlockState> selector = selectors(new String[]{line.substring(0, arrow)}, where);
@@ -264,6 +279,7 @@ public final class BlockRules {
                 to.add(target);
                 share.add(chance);
                 layers.add(layer);
+                background.add(back);
                 rules.deepestLayer = Math.max(rules.deepestLayer, layer[1]);
             }
             Predicate<IBlockState> gone = selectors(scoped(phases[i].destroy, dimension), where);
@@ -279,7 +295,7 @@ public final class BlockRules {
                 for (int r = 0; r < from.size() && !upperHalf(state); r++) {
                     if (!from.get(r).test(state)) continue;
                     IBlockState target = to.get(r).of(state);
-                    list.add(new Rule(target, share.get(r), i, layers.get(r)[0], layers.get(r)[1]));
+                    list.add(new Rule(target, share.get(r), i, layers.get(r)[0], layers.get(r)[1], background.get(r)));
                     changes |= target != state;
                 }
                 if (changes) matched.put(state, list);
@@ -306,6 +322,11 @@ public final class BlockRules {
                     rules.convertCount[i]++;
                     break;
                 }
+                for (Rule r : step.rules) {
+                    if (!step.on(r, i) || !r.background) continue;
+                    rules.backgroundCount[i]++;
+                    break;
+                }
             }
         }
         Predicate<IBlockState> noFire = selectors(SolarConfig.vanillaFireBlacklist, "blocks.vanillaFireBlacklist");
@@ -322,6 +343,10 @@ public final class BlockRules {
         for (Step step : convert.values()) {
             for (Rule r : step.rules) {
                 if (!step.on(r, phase)) continue;
+                if (r.background) {
+                    layers.add(BACKGROUND);
+                    continue;
+                }
                 layers.add(step.lo(r));
                 layers.add(step.hi(r, phase) + 1);
             }
@@ -454,6 +479,11 @@ public final class BlockRules {
     }
 
     /** Block states with a conversion / destroy rule on in a phase (for the load summary). */
+    /** Block states with a background conversion while a phase runs (phase_n.backgroundConvert). */
+    public int backgroundCount(int phase) {
+        return backgroundCount[phase];
+    }
+
     public int convertCount(int phase) {
         return convertCount[phase];
     }

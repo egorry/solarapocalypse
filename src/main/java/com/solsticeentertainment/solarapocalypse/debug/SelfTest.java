@@ -42,6 +42,7 @@ import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
@@ -50,9 +51,11 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntBinaryOperator;
 
 /**
@@ -102,6 +105,7 @@ public final class SelfTest {
                 aboveCheck();
                 settleCheck();
                 leafCheck();
+                backgroundSetup();
                 rainCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
@@ -114,6 +118,7 @@ public final class SelfTest {
             case 1:
                 if (!drained(600)) return;
                 census("after phase 1");
+                backgroundCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
                 pigs("phase 1 (fire only)");
                 for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) pig.setEntityInvulnerable(true); // live through phase 3
@@ -152,11 +157,11 @@ public final class SelfTest {
                 waited = ticks;
                 break;
             case 5:
+                for (BlockPos spot : splashed) if (!SolarFire.is(world.getBlockState(spot))) doused.add(spot); // it comes back on the cube's next look
                 if (ticks - waited < 200) return;
-                int out = 0;
-                for (BlockPos spot : splashed) if (!SolarFire.is(world.getBlockState(spot))) out++;
-                log("water bottles: {} of {} solar fires hit are out ({}); solar fire after 200 more ticks: {} (was {}, less what the"
-                        + " bottles put out; it must not spread or burn out)", out, splashed.size(), splashed.size(), fire("200 ticks later"), fireCount);
+                log("water bottles: {} of {} solar fires hit went out ({}); solar fire after 200 more ticks: {} (was {}, less what the"
+                        + " bottles put out and not yet back; it must not spread or burn out)", doused.size(), splashed.size(), splashed.size(),
+                        fire("200 ticks later"), fireCount);
                 SolarConfig.nightDousesFire = true;
                 timeOfDay(18000, 0, "midnight, blocks.nightDousesFire on");
                 break;
@@ -407,7 +412,7 @@ public final class SelfTest {
         long clock = CubeEngine.clock(world);
         int line = SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(clock, Timeline.TOP) + 1;
         Map<Long, java.util.BitSet> after = solidColumns();
-        int caverns = 0, cavernColumns = 0, below = 0, above = 0;
+        int caverns = 0, cavernColumns = 0, below = 0, fell = 0, above = 0;
         List<String> strays = new ArrayList<>();
         Map<Integer, Integer> deepest = new java.util.TreeMap<>(); // columns by the lowest Y they lost
         for (Map.Entry<Long, java.util.BitSet> e : solidBefore.entrySet()) {
@@ -421,8 +426,16 @@ public final class SelfTest {
             caverns += under;
             if (under > 0) cavernColumns++;
             java.util.BitSet sunk = gone.get(0, Math.max(0, line - SOLID_LOW));
-            below += sunk.cardinality();
-            for (int b = sunk.nextSetBit(0); b >= 0 && strays.size() < 5; b = sunk.nextSetBit(b + 1)) {
+            java.util.BitSet gained = (java.util.BitSet) now.clone();
+            gained.andNot(e.getValue());
+            for (int b = sunk.nextSetBit(0); b >= 0; b = sunk.nextSetBit(b + 1)) {
+                // sand or gravel a conversion made over a cave falls by itself (vanilla's check on placement) and lands lower
+                if (gained.previousSetBit(b - 1) >= 0) {
+                    fell++;
+                    continue;
+                }
+                below++;
+                if (strays.size() >= 5) continue;
                 BlockPos at = new BlockPos((int) (e.getKey() >> 32), b + SOLID_LOW, (int) (long) e.getKey());
                 int ground = CubeEngine.groundAt(world, at.getX(), at.getZ()); // the SURFACE line, frozen in phase 6, can be deeper
                 strays.add(at + " now " + world.getBlockState(at) + ", above " + world.getBlockState(at.up()) + ", SURFACE line at Y "
@@ -441,14 +454,16 @@ public final class SelfTest {
         for (Map.Entry<Integer, Integer> e : deepest.entrySet()) if (e.getKey() < mode - 1) deeper += e.getValue();
         log("TOP_Y line behind the clock: present line Y {}, engine line Y {} (behind by {} layers), {} cubes queued; blocks gone"
                         + " under standing ground {} in {} columns (0); columns by the lowest Y lost {}: {} cut more than a layer below"
-                        + " the most common (0); against the engine line: gone below it {} (0), left above it {} (0)",
+                        + " the most common (0); against the engine line: gone below it {} (0; and {} fell to a lower cave floor), left"
+                        + " above it {} (0)",
                 SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1,
                 line, String.format("%.1f", CubeEngine.behind(world) * 64.0 / Timeline.DAY), CubeEngine.queued(world), caverns,
-                cavernColumns, deepest, deeper, below, above);
+                cavernColumns, deepest, deeper, below, fell, above);
         if (!strays.isEmpty()) log("  gone below the engine line: {}", strays);
     }
 
     private static final List<BlockPos> splashed = new ArrayList<>();
+    private static final Set<BlockPos> doused = new HashSet<>();
     private static BlockPos poolAt;
 
     /**
@@ -492,6 +507,9 @@ public final class SelfTest {
                     if (!world.isBlockLoaded(at) || !SolarFire.is(world.getBlockState(at))) continue;
                     BlockPos fire = at.toImmutable();
                     if (splashed.stream().anyMatch(q -> q.distanceSq(fire) < 64)) break;
+                    boolean open = true; // a bottle thrown from above breaks on whatever is in its way
+                    for (int k = 1; k <= 3; k++) open &= world.isBlockLoaded(fire.up(k)) && world.isAirBlock(fire.up(k));
+                    if (!open) break;
                     EntityPotion bottle = new EntityPotion(world, fire.getX() + 0.5, fire.getY() + 2.5, fire.getZ() + 0.5,
                             PotionUtils.addPotionToItemStack(new ItemStack(Items.SPLASH_POTION), PotionTypes.WATER));
                     bottle.motionY = -0.5;
@@ -502,7 +520,7 @@ public final class SelfTest {
             }
         }
         world.resetUpdateEntityTick();
-        log("threw water bottles onto {} solar fires", splashed.size());
+        log("threw water bottles onto {} solar fires (with open air above)", splashed.size());
     }
 
     private static void jump(long progress, String what) {
@@ -839,20 +857,20 @@ public final class SelfTest {
                         + " gone before 1 above {} (true); the ground then {} (air), by the depth line {} (true);"
                         + " the engine stops going down a column 100 below the ground {} (true), next look when the line gets there {}"
                         + " (true), not at the reached ground {} (false)",
-                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
-                name(c.evaluate(water, new BlockPos(0, ground + 20, 0), ground, 256, ground + 20, Sky.EXPOSED, start)), high,
-                name(c.evaluate(stone, new BlockPos(0, ground + high, 0), ground, 256, ground + high, Sky.EXPOSED, start)),
-                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground + 20, Sky.EXPOSED, start)),
-                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, tenth)),
+                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, false, start)),
+                name(c.evaluate(water, new BlockPos(0, ground + 20, 0), ground, 256, ground + 20, Sky.EXPOSED, false, start)), high,
+                name(c.evaluate(stone, new BlockPos(0, ground + high, 0), ground, 256, ground + high, Sky.EXPOSED, false, start)),
+                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground + 20, Sky.EXPOSED, false, start)),
+                name(c.evaluate(water, new BlockPos(0, ground + 1, 0), ground, 256, ground + 20, Sky.EXPOSED, false, tenth)),
                 due(c, water, ground + 20, ground, start) < due(c, water, ground + 1, ground, start),
-                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground, Sky.EXPOSED, tenth)), c.destroyed(),
+                name(c.evaluate(stone, new BlockPos(0, ground, 0), ground, 256, ground, Sky.EXPOSED, false, tenth)), c.destroyed(),
                 c.stillBelow(ground - 100, ground, 256, ground, tenth), c.wake() == t.reachTime(ground - 100, ground, Timeline.SURFACE),
                 c.stillBelow(ground, ground, 256, ground + 1, tenth));
     }
 
     /** When a block next needs a look (its removal time, for a block that only a destroy rule changes). */
     private static long due(BlockChanges c, IBlockState state, int y, int ground, long at) {
-        c.evaluate(state, new BlockPos(0, y, 0), ground, 256, ground + 20, Sky.EXPOSED, at);
+        c.evaluate(state, new BlockPos(0, y, 0), ground, 256, ground + 20, Sky.EXPOSED, false, at);
         return c.wake();
     }
 
@@ -991,6 +1009,39 @@ public final class SelfTest {
                 + " items dropped {} (0)", gone, kept, world.getBlockState(new BlockPos(x0 - 1, y, z)).getBlock().getRegistryName(),
                 world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
         for (int x = x0 - 1; x <= x0 + 8; x++) world.setBlockState(new BlockPos(x, y, z), Blocks.AIR.getDefaultState(), 18);
+    }
+
+    private static BlockPos[] backgroundGrass; // in the sun, under a roof open at the sides, under a sealed lid
+
+    /**
+     * Phase 1's backgroundConvert (scripts/selftest.cfg: grass -> dirt) in open air above the terrain: grass in the sun
+     * (the convert rule, layer 1), grass under a 7 x 7 stone roof two blocks up (sky light comes in from the sides; layer
+     * 3, out of convertDepth's reach), grass whose air space above is shut in by stone on every side (no sky light).
+     */
+    private static void backgroundSetup() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int x0 = spawn.getX() - 16, z = spawn.getZ() - 12, y = Integer.MIN_VALUE;
+        for (int x = x0 - 1; x <= x0 + 12; x++) for (int dz = -4; dz <= 4; dz++) y = Math.max(y, top(cubes, x, z + dz) + 6);
+        IBlockState grass = Blocks.GRASS.getDefaultState(), stone = Blocks.STONE.getDefaultState();
+        backgroundGrass = new BlockPos[]{new BlockPos(x0, y, z), new BlockPos(x0 + 4, y, z), new BlockPos(x0 + 10, y, z)};
+        for (BlockPos g : backgroundGrass) world.setBlockState(g, grass, 3); // flag 3: light follows every change here
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) world.setBlockState(backgroundGrass[1].add(dx, 2, dz), stone, 3);
+        BlockPos lid = backgroundGrass[2].up();
+        for (EnumFacing side : new EnumFacing[]{EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, EnumFacing.UP}) {
+            world.setBlockState(lid.offset(side), stone, 3);
+        }
+        log("background setup: sky light over the grass in the sun {}, under the roof {} (at least {}), under the lid {} (0)",
+                world.getLightFor(EnumSkyBlock.SKY, backgroundGrass[0].up()), world.getLightFor(EnumSkyBlock.SKY, backgroundGrass[1].up()),
+                SolarConfig.backgroundMinSkyLight, world.getLightFor(EnumSkyBlock.SKY, lid));
+    }
+
+    private static void backgroundCheck() {
+        log("background conversions after phase 1: grass in the sun -> {} (dirt), under the roof -> {} (dirt), under the lid -> {} (grass)",
+                world.getBlockState(backgroundGrass[0]).getBlock().getRegistryName(), world.getBlockState(backgroundGrass[1]).getBlock().getRegistryName(),
+                world.getBlockState(backgroundGrass[2]).getBlock().getRegistryName());
+        BlockPos min = backgroundGrass[0].add(-1, 0, -4), max = backgroundGrass[2].add(4, 3, 4);
+        for (BlockPos pos : BlockPos.getAllInBoxMutable(min, max)) world.setBlockState(pos, Blocks.AIR.getDefaultState(), 18);
     }
 
     /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */

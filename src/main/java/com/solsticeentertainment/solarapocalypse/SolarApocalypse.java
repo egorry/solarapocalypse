@@ -219,7 +219,7 @@ public class SolarApocalypse {
             if (!world.isBlockLoaded(ground)) continue;
             IBlockState state = world.getBlockState(ground);
             int surface = CubeEngine.groundAt(world, ground.getX(), ground.getZ());
-            IBlockState after = changes(world).evaluate(state, ground, surface, topY(world), BlockChanges.NO_Y, Sky.UNKNOWN, to);
+            IBlockState after = changes(world).evaluate(state, ground, surface, topY(world), BlockChanges.NO_Y, Sky.UNKNOWN, false, to);
             if (state.getMaterial() != Material.AIR && after.getMaterial() == Material.AIR) {
                 LOGGER.info("{} stood where the erosion passed during the skip and dies", player.getName());
                 player.attackEntityFrom(SunDamage.SUN, Float.MAX_VALUE);

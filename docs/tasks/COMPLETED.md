@@ -2,6 +2,29 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 20 (2026-10-11)
+- Floating water item closed: the user saw malformed beaches near the player, not distant terrain, and is happy with
+  it as it is; their point that the default phases' catch-up takes newly loaded water at once confirmed in code.
+- Fire values: the current `igniteFlammablePercent` defaults are the user's lower ones; Claude sees no reason to lower
+  them further (in dense forests the percent hardly matters, one fire spreads through). Item closed.
+- Dark spots item: the world type is Cubic Chunks' default Custom Cubic preset (the user).
+- Turn 19's "TODO #14" was #12 after the renumbering (the CubicWorldGen model note).
+- Background conversions (to-do #1, the user's item): `phase_n.backgroundConvert`, empty by default (rules for the
+  default phases wait for the user's decision). Self-test check: grass in the sun and under a roof turns to dirt, under
+  a sealed lid it stays (sky light 0).
+- Ice is not ground: turn 19's CubicWorldGen model offset was CWG's snow populator freezing surface water after the
+  model (rerun: 0). Without CWG, a column first seen frozen recorded the ice as its ground: fixed.
+- Terrain cut ahead of the TOP_Y line (turn 17) closed: converted sand or gravel falling into caves by vanilla's own
+  check on placement. The self-test counts falls apart now (seed 699324865493784867: gone below the line 0, fell 4).
+  Filed with the non-falling gravel and sand item.
+- Water bottle check: its 0 of 3 on one seed was the check (doused fire relights on the cube's next look, by design);
+  it now counts dousing at any tick (3 of 3).
+- Dark spots investigated (findings in TODO.md): fixed ground uncovered two or more cubes down waiting for the next
+  phase or day.
+- Review of the turn's changes: modded leaves without `decayable`, background rules where the surface is unknown,
+  stale sky light after a pass, timing of rules in `convertDepth` 0 phases, no fire on ground whose background
+  conversion is pending. Self-test (random seed) passes with all of it.
+
 ## Turn 19 (2026-10-11)
 - The user's question on mixed destruction and evaporation (the floor eaten under the water, evaporation reaching it
   later): answered, that is the behaviour before turn 16's hold. Scanned copies of their test saves for liquid on air

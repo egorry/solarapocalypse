@@ -347,6 +347,7 @@ public final class CubeEngine {
         boolean needGround = SolarApocalypse.timeline().uses(Timeline.SURFACE);
         int topY = SolarApocalypse.topY(world);
         boolean manageFire = changes.managesFire(progress);
+        boolean background = changes.background(progress) && world.provider.hasSkyLight(); // looks below the line too
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         int deep = changes.deepestLayer();
@@ -365,14 +366,18 @@ public final class CubeEngine {
                 boolean litInPlace = false; // the fire at fireY was lit in place of the block the erosion took (checked then)
                 boolean liquidSeen = false; // a standing liquid left higher up in this column of the cube
                 int liquidOver = 0; // a standing liquid between the cube's top and the column's surface: 1 yes, -1 no, 0 not looked yet
+                boolean still = false; // from here down only background conversions can change a block
                 for (int ly = 15; ly >= 0 && !empty; ly--) {
                     int y = minY + ly;
-                    if (y < top && changes.stillBelow(y, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, progress)) {
+                    if (!still && y < top && changes.stillBelow(y, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, progress)) {
                         wake = Math.min(wake, changes.wake());
-                        break; // in an infinite phase most of the cube: the rest of the column waits for the line
+                        if (!background) break; // in an infinite phase most of the cube: the rest of the column waits for the line
+                        still = true; // so is every block below it
                     }
                     IBlockState from = storage.get(lx, ly, lz);
                     if (from.getMaterial() == Material.AIR) continue;
+                    boolean lit = background && (surfaceKnown || top - y + 1 > deep) && lit(cubes, storage, cx, cy, cz, lx, ly, lz, y, top);
+                    if (still && !lit) continue; // only a background conversion can change it
                     if (SolarFire.is(from)) {
                         if (fireY == BlockChanges.NO_Y) fireY = y;
                         else if (!manageFire) continue;
@@ -383,7 +388,7 @@ public final class CubeEngine {
                     int sky = y < SolarConfig.sunFloorY || y < top ? Sky.SHADED
                             : CubicSky.knownClear(y, loadedUpTo, ceiling) ? Sky.EXPOSED : Sky.UNKNOWN;
                     pos.setPos(x, y, z);
-                    IBlockState to = changes.evaluate(from, pos, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
+                    IBlockState to = changes.evaluate(from, pos, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, sky, lit, progress);
                     wake = Math.min(wake, changes.wake());
                     if (to != from && changes.destroyed() && y < surface) {
                         // under standing liquid (a sea floor and what lies below it), or under a cube not loaded: waits
@@ -418,6 +423,8 @@ public final class CubeEngine {
                         pos.setPos(x, y, z);
                     }
                     BlockChanges.apply(world, pos, from, to);
+                    // Cubic Chunks updates sky light after the pass: blocks a change opens to the light get another look
+                    if (background && to.getLightOpacity() < from.getLightOpacity()) wake = Math.min(wake, progress + changes.minWake(progress));
                     if (from.getLightOpacity() != to.getLightOpacity() || BlockChanges.isSurface(from) != BlockChanges.isSurface(to)) {
                         top = heights.getHeightValue(lx, lz) - 1;
                         surface = surface(cubes, cx, cz, lx, lz, top);
@@ -427,6 +434,11 @@ public final class CubeEngine {
                         if (!openedBelow && (top < minY || surface - minY + 2 <= deep)) {
                             openedBelow = true;
                             if (cubes.getLoadedCube(cx, cy - 1, cz) != null) later.add(new CubePos(cx, cy - 1, cz));
+                        }
+                        // a new surface two or more cubes down (a tree crown or a roof gone): its cube and the one that
+                        // places its fire need a look now, not at their next wake (the cubes in between may be air)
+                        for (int c = Coords.blockToCube(surface + 1); c >= Coords.blockToCube(surface); c--) {
+                            if (c < cy - 1 && c > cy - 64 && cubes.getLoadedCube(cx, c, cz) != null) later.add(new CubePos(cx, c, cz));
                         }
                     }
                 }
@@ -475,7 +487,8 @@ public final class CubeEngine {
         IBlockState below = ly > 0 ? storage.get(lx, ly - 1, lz) : blockAt(cubes, cx, cz, lx, y - 1, lz);
         if (below == null || !below.getMaterial().blocksMovement()) return null;
         pos.setPos(x, y - 1, z);
-        if (changes.evaluate(below, pos, ground, topY, y - 1, Sky.SHADED, progress) != below) return null; // solid: sky does not matter
+        boolean lit = changes.background(progress) && world.provider.hasSkyLight(); // it becomes the column's top
+        if (changes.evaluate(below, pos, ground, topY, y - 1, Sky.SHADED, lit, progress) != below) return null; // solid: sky does not matter
         IBlockState fire = changes.fire(world, pos.toImmutable(), below, progress);
         if (fire == null || !SolarFire.is(fire) || nearFlammable(world, cubes, pos, x, y, z)) return null;
         return fire;
@@ -633,6 +646,18 @@ public final class CubeEngine {
         SurfaceRecord record = column == null ? null : SurfaceRecord.of(column);
         int recorded = record == null ? SurfaceRecord.NONE : record.get(Coords.blockToLocal(x), Coords.blockToLocal(z));
         return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
+    }
+
+    /**
+     * Whether sky light of at least entities.backgroundMinSkyLight reaches a block's top, from the cubes' own light data
+     * (nothing is generated): the column's topmost blocks always, a block under an empty or unloaded cube never.
+     */
+    private static boolean lit(ICubeProvider cubes, ExtendedBlockStorage storage, int cx, int cy, int cz, int lx, int ly, int lz, int y, int top) {
+        if (y >= top) return true;
+        if (ly < 15) return storage.getSkyLight(lx, ly + 1, lz) >= SolarConfig.backgroundMinSkyLight;
+        ICube above = cubes.getLoadedCube(cx, cy + 1, cz);
+        ExtendedBlockStorage over = above == null ? null : above.getStorage();
+        return over != null && over.getSkyLight(lx, 0, lz) >= SolarConfig.backgroundMinSkyLight;
     }
 
     /**

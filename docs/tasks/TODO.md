@@ -9,61 +9,58 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- Lower `igniteFlammablePercent` defaults (the user, turn 19: "I already want (and I think I already gave you?) lower
-  flammability values"): the defaults are the user's turn 13 table, vanilla fire on flammables at the same percent as
-  solar fire (0, 5, 10, 25, 30, 40, 50, 60, 70, 75, then none in phase 11); no lower row is on file. Needs the values
-  per phase [medium, user].
+- Background conversions in the default phases (turn 20: `phase_n.backgroundConvert` is empty by default, so nothing
+  changes until rules are set). Claude's suggestion: the phase's own surface rules where shade should not protect,
+  e.g. phase 1 grass, mycelium and farmland -> grass_path, phase 3 leaves, plants and snow -> air, phase 4 wood -> air
+  (canopies and trunks go whole instead of from the top), so trees, mushrooms and the ground under them and under
+  overhangs go with the open ground. Cost: a phase with background rules looks at every block of a cube on a pass,
+  not only down to its line [medium, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-- Floating water over caverns (the user's turn 18 report; turn 19: they will re-test mixed destruction and evaporation
-  in one phase, and what they saw was not under unloaded cubes). Turn 19 scan of copies of their saves
-  (`scripts/cubescan.py`, liquid resting on air): "Phase 11 SURFACE Test 4" (10-10, before turn 16's hold) 41,293
-  water sources on air, sheets of sea one block thick over open air (e.g. at -478 35 -403, air down to Y 6): the floor
-  eroded under the water, as the user describes; "Test 5" (10-11 09:39, with the hold) 90 in four spots, all in
-  columns whose cubes above Y 47 were never saved, the player having been far below (lava pockets down to Y -347): the
-  water's cube unloaded while the floor's was not, fixed in turn 18 (some of that water has since run into the hole);
-  "Test 6" none. So the hold works; if the re-test shows floating water, the save's name is enough for a scan [high,
-  user: a defect they saw].
+- (none)
 
 ## Will do (Cubic Chunks)
-1. Background conversions [medium, user]: per-phase rules that convert matching blocks at surface level even out of the sun
-   (grass under overhangs, trees and mushrooms, odd terrain), but nothing underground, like background heat for mobs:
-   where sky light reaches the block's top (`entities.backgroundMinSkyLight`, read from the cube's own light data, so
-   nothing is generated); confirmed by the user: sealed rooms and caves without sky light are spared. Rides the pass
-   every loaded cube already gets at a phase start.
-2. Terrain cut ahead of the TOP_Y line (Claude's observation, turn 17 self-test, seed 699324865493784867): with the
-   engine 25 layers behind (its line at Y -29), 4 terrain blocks at Y -38 were gone, below both lines (the SURFACE line
-   there at Y 16-18), air above them (a cave); three within a few blocks of each other. Turn 16's code does the same on
-   that seed, so it predates this turn; seed 14014 shows none [medium, Claude: a block cut ahead of the line is the kind
-   of defect the user saw as caverns in turn 12, though only 4 of ~43 k columns].
-3. Dark spots: why ground counts as under cover in open sky at all on a vanilla-like Cubic Chunks preset (the user,
+1. Dark spots: why ground counts as under cover in open sky at all on a vanilla-like Cubic Chunks preset (the user,
    turn 19: their single spot, cube -19 5 -13, block 8 0 7, near -296 80 -201, is situational; investigate the cause
-   in general instead); likely a CC sky light or heightmap fault; see also the later investigation of cubes that look
-   covered after `/time add` [low, user].
-4. Pre-first-light hook (optional CC mixin): process new cubes before their first light, no pop-in, no light or packet
+   in general instead; turn 20: the world type is Cubic Chunks' default "Custom Cubic" preset, vanilla-like generation
+   made Cubic Chunks aware); see also the later investigation of cubes that look covered after `/time add` [low, user].
+   Turn 20 investigation (code, CC source and a read-only scan of copies of 5 dev saves): no single cause confirmed.
+   Fixed: ground uncovered two or more cubes down (a crown or roof gone) waited for its cube's next look, the next phase
+   or day, so it stayed without fire (the missing fire light reads as dark at night). Ruled out: a stale height map
+   after the engine's own removals (the scan found no height map top on a clear block). Real cover: the mod and Cubic
+   Chunks' sky light take the column's top from the same height map, which also counts cubes not loaded or not sent
+   to clients yet, so ground under them is both covered and dark until the engine reaches them. In the saves, the
+   user's spot is open and correct in one and under a real oak canopy in the other. Both reports predate the turn 12
+   engine clock: recheck on the current code; if a spot shows again, Claude would add a self-test count of open-sky
+   ground the engine treats as covered.
+2. Pre-first-light hook (optional CC mixin): process new cubes before their first light, no pop-in, no light or packet
    cost [low, Claude: a performance nicety; needs a mixin into CC].
-5. Simple Difficulty integration (optional, soft dependency) [low, Claude: optional].
-6. Burning liquids (oil catching fire), if wanted [low, user].
-7. Non-falling gravel and sand (user's idea, turn 9) [low, user]: blocks that look like gravel and sand and drop real
+3. Simple Difficulty integration (optional, soft dependency) [low, Claude: optional].
+4. Burning liquids (oil catching fire), if wanted [low, user].
+5. Non-falling gravel and sand (user's idea, turn 9) [low, user]: blocks that look like gravel and sand and drop real
    gravel and sand but never fall, for the default rules. Converted gravel and sand fall later when something else
    updates them (a block popping off next to them, a player, flowing water); vanilla sand and gravel also check for a
    fall once when placed. Claude's view: a good compromise, cheap (vanilla textures, no new art). Only when block physics
    is false in config, also applies to converted blocks (minecraft:dirt -> minecraft:gravel changes in code to solarapocalpse:faux_gravel
    or whatever the block IDs end up being. Block physics = true means use vanilla gravel & sand as normal.
-8. Verbose debug logging mode [low, user].
-9. Block-breaking effects near the player (the user, turn 14, "later to-do item") [low, user: later]: breaking
+   Turn 20: this also fixes turn 17's "terrain cut ahead of the TOP_Y line" (closed): the 4 blocks were converted sand
+   or gravel that fell into a cave by vanilla's check on placement; where the 32 blocks around are not all loaded it
+   falls at once, so it looks cut. Claude would raise this item to medium for that reason; the user's call.
+6. Verbose debug logging mode [low, user].
+7. Block-breaking effects near the player (the user, turn 14, "later to-do item") [low, user: later]: breaking
    particles and sounds for the apocalypse's block changes, only within a limited radius of each player (as vanilla
    shows fire smoke only near the player when lots of fire is on the ground), configurable (on/off and radius). Much
    later the user will add their own breaking sounds, not one per block but mono or positionally panned, so this
    vanilla-style setting will then default to off.
-10. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
+8. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
     later"): recheck after the turn 11 engine fix, which removed one cause (cut-short passes waiting behind every
     queued cube) [low, user].
-11. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
+9. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
     `textures/font/splash.png`) [lowest until the user has made them, user].
-12. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
-    user]. Turn 19 self-test, seed -5479930802988752619 (snowy spawn, the default preset): the model lay above the
-    generated ground at 1,701 of 43,264 positions, by up to 6 (turn 18's seed: none); not looked into yet [Claude].
+10. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
+    user]. Turn 19's offset on seed -5479930802988752619 (1,701 positions above the ground, up to 6) was CWG's snow
+    populator turning surface water into ice after the model, so the self-test counted it as ground; turn 20 rerun with
+    ice not counted: 0.
 
 ## Will do (vanilla worlds)
 - Block engine on chunks (sun damage already works there), recorded surface on chunks, fire.

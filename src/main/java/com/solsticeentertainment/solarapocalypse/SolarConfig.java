@@ -41,7 +41,7 @@ public final class SolarConfig {
         public int depth;            // layers below the reference surface reached by the end of this phase; INFINITE = no end
         public Speed speed;
         public double layersPerDay;  // RATE speed, and the descent rate once the depth is infinite
-        public String[] convert;
+        public String[] convert, backgroundConvert = {};
         public int convertDepth = 1; // conversions reach this many layers from the column's current surface (0: none)
         public double convertDays;   // conversions spread over this after destruction; -1 = rest of the phase's days
         public double ignitePercent, igniteFlammablePercent;
@@ -362,6 +362,11 @@ public final class SolarConfig {
                 "but fixed per block and rule phase: a later phase only rolls again if it has the rule too (anvils damaged a bit\n" +
                 "more each phase: repeat the rule in each phase). phases.convertRuleMode decides whether earlier phases' rules\n" +
                 "still apply (per block and layer, the latest phase with a rule acting there wins).");
+        p.backgroundConvert = c.getStringList("backgroundConvert", cat, d.backgroundConvert,
+                "Block conversions out of the sun at surface level: blocks whose top gets at least entities.backgroundMinSkyLight\n" +
+                "sky light (under overhangs and trees, in caves open to the sky; not sealed rooms or caves sky light does not\n" +
+                "reach), where no convert rule acts in the block's layer. Same format as convert, without layer= or depth=.\n" +
+                "Carried like convert (phases.convertRuleMode), over this phase's convertDays; convertDepth 0 turns them off too.");
         p.convertDepth = c.getInt("convertDepth", cat, d.convertDepth, 0, 1 << 20,
                 "Conversions reach the top this many layers of each column's current surface (1 = the top block, plus plants,\n" +
                 "snow layers and the like on it), earlier phases' rules included (layers they reach for the first time convert\n" +
@@ -449,7 +454,7 @@ public final class SolarConfig {
         double layersPerDay = 16;
         int convertDepth = 1;
         double convertDays = -1;
-        String[] convert = new String[0];
+        String[] convert = new String[0], backgroundConvert = new String[0];
         String[] destroy = new String[0];
         String[] evaporate = new String[0];
         double ignite, igniteFlammable, sunDamage, backgroundDamage;

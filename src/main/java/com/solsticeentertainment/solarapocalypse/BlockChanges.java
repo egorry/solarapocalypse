@@ -80,8 +80,10 @@ public final class BlockChanges {
      * @param topY    world.topY, the reference of the TOP depth line
      * @param surface the column's current surface (topmost block that blocks movement or is liquid), or NO_Y if not known
      * @param sky     Sky.EXPOSED / SHADED / UNKNOWN for the block itself
+     * @param lit     sky light of at least entities.backgroundMinSkyLight reaches the block's top (background conversions);
+     *                with surface NO_Y the caller says so only for a block below every convert rule's layers
      */
-    public IBlockState evaluate(IBlockState state, BlockPos pos, int ground, int topY, int surface, int sky, long progress) {
+    public IBlockState evaluate(IBlockState state, BlockPos pos, int ground, int topY, int surface, int sky, boolean lit, long progress) {
         wake = NEVER;
         destroyed = false;
         int phase = timeline.phaseAt(progress);
@@ -105,12 +107,19 @@ public final class BlockChanges {
         for (int n = 0; n < MAX_CHAIN; n++) {
             BlockRules.Step step = rules.convert(phase, state);
             if (step == null) break;
-            if (surface == NO_Y) {
+            int layer = BlockRules.BACKGROUND, rule = -1;
+            if (surface != NO_Y) {
+                layer = (int) Math.max(1, Math.min(Integer.MAX_VALUE, (long) surface - y + 1)); // 1 = the surface block and what is on it
+                rule = step.pick(x, y, z, state, layer, phase);
+            }
+            if (rule < 0 && lit && (surface == NO_Y || step.decider(layer, phase) < 0)) { // out of the sun at surface level
+                rule = step.pick(x, y, z, state, BlockRules.BACKGROUND, phase);
+                if (rule >= 0) layer = BlockRules.BACKGROUND;
+            }
+            if (surface == NO_Y && rule < 0) {
                 later(progress + RECHECK);
                 break;
             }
-            int layer = (int) Math.max(1, Math.min(Integer.MAX_VALUE, (long) surface - y + 1)); // 1 = the surface block and what is on it
-            int rule = step.pick(x, y, z, state, layer, phase);
             if (rule < 0) { // no rule acts in this layer, or this block's share stays
                 int next = step.nextLayer(layer, phase);
                 if (next > 0) laterNear(y + next, ground, topY, phase, progress); // look again once the surface is that close
@@ -203,7 +212,8 @@ public final class BlockChanges {
         if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
         int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
         BlockRules.Step pending = rules.convert(phase, surface);
-        if (pending != null && pending.pick(x, y, z, surface, 1, phase) >= 0) return null;
+        if (pending != null && (pending.pick(x, y, z, surface, 1, phase) >= 0 || world.provider.hasSkyLight() // the surface is lit
+                && pending.decider(1, phase) < 0 && pending.pick(x, y, z, surface, BlockRules.BACKGROUND, phase) >= 0)) return null;
         boolean infinite = timeline.infinite(phase);
         int line = timeline.track(phase);
         boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
@@ -294,6 +304,12 @@ public final class BlockChanges {
     /** Whether vanilla fire from the sun burns a block (with doFireTick false it would neither spread nor burn out). */
     private boolean burns(World world, IBlockState state, BlockPos pos, EnumFacing face) {
         return world.getGameRules().getBoolean("doFireTick") && !rules.noVanillaFire(state) && state.getBlock().isFlammable(world, pos, face);
+    }
+
+    /** Whether the running phase has background conversions (phase_n.backgroundConvert, carried ones too). */
+    public boolean background(long progress) {
+        int phase = timeline.phaseAt(progress);
+        return phase >= 0 && rules.backgroundCount(phase) > 0;
     }
 
     /** Whether the running phase sets anything alight. */
@@ -409,7 +425,8 @@ public final class BlockChanges {
         for (Map.Entry<BlockPos, Integer> e : near.entrySet()) {
             if (e.getValue() > LEAF_REACH || held.containsKey(e.getKey())) continue;
             IBlockState state = world.getBlockState(e.getKey());
-            if (state.getBlock() instanceof BlockLeaves && state.getValue(BlockLeaves.DECAYABLE)) apply(world, e.getKey(), state, AIR);
+            if (state.getBlock() instanceof BlockLeaves && state.getPropertyKeys().contains(BlockLeaves.DECAYABLE)
+                    && state.getValue(BlockLeaves.DECAYABLE)) apply(world, e.getKey(), state, AIR);
         }
     }
 
@@ -454,9 +471,10 @@ public final class BlockChanges {
         return m.blocksMovement() || m.isLiquid();
     }
 
-    /** Terrain for a recorded reference surface: like isSurface, without trees and liquids. */
+    /** Terrain for a recorded reference surface: like isSurface, without trees and liquids (frozen ones included: ice). */
     public static boolean isGround(IBlockState state) {
         Material m = state.getMaterial();
-        return m.blocksMovement() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS && m != Material.GOURD;
+        return m.blocksMovement() && m != Material.LEAVES && m != Material.WOOD && m != Material.CACTUS && m != Material.GOURD
+                && m != Material.ICE;
     }
 }
