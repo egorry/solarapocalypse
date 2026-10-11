@@ -34,7 +34,8 @@ import java.util.TreeMap;
  * with dirt and stone to vitrified sand in layer 1; measure<n> measures n ticks (default 1200: a fast variant can run
  * out of loaded terrain, after which the clock steps through empty rounds); sea logs a census of the sea around spawn
  * every 100 ticks with LAYERS evaporation at the erosion's rate (how flat it drains, water over air, how far the drained
- * floors and the land came down); liquidsout keeps water and lava out of the destroy list (they go by evaporation only).
+ * floors and the land came down); liquidsout keeps water and lava out of the destroy list (they go by evaporation only);
+ * cap<n> caps the block changes per tick at n; budget<ms> sets the time budget per tick.
  */
 public final class Bench {
 
@@ -44,7 +45,7 @@ public final class Bench {
     private static WorldServer world;
     private static int ticks;
     private static long tickStart, serverNanos; // whole server ticks (engine, lighting, the rest) while measuring
-    private static long nanos, changed, cubes, clock;
+    private static long nanos, changed, cubes, clock, cubesChanged;
     private static boolean sea;
 
     private Bench() {}
@@ -57,6 +58,8 @@ public final class Bench {
         convert.removeIf(rule -> rule.contains("layer=")); // the gradient; the trees' rules stay
         for (String variant : System.getProperty("solarapocalypse.bench").split(",")) {
             if (variant.equals("fire0")) p.ignitePercent = p.igniteFlammablePercent = 0;
+            if (variant.startsWith("cap")) SolarConfig.maxBlockChangesPerTick = Integer.parseInt(variant.substring(3));
+            if (variant.startsWith("budget")) SolarConfig.tickBudgetMs = Double.parseDouble(variant.substring(6));
             if (variant.startsWith("measure")) MEASURE = Integer.parseInt(variant.substring(7));
             if (variant.startsWith("light")) SolarConfig.solarFireLight = Integer.parseInt(variant.substring(5)); // outside the engine's budget
             if (variant.equals("noconv")) p.convert = new String[0];
@@ -116,6 +119,7 @@ public final class Bench {
             nanos = CubeEngine.nanos;
             changed = BlockChanges.changed;
             cubes = CubeEngine.cubesProcessed;
+            cubesChanged = CubeEngine.cubesChanged;
             clock = CubeEngine.clock(world);
             log("measuring from engine depth {} layers", depth(clock));
         }
@@ -123,10 +127,11 @@ public final class Bench {
             long now = CubeEngine.clock(world);
             double layers = depth(now) - depth(clock);
             long n = BlockChanges.changed - changed, ns = CubeEngine.nanos - nanos;
-            log("{} ticks: {} layers, {} block changes ({} per layer, {} per tick), {} cube passes, engine {} ms per tick, {} us per change,"
-                    + " server {} ms per tick ({} ms per layer)", MEASURE, String.format("%.1f", layers), n, String.format("%.0f", n / layers),
-                    n / MEASURE, CubeEngine.cubesProcessed - cubes, String.format("%.2f", ns / 1e6 / MEASURE), String.format("%.2f", ns / 1e3 / n),
-                    String.format("%.1f", serverNanos / 1e6 / MEASURE), String.format("%.0f", serverNanos / 1e6 / layers));
+            log("{} ticks: {} layers, {} block changes ({} per layer, {} per tick), {} cube passes ({} cubes changed per tick), engine {} ms"
+                    + " per tick, {} us per change, server {} ms per tick ({} ms per layer)", MEASURE, String.format("%.1f", layers), n,
+                    String.format("%.0f", n / layers), n / MEASURE, CubeEngine.cubesProcessed - cubes,
+                    String.format("%.1f", (double) (CubeEngine.cubesChanged - cubesChanged) / MEASURE), String.format("%.2f", ns / 1e6 / MEASURE),
+                    String.format("%.2f", ns / 1e3 / n), String.format("%.1f", serverNanos / 1e6 / MEASURE), String.format("%.0f", serverNanos / 1e6 / layers));
             CubeEngine.FireCensus fire = CubeEngine.fireCensus(world, world.getSpawnPoint(), 6);
             log("solar fire within 6 columns of spawn: {} ({} % of x/z positions; set {} %), by layer {}", fire.solar,
                     String.format("%.1f", 100.0 * fire.solar / (fire.columns * 256)), SolarConfig.phases[0].ignitePercent, fire.epochs);
@@ -180,7 +185,6 @@ public final class Bench {
                     IBlockState cover = CubeEngine.blockAt(provider, x >> 4, z >> 4, x & 15, top, z & 15);
                     lingering.add(x + " " + waterTop + " " + z + " under " + (cover == null ? "?" : cover.getBlock().getRegistryName()) + " at " + top);
                 }
-                else if (solidTop != BlockChanges.NO_Y) dryLost.merge(ground - solidTop, 1, Integer::sum);
             }
         }
         log("sea at line {} layers (engine): {} sea columns (ground below Y {}), {} still wet, water top Y by columns {};"

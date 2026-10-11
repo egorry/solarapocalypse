@@ -81,7 +81,13 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    the user's choice, option (b) of their water question: before, the floor eroded from its own top under standing
    water, and a cavern opened under the sea, held up as block physics is off). Flowing vanilla water does not hold the
    ground: water that runs into a cut after a pass ebbs by itself, which no pass sees, so it would hold the ground below
-   until the next look (seen in the self-test).
+   until the next look (seen in the self-test). A cube in between that is not loaded counts as liquid (turn 18): Cubic
+   Chunks unloads cubes more than its vertical view distance (12 cubes in the user's setup) above a player, for example
+   one who follows the erosion down, while the height map still knows their blocks; until then a sea floor whose water
+   was unloaded was cut, and the water floated over the hole when it loaded again. Dry ground under such a cube waits
+   too (it was cut ahead of the blocks above it, which go when their cube loads). The hold is per column: ground beside
+   the water (beaches, shores, floors already drained) erodes on time, so the sea stands in the land as the line passes
+   it, its edge a wall of water (the engine does not make liquids flow).
 2. **Convert** (`selector -> target`, target may be `air`): only the **surface layer**, the top `convertDepth` layers
    (default 1; 0 turns every conversion off while the phase runs, carried and `layer=` rules included, as in phase 11
    of the defaults) of the column's current surface. The surface is the topmost opaque block, raised over blocking blocks and
@@ -147,7 +153,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    erodes, as in the default phases (water evaporates in phase 3, the erosion starts in phase 7), put a phase before the
    erosion that only evaporates: no destroy list, depth 0, `evaporate` with the liquids, and days enough for the
    deepest water: (`evaporation.topY` - the lowest sea floor) / `evaporation.layersPerDay`, e.g. 0.35 for 64 deep at 200
-   a day (or `INSTANT` and a short phase; whole seas then go top down cube by cube at its start).
+   a day (or `INSTANT` and a short phase; whole seas then go top down cube by cube at its start). The user's turn 18
+   test of the one-phase way (turn 16 code): the water came down a layer at a time while the ground around it was cut,
+   with water floating over caverns and odd beaches; they chose the lead-in phase (water drained fully before the
+   erosion). The bench above loads its terrain before the phase and saw no water over air, so where the floating water
+   came from is not known; the unloaded cubes above are one way (fixed in turn 18).
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
    positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
    sound, light and entity burning (mobs and players catch fire, dropped items burn up; it tells Forge it burns, as
@@ -314,6 +324,14 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   per tick), is guarded separately. What can go wrong: a lower TPS if the budget is set high on a busy server, client
   stutter (many cubes re-meshed), and in multiplayer upload bandwidth (~2 KB per cube resent per player watching; slow
   connections can time out).
+- Counting the cap in cubes instead of changes (turn 18, Claude's suggestion for the throughput item: the cost to
+  clients is per cube resent, and fire nearly doubles a layer's changes) buys nothing, so it was not kept. Bench (seed
+  14014, 85 % fire, no conversions, 4 ms, 1200 ticks): a cube the engine changed carries ~220 changes a tick on average
+  (the line's layer, fire, and many cubes with a few changes: fire over a cube's top, trees), so 2048 changes is already
+  ~9 cubes a tick; 2048 changes: 11 layers at 9.2 cubes a tick; a cap of 8 cubes: 9 layers at 7.9; 16 cubes: 16 layers
+  at 14.5 (server 6.7 / 5.8 / 9.7 ms a tick). Layers per cube resent are the same either way, so the client's cost per
+  layer does not change: the cap's value (and fire) are the levers. The engine goes one layer a round even when
+  behind, so a cube's pass rarely takes more than one layer; only terrain loaded with a backlog does.
 - What a layer costs (turn 14, the user's questions; measured with `scripts/probe_server.sh <tag> bench` on the dev
   server: the user's turn 14 test config, one seed, no cap, a 10 ms budget, ~550 columns loaded, the clock kept ahead so
   the engine works flat out). 85 % fire: 33 layers a minute, ~261 k changes a layer, ~1.4 µs of engine time a change,

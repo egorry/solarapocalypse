@@ -116,6 +116,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Cubic Chunks: a sea floor (or anything under standing liquid) whose water was in a cube not loaded at the time, such
+  as far above a player deep down, was eroded, and the water floated over the hole when it loaded again; it now waits,
+  as does other ground under a cube not loaded.
 - Cubic Chunks clients: a destroyed spawner kept making its flames (and other blocks' tile entities kept running
   where the block was gone): a cube the server resends whole kept its old tile entities on the client.
 - In the first phase on a depth line (such as an infinite SURFACE phase as phase 1), trees, buildings and the sea above

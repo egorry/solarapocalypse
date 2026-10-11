@@ -149,7 +149,7 @@ public final class CubeEngine {
     }
 
     /** Totals since server start, for /solar status and tests. */
-    public static long nanos, cubesProcessed;
+    public static long nanos, cubesProcessed, cubesChanged;
 
     /** The time a world's engine has brought its cubes up to (the present while it keeps up), or -1 before it runs. */
     public static long clock(World world) {
@@ -247,7 +247,7 @@ public final class CubeEngine {
                 state.notReady.add(pos);
                 continue;
             }
-            long t0 = cubeStart = System.nanoTime();
+            long t0 = cubeStart = System.nanoTime(), before = BlockChanges.changed;
             processing = true;
             long wake;
             try {
@@ -257,6 +257,7 @@ public final class CubeEngine {
             }
             nanos += System.nanoTime() - t0;
             cubesProcessed++;
+            if (BlockChanges.changed != before) cubesChanged++; // a cube clients get its changes for (whole from 64 a tick)
             if (wake == PARTIAL) {
                 cut.add(pos); // not again this tick: the column limit that stopped it holds until the next one
                 continue;
@@ -385,8 +386,9 @@ public final class CubeEngine {
                     IBlockState to = changes.evaluate(from, pos, ground, topY, surfaceKnown ? surface : BlockChanges.NO_Y, sky, progress);
                     wake = Math.min(wake, changes.wake());
                     if (to != from && changes.destroyed() && y < surface) {
-                        // under standing liquid (a sea floor and what lies below it): waits for the liquid to go, then
-                        // catches up in the pass that takes it, or at the latest RECHECK later
+                        // under standing liquid (a sea floor and what lies below it), or under a cube not loaded: waits
+                        // for the liquid to go (or the cube to load), then catches up in the pass that takes it, or at the
+                        // latest RECHECK later
                         if (!liquidSeen && liquidOver == 0) liquidOver = liquidAbove(cubes, cx, cz, lx, lz, minY + 16, surface) ? 1 : -1;
                         if (liquidSeen || liquidOver > 0) {
                             wake = Math.min(wake, progress + BlockChanges.RECHECK);
@@ -633,11 +635,15 @@ public final class CubeEngine {
         return recorded == SurfaceRecord.NONE ? BlockChanges.NO_Y : recorded;
     }
 
-    /** Whether a liquid stands in a column from y up to its surface (loaded cubes only: an unloaded one counts as none). */
+    /**
+     * Whether a liquid may stand in a column from y up to its surface: a cube in between that is not loaded counts as one
+     * (the height map still knows its blocks; Cubic Chunks unloads the cubes far above a player, so a sea floor can be
+     * loaded while its water is not, and cut under it the water would float when it loads again).
+     */
     private static boolean liquidAbove(ICubeProvider cubes, int cx, int cz, int lx, int lz, int y, int surface) {
         for (; y <= surface; y++) {
             IBlockState state = blockAt(cubes, cx, cz, lx, y, lz);
-            if (state == null) return false;
+            if (state == null) return true;
             if (standing(state)) return true;
         }
         return false;

@@ -2,6 +2,18 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 18 (2026-10-11)
+- The user's water report (turn 16 code: the water shaved a layer at a time while the ground went under and around it,
+  water floating over caverns, odd beaches): they had expected the erosion to wait for all water to drain, and chose
+  the lead-in phase that only evaporates (SPEC section 3, Evaporation). Fixed one way floating water happens: ground
+  under a cube that is not loaded (Cubic Chunks unloads cubes far above a player) was not held. Self-test passes.
+- Bench census fix: drained floors were counted twice and wet floors counted as drained (turn 17's reported numbers
+  came from runs before that line).
+- Throughput (to-do #1, the user's high priority): counting the change cap in cubes (Claude's suggestion) measured
+  and dropped: a changed cube carries ~220 changes, so 2048 changes is ~9 cubes a tick and the layers per cube resent
+  came out the same (SPEC section 4). Item closed: the cap and fire are the levers. Bench variants `cap<n>` and
+  `budget<ms>`, and cubes changed per tick in its result.
+
 ## Turn 17 (2026-10-11)
 - `blocks.solarFireModel` defaults to `SIMPLE` (the user prefers its look, apart from vanilla fire, and found it
   performs much better).
