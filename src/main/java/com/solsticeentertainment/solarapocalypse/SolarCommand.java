@@ -91,7 +91,10 @@ public final class SolarCommand extends CommandBase {
         for (String line : status(sender.getEntityWorld(), sender.getPosition())) sender.sendMessage(new TextComponentString(line));
     }
 
-    private static String[] status(World world, BlockPos pos) {
+    /** The status lines at a player's position, or with pos null at the world's spawn point without the player's part. */
+    static String[] status(World world, BlockPos pos) {
+        boolean player = pos != null;
+        if (!player) pos = world.getSpawnPoint();
         Timeline timeline = SolarApocalypse.timeline();
         long p = ApocalypseClock.progress();
         int phase = timeline.phaseAt(p);
@@ -116,7 +119,7 @@ public final class SolarCommand extends CommandBase {
                     + (reference == BlockChanges.NO_Y ? " (not known here yet)" : " (here Y " + reference + ", destroyed down to Y " + (reference - depth + 1) + ")")
                     + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world)
                     + behind(world, timeline, phase) : "")
-                    + "; you: " + sky(world, pos.up());
+                    + (player ? "; you: " + sky(world, pos.up()) : "");
         }
         double tickMs = MathHelper.average(world.getMinecraftServer().tickTimeArray) * 1.0E-6;
         String load = String.format(Locale.ROOT, "Engine: %.2f ms/tick average, %.2f ms slowest tick since the last status, %.1f block"

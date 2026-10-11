@@ -72,7 +72,7 @@ public class SolarApocalypse {
         MinecraftForge.EVENT_BUS.register(SunDamage.class);
         MinecraftForge.EVENT_BUS.register(SolarFire.class);
         MinecraftForge.EVENT_BUS.register(VitrifiedSand.class);
-        MinecraftForge.EVENT_BUS.register(Settled.class);
+        MinecraftForge.EVENT_BUS.register(SettledBlock.class);
         Announcer.register();
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.VitrifiedSandModel.class);
@@ -298,6 +298,11 @@ public class SolarApocalypse {
             lastPhase = phase;
         }
         Announcer.tick(server);
+        if (SolarConfig.statusLogSeconds > 0 && phase >= 0 && server.getTickCounter() % (SolarConfig.statusLogSeconds * 20) == 0) {
+            for (WorldServer world : DimensionManager.getWorlds()) {
+                if (isActive(world)) LOGGER.info("Status, dimension {}: {}", world.provider.getDimension(), String.join(" | ", SolarCommand.status(world, null)));
+            }
+        }
         if (phase >= 0 && server.getTickCounter() % 20 == 0) holdWeather(SolarConfig.phases[phase].weather);
     }
 

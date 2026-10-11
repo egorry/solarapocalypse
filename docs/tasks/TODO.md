@@ -12,9 +12,9 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
 - (none)
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-- Settled sand and gravel (turn 21) in a client: they should look exactly like vanilla sand, red sand and gravel (same
+- Settled sand and gravel (turn 21; the user will test it later, turn 22) in a client: they should look exactly like vanilla sand, red sand and gravel (same
   models, random rotation), with the same break particles and sounds, and pick block giving the vanilla item. Seen
-  with F3 as `solarapocalypse:settled[type=...]` where conversions made them.
+  with F3 as `solarapocalypse:settled_block[type=...]` where conversions made them.
 
 ## Will do (Cubic Chunks)
 1. Dark spots: why ground counts as under cover in open sky at all on a vanilla-like Cubic Chunks preset (the user,
@@ -34,18 +34,17 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    cost [low, Claude: a performance nicety; needs a mixin into CC].
 3. Simple Difficulty integration (optional, soft dependency) [low, Claude: optional].
 4. Burning liquids (oil catching fire), if wanted [low, user].
-5. Verbose debug logging mode [low, user].
-6. Block-breaking effects near the player (the user, turn 14, "later to-do item") [low, user: later]: breaking
+5. Block-breaking effects near the player (the user, turn 14, "later to-do item") [low, user: later]: breaking
    particles and sounds for the apocalypse's block changes, only within a limited radius of each player (as vanilla
    shows fire smoke only near the player when lots of fire is on the ground), configurable (on/off and radius). Much
    later the user will add their own breaking sounds, not one per block but mono or positionally panned, so this
    vanilla-style setting will then default to off.
-7. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
+6. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
     later"): recheck after the turn 11 engine fix, which removed one cause (cut-short passes waiting behind every
     queued cube) [low, user].
-8. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
+7. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
     `textures/font/splash.png`) [lowest until the user has made them, user].
-9. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
+8. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
     user]. Turn 19's offset on seed -5479930802988752619 (1,701 positions above the ground, up to 6) was CWG's snow
     populator turning surface water into ice after the model, so the self-test counted it as ground; turn 20 rerun with
     ice not counted: 0.

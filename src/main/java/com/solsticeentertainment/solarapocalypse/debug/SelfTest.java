@@ -3,7 +3,7 @@ package com.solsticeentertainment.solarapocalypse.debug;
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
 import com.solsticeentertainment.solarapocalypse.BlockRules;
-import com.solsticeentertainment.solarapocalypse.Settled;
+import com.solsticeentertainment.solarapocalypse.SettledBlock;
 import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.cc.CubicSky;
@@ -893,7 +893,7 @@ public final class SelfTest {
     /** The target of a state's conversion, as the vanilla block for settled sand and gravel (see settledRules). */
     private static IBlockState to(BlockRules r, int phase, IBlockState state, int x, int z, int layer) {
         IBlockState to = placed(r, phase, state, x, z, layer);
-        return to == null ? null : Settled.real(to);
+        return to == null ? null : SettledBlock.real(to);
     }
 
     private static IBlockState placed(BlockRules r, int phase, IBlockState state, int x, int z, int layer) {
@@ -1038,7 +1038,7 @@ public final class SelfTest {
         IBlockState glass = sand == null ? null : placed(r, 0, sand, 0, 0, 1);
         NonNullList<ItemStack> drops = NonNullList.create();
         if (sand != null) sand.getBlock().getDrops(drops, world, BlockPos.ORIGIN, sand, 0);
-        log("settled: dirt -> {} (solarapocalypse:settled[type=gravel]), it -> {} (settled[type=red_sand]), it -> {}"
+        log("settled: dirt -> {} (solarapocalypse:settled_block[type=gravel]), it -> {} (settled_block[type=red_sand]), it -> {}"
                         + " (vitrified_sand[variant=red_sand]); the red sand drops {} (1xtile.sand@1), picks {} (1xtile.sand@1)",
                 gravel, sand, glass, drops, sand == null ? null : sand.getBlock().getItem(world, BlockPos.ORIGIN, sand));
         IBlockState ice = Blocks.ICE.getDefaultState(), water = Blocks.WATER.getDefaultState(), air = Blocks.AIR.getDefaultState();
@@ -1062,11 +1062,11 @@ public final class SelfTest {
         vanillaGravel = new BlockPos(x, Math.max(top(cubes, x, z), top(cubes, x + 3, z)) + 8, z);
         settledGravel = vanillaGravel.east(3);
         world.setBlockState(vanillaGravel, Blocks.GRAVEL.getDefaultState(), 2 | 16);
-        world.setBlockState(settledGravel, Settled.placed(Blocks.GRAVEL.getDefaultState()), 2 | 16);
+        world.setBlockState(settledGravel, SettledBlock.placed(Blocks.GRAVEL.getDefaultState()), 2 | 16);
     }
 
     private static void settledCheck() {
-        log("in mid-air after phase 1: vanilla gravel -> {} (air: it fell), settled gravel -> {} (settled[type=gravel])",
+        log("in mid-air after phase 1: vanilla gravel -> {} (air: it fell), settled gravel -> {} (settled_block[type=gravel])",
                 world.getBlockState(vanillaGravel), world.getBlockState(settledGravel));
         world.setBlockState(settledGravel, Blocks.AIR.getDefaultState(), 18);
     }

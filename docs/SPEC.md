@@ -153,7 +153,7 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    after a pass, so a change that lets more light through gets its cube another look at the next short wake. No fire is
    placed on a surface block whose background conversion is still pending.
    **Settled sand and gravel** (the user's idea, turn 9; made in turn 21): without `blocks.blockPhysics`, a rule whose
-   target is vanilla sand, red sand or gravel places `solarapocalypse:settled` (`type=sand`, `red_sand`, `gravel`)
+   target is vanilla sand, red sand or gravel places `solarapocalypse:settled_block` (`type=sand`, `red_sand`, `gravel`)
    instead. It looks, sounds, breaks and drops like the vanilla block (gravel gives flint at times, silk touch and pick
    block give the vanilla item; it has no item of its own) and never falls. Vanilla sand and gravel check for a fall when
    placed whatever the flags (`onBlockAdded`), so converted ground over a cave fell (and where the 32 blocks around were
@@ -445,6 +445,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   decreasing depths.
 - `/solar status` shows the engine's average and slowest tick, block changes per tick and the server's tick time;
   `/solar fire [radius]` counts solar and vanilla fire in the loaded cubes around you and the fire lit since start.
+  `performance.statusLogSeconds` (0 = off; turn 22, the user's verbose debug mode) writes the status lines to the log
+  every that many seconds while a phase runs, one line per affected dimension, measured at its spawn point.
 - Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte).
 - Nothing loads or generates a cube: a cube is processed only when it and what its blocks depend on are loaded,
   otherwise it waits, and catch-up makes it right later. The one exception is opt-in: `blocks.blockPhysics` notifies

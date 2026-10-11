@@ -29,7 +29,7 @@ import java.util.Locale;
  * no item of its own (pick block and silk touch give the vanilla one). Every rule treats it as the vanilla block
  * (BlockRules matches {@link #real}).
  */
-public final class Settled extends Block {
+public final class SettledBlock extends Block {
 
     public enum Type implements IStringSerializable {
         SAND, RED_SAND, GRAVEL;
@@ -41,14 +41,14 @@ public final class Settled extends Block {
     }
 
     public static final PropertyEnum<Type> TYPE = PropertyEnum.create("type", Type.class);
-    public static Settled BLOCK;
+    public static SettledBlock BLOCK;
 
-    private Settled() {
+    private SettledBlock() {
         super(Material.SAND);
         setHardness(0.5F);
         setHarvestLevel("shovel", 0);
-        setTranslationKey(Tags.MOD_ID + ".settled");
-        setRegistryName(Tags.MOD_ID, "settled");
+        setTranslationKey(Tags.MOD_ID + ".settled_block");
+        setRegistryName(Tags.MOD_ID, "settled_block");
     }
 
     /** The vanilla block a settled one stands for; any other state as it is. */
@@ -124,6 +124,6 @@ public final class Settled extends Block {
 
     @SubscribeEvent
     public static void register(RegistryEvent.Register<Block> event) {
-        event.getRegistry().register(BLOCK = new Settled());
+        event.getRegistry().register(BLOCK = new SettledBlock());
     }
 }

@@ -2,6 +2,13 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 22 (2026-10-11)
+- Block ID renamed to `solarapocalypse:settled_block` (the user: says what it is; plain "settled" could clash with a
+  future vanilla name). The client check stays in TODO.md for the user, as they asked.
+- Verbose debug logging mode (the user's low to-do, turn 6: "You can add a verbose debug mode if you want"):
+  `performance.statusLogSeconds` logs the `/solar status` lines every that many seconds while a phase runs. Claude's
+  take on what "verbose" should hold, as the user left it open; more can go in on request. Self-test (status log every 30 s) logs it; the self-test passes with the new block ID.
+
 ## Turn 21 (2026-10-11)
 - The user's ice question (icy biomes, vanilla and modded): in CubicWorldGen worlds the surface model decides, so ice a
   biome generates as its surface is ground and ice made later is not. For the recorded surface (no CWG), ice resting
@@ -11,7 +18,7 @@ Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CH
   them all through carrying (phases 7 to 10 have no convert rules of their own, so nothing is left to add there).
 - The user's modifier question answered: background rules take every modifier except layers (`layer=`, `depth=`
   ignored with a warning; `convertDepth` only turns them off at 0), as the user voted.
-- Non-falling sand and gravel (the user's item, raised to medium by them): `solarapocalypse:settled`. Self-test checks: rules place it and treat it as vanilla (settled red sand vitrifies), drops and pick block are vanilla sand, in mid-air vanilla gravel fell and settled stayed; on turn 17's seed the 4 blocks that fell into a cave are 0. Self-test passes.
+- Non-falling sand and gravel (the user's item, raised to medium by them): `solarapocalypse:settled_block`. Self-test checks: rules place it and treat it as vanilla (settled red sand vitrifies), drops and pick block are vanilla sand, in mid-air vanilla gravel fell and settled stayed; on turn 17's seed the 4 blocks that fell into a cave are 0. Self-test passes.
 
 ## Turn 20 (2026-10-11)
 - Floating water item closed: the user saw malformed beaches near the player, not distant terrain, and is happy with

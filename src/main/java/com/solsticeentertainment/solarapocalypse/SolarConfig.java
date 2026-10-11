@@ -103,7 +103,7 @@ public final class SolarConfig {
     // performance
     public static double tickBudgetMs;
     public static double freeTickShare;
-    public static int maxBlockChangesPerTick;
+    public static int maxBlockChangesPerTick, statusLogSeconds;
     // splash
     public static int splashTitleColor, splashFlickerColor, splashMessageColor;
     public static int splashFadeInTicks, splashStayTicks, splashFadeOutTicks;
@@ -246,6 +246,9 @@ public final class SolarConfig {
         skipTickBudgetMs = c.get(cat, "skipTickBudgetMs", 20.0, "Milliseconds per server tick during that boost.").getDouble();
         skipMaxBlockChangesPerTick = c.getInt("skipMaxBlockChangesPerTick", cat, 2048, 0, Integer.MAX_VALUE,
                 "Block changes per server tick during that boost (0 = no limit).");
+        statusLogSeconds = c.getInt("statusLogSeconds", cat, 0, 0, 86400,
+                "Verbose debug log: every this many seconds while a phase runs, the /solar status lines go to the log for each\n" +
+                "affected dimension (at its spawn point). Its slowest tick then counts from the last logged status. 0 = off.");
 
         cat = "splash";
         c.setCategoryComment(cat, "The splash title of a phase (phase_n.splash) on every player's screen. Text in a phase's message\n" +

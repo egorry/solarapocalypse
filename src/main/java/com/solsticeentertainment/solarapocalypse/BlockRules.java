@@ -292,10 +292,10 @@ public final class BlockRules {
                 // (Step.pick). The top half of a tall plant or door follows its bottom half (it pops off when that changes).
                 List<Rule> list = new ArrayList<>();
                 boolean changes = false;
-                IBlockState as = Settled.real(state); // settled sand and gravel follow the vanilla block's rules
+                IBlockState as = SettledBlock.real(state); // settled sand and gravel follow the vanilla block's rules
                 for (int r = 0; r < from.size() && !upperHalf(state); r++) {
                     if (!from.get(r).test(as)) continue;
-                    IBlockState target = Settled.placed(to.get(r).of(as));
+                    IBlockState target = SettledBlock.placed(to.get(r).of(as));
                     list.add(new Rule(target, share.get(r), i, layers.get(r)[0], layers.get(r)[1], background.get(r)));
                     changes |= target != state;
                 }
