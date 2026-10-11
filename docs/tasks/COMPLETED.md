@@ -2,6 +2,22 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 24 (2026-10-12)
+- The user's question: can the Cubic Chunks hook be optional, config-based and without a mixin mod (no hard
+  dependencies)? Yes: a plain Forge coremod (one class, `core/SolarCore`) adds one call to Cubic Chunks' `Cube.trackSurface`,
+  and `performance.updateBeforeSending` (default on) switches it in game. The mod's mixin build setting only serves dev
+  runs; the jar declares no mixins and needs no MixinBooter.
+- The user's follow-up: does a coremod tie the mod to one Cubic Chunks version, and is it the best option? Only the
+  feature is tied, as a mixin would be (both patch the same method): without `Cube.trackSurface` the patch is skipped
+  with a warning and cubes change from the queue as before. The method is unchanged at Cubic Chunks' latest source
+  (2025-11). A mixin could hook the same spot, but a normal mod can only add one through MixinBooter; the coremod needs
+  nothing.
+- The hook before players get a cube (Claude's optional to-do item, "pre-first-light hook"): done after the first light
+  instead (before it would need the engine to run without the column's height map). Saves the pop-in and the packets,
+  not the lighting.
+- RESEARCH: Cubic Chunks marks every x/z of a column's heights whenever it tracks a new cube there, which wraps that
+  tick's heightmap packet; a lead for the dark spots (TODO.md).
+
 ## Turn 23 (2026-10-11)
 - The user's request: the optional to-do items and the block-breaking effects (vanilla style only; their own sounds
   later), to test together. Done this turn: break effects, Simple Difficulty, burning liquids. The pre-first-light

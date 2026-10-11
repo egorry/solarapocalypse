@@ -388,11 +388,14 @@ public final class BlockChanges {
         }
         if (!SolarConfig.dropItems && from.getBlock().canSustainLeaves(from, world, pos) && !to.getBlock().canSustainLeaves(to, world, pos))
             zapLeaves(world, pos);
-        if (SolarConfig.breakEffects) effects(world, pos, from);
+        if (SolarConfig.breakEffects && !unseen) effects(world, pos, from);
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
         else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
     }
+
+    /** Set while changing a cube no player has been sent yet (CubeEngine.surfaceTracked): no break effects. */
+    public static boolean unseen;
 
     private static final Map<EntityPlayer, Integer> effectsSent = new WeakHashMap<>(); // this tick, per player
     private static long effectsTick;

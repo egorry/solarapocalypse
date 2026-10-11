@@ -207,6 +207,42 @@ public final class CubeEngine {
         run((WorldServer) event.world, progress);
     }
 
+    /** Cubes brought up to date before any player was sent them (surfaceTracked), since server start. */
+    public static long cubesPrepared;
+
+    /**
+     * Called by Cubic Chunks (patched by core/SolarCore) once a new or reloaded cube is lit and in its column's height
+     * map, before any player is sent it: with performance.updateBeforeSending it is brought up to the engine's clock
+     * now, so players never see it change and are sent nothing for it. Otherwise, and when it cannot be done now (the
+     * engine not started or set back, during another cube's pass, no budget left), the queue its load event put it in
+     * does it as before.
+     */
+    public static void surfaceTracked(ICube cube) {
+        World world = cube.getWorld();
+        if (!SolarConfig.updateBeforeSending || processing || !(world instanceof WorldServer) || !SolarApocalypse.isActive(world)) return;
+        if (!world.getMinecraftServer().isCallingFromMinecraftThread()) return;
+        State state = STATES.get(world);
+        long progress = ApocalypseClock.progress();
+        if (state == null || state.clock == UNSET || state.clock > progress || progress < SolarApocalypse.timeline().firstStart()) return;
+        if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !SolarApocalypse.hasBudget()) return;
+        CubePos pos = cube.getCoords();
+        BlockChanges changes = SolarApocalypse.changes(world);
+        List<CubePos> later = new ArrayList<>();
+        long at = state.clock, wake;
+        BlockChanges.unseen = true;
+        try {
+            wake = look((WorldServer) world, ((ICubicWorld) world).getCubeCache(), cube, changes, at, state, later);
+        } finally {
+            BlockChanges.unseen = false;
+        }
+        cubesPrepared++;
+        state.next.remove(pos);
+        state.notReady.remove(pos);
+        if (wake == PARTIAL) state.resume.add(pos);
+        else if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, at + changes.minWake(at)));
+        state.queue.addAll(later);
+    }
+
     private static void run(WorldServer world, long progress) {
         State state = state(world);
         state.columnEdits.clear();
@@ -247,17 +283,7 @@ public final class CubeEngine {
                 state.notReady.add(pos);
                 continue;
             }
-            long t0 = cubeStart = System.nanoTime(), before = BlockChanges.changed;
-            processing = true;
-            long wake;
-            try {
-                wake = process(world, cubes, cube, changes, at, state, later);
-            } finally {
-                processing = false;
-            }
-            nanos += System.nanoTime() - t0;
-            cubesProcessed++;
-            if (BlockChanges.changed != before) cubesChanged++; // a cube clients get its changes for (whole from 64 a tick)
+            long wake = look(world, cubes, cube, changes, at, state, later);
             if (wake == PARTIAL) {
                 cut.add(pos); // not again this tick: the column limit that stopped it holds until the next one
                 continue;
@@ -332,6 +358,21 @@ public final class CubeEngine {
 
     private static final long PARTIAL = Long.MIN_VALUE;
 
+    /** process(), timed and counted. */
+    private static long look(WorldServer world, ICubeProvider cubes, ICube cube, BlockChanges changes, long at, State state,
+                             List<CubePos> later) {
+        long t0 = cubeStart = System.nanoTime(), before = BlockChanges.changed;
+        processing = true;
+        try {
+            return process(world, cubes, cube, changes, at, state, later);
+        } finally {
+            processing = false;
+            nanos += System.nanoTime() - t0;
+            cubesProcessed++;
+            if (BlockChanges.changed != before) cubesChanged++; // a cube clients get its changes for (whole from 64 a tick)
+        }
+    }
+
     /** Brings one cube up to date. Returns when it next needs a look, NEVER, or PARTIAL if the column limit stopped it. */
     private static long process(WorldServer world, ICubeProvider cubes, ICube cube, BlockChanges changes, long progress, State state,
                                 List<CubePos> later) {
@@ -351,7 +392,8 @@ public final class CubeEngine {
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false;
         int deep = changes.deepestLayer();
-        BitSet edited = state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
+        // no column limit for a cube no player has yet: Cubic Chunks marks its whole column's heights this tick itself
+        BitSet edited = BlockChanges.unseen ? null : state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
@@ -563,6 +605,7 @@ public final class CubeEngine {
      */
     private static boolean limited(BitSet edited, int xz) {
         if (!SolarApocalypse.hasBudget(System.nanoTime() - cubeStart)) return true;
+        if (edited == null) return false;
         if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
         edited.set(xz);
         return false;

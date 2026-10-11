@@ -118,6 +118,9 @@ public final class SolarCommand extends CommandBase {
             reach = "depth " + depth + " layers below " + (line == Timeline.TOP ? "TOP_Y" : "SURFACE")
                     + (reference == BlockChanges.NO_Y ? " (not known here yet)" : " (here Y " + reference + ", destroyed down to Y " + (reference - depth + 1) + ")")
                     + (SolarApocalypse.isCubic(world) ? ", cubes queued " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.queued(world)
+                    + (com.solsticeentertainment.solarapocalypse.core.SolarCore.patched
+                        ? ", " + com.solsticeentertainment.solarapocalypse.cc.CubeEngine.cubesPrepared + " updated before sending"
+                        : ", Cubic Chunks patch not loaded")
                     + behind(world, timeline, phase) : "")
                     + (player ? "; you: " + sky(world, pos.up()) : "");
         }

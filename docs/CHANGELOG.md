@@ -4,6 +4,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- Cubic Chunks: terrain is brought up to date before it reaches players, so exploring never shows it changing
+  (`performance.updateBeforeSending`, default on). For this the mod is also a small Forge coremod (no mixin mod or other
+  dependency needed).
 - Block-breaking effects: players near the apocalypse's block changes see and hear them as vanilla breaks a block,
   and liquids that evaporate fizz and smoke (`blocks.breakEffects`, `breakEffectsRadius` 16, `breakEffectsPerTick` 8).
 - Simple Difficulty integration (optional): the sun and its heat raise the temperature there

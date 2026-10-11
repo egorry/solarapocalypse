@@ -24,6 +24,8 @@ automatically) has the working rules; this file points at everything else. Curre
   phase announcements and the network channel (`Announcer`), `/solar` (`SolarCommand`). No Cubic Chunks classes here.
 - `client/`: client-only rendering (the phase splash, the vitrified sand item model); never loaded on a dedicated server.
 - `cc/`: everything that touches Cubic Chunks or CubicWorldGen classes; only loaded when they are installed.
+- `core/`: the Forge coremod (`SolarCore`): adds one call to Cubic Chunks' `Cube.trackSurface` (only when it is
+  installed). Loaded before the game: it uses no game or mod classes.
 - `debug/`: dev-only checks run by `scripts/probe_server.sh` (probe, self-test, bench).
 - `src/test/`: unit tests.
 

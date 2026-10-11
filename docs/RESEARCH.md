@@ -176,6 +176,14 @@ rebuilds (a headless server has no watchers).
   `PacketCubeBlockChange` computes the heights at (x, x) instead of (x, z), relying on that update to correct it. A
   whole 16x16 layer in one tick therefore leaves clients with a wrong heightmap (rain, client relight) unless the cube is
   fully resent. Rule: fewer than 256 distinct x/z per column per tick, or whole-cube resends of non-empty cubes.
+  CC breaks that rule itself (turn 24): `Cube.trackSurface` ends in `LightingManager.onTrackCubeSurface`, which marks
+  every x/z of the cube's column (and a row of each neighbour's) for every new or reloaded cube, empty ones too, so
+  that tick's update for a column players have wraps to 0. A non-empty cube's own packet carries the column's heights
+  (`WorldEncoder`), which repairs them; other block changes in that column that tick keep their wrong heights.
+- Cube readiness order (CC 0.0.1271, `CubeProviderServer.postCubeLoadAttempt`): generate, populate (fully populated:
+  nothing writes into it any more), first light, `trackSurface` (joins the column height map), then `CubeWatcher`
+  sends it in the same `PlayerCubeMap` tick, which clears the block changes queued before (`sendToPlayers`). No event
+  in between: the mod's coremod hook sits at the end of `trackSurface`.
 - Removing leaves runs `BlockLeaves.breakBlock` (marks 26 neighbours for decay, which later drop items); logs mark 9x9x9.
   The pack's FastLeafDecay only reacts to flag-1 updates. Removing leaves without the decay cascade needs a direct storage
   write; or the decay is accepted as part of the theme.

@@ -344,6 +344,18 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   once fire and conversions were gone. A block's own callbacks (vanilla fire placed, a block
   popping off) can load a neighbouring cube mid-pass; the engine copes (it is queued like any loaded cube), places
   vanilla fire only where its six neighbours are loaded, and logs the first such load once per game with its cause.
+- Before players get a cube (`performance.updateBeforeSending`, default on; turn 24, Claude's optional to-do item): the
+  moment Cubic Chunks has lit a new or reloaded cube and added it to its column's height map, before any player is sent
+  it, the engine brings it up to its clock there and then. Exploring never shows terrain changing, and nothing extra is
+  sent: no block changes, no break effects, no column limit (Cubic Chunks marks the whole column's heights in that tick
+  itself, and the cube packet carries the column's heights). Done within the time budget; cubes past it, and cubes that
+  load during another cube's pass, wait in the queue as before. Lighting still runs after the changes: doing them before
+  the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
+  the mod is also a Forge coremod (`core/SolarCore`; no mixin mod or other dependency) that adds one call at the end of
+  Cubic Chunks' `Cube.trackSurface`; nothing else, and nothing without Cubic Chunks. If a Cubic Chunks version lacks
+  that method, the patch is skipped with a warning. The option takes effect in game at once; the patch itself is always
+  in and does nothing with the option off. `/solar status` shows how many cubes were updated before sending, or that the
+  patch is not loaded.
 - The mod never slows, skips or alters the server's tick or the world's time (a day-length mod stays in charge); it only
   spends a bounded share of each tick's spare time.
 - Time budget per server tick: the engine may spend at most `performance.tickBudgetMs` (4 ms) and at most
@@ -457,7 +469,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   `/solar fire [radius]` counts solar and vanilla fire in the loaded cubes around you and the fire lit since start.
   `performance.statusLogSeconds` (0 = off; turn 22, the user's verbose debug mode) writes the status lines to the log
   every that many seconds while a phase runs, one line per affected dimension, measured at its spawn point.
-- Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte).
+- Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte), except in cubes
+  no player has yet (above).
 - Nothing loads or generates a cube: a cube is processed only when it and what its blocks depend on are loaded,
   otherwise it waits, and catch-up makes it right later. The one exception is opt-in: `blocks.blockPhysics` notifies
   neighbours, which can generate a cube at a cube edge. Vanilla fire checks that its area is loaded (Forge).

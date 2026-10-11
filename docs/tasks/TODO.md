@@ -14,6 +14,10 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
   Change them as you like after testing [low, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
+- Updated before sending (turn 24, with the turn 23 items): explore new terrain in a later phase (`/solar phase 5`) with
+  `performance.updateBeforeSending` on: terrain loading in never changes in view; off: it does, a moment later.
+  `/solar status` counts the cubes done before sending. Also: the game starts normally with the mod as a coremod (the
+  log names `SolarApocalypseCore`; Forge warns about a coremod jar holding a mod, harmless, CubicWorldGen gets the same).
 - The optional items and break effects (turn 23; the user tests them together):
   - Break effects: near a change, vanilla break particles and sounds (a fizz and smoke for liquids), none beyond 16
     blocks, and no client lag when a whole layer goes near you (at most 8 a tick).
@@ -39,11 +43,14 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    user's spot is open and correct in one and under a real oak canopy in the other. Both reports predate the turn 12
    engine clock: recheck on the current code; if a spot shows again, Claude would add a self-test count of open-sky
    ground the engine treats as covered.
-2. Pre-first-light hook (optional CC mixin): process new cubes before their first light, no pop-in, no light or packet
-   cost [low, Claude: a performance nicety; needs a mixin into CC].
+   Lead (turn 24, not checked yet): Cubic Chunks marks every x/z of a column's heights whenever it tracks a new cube in
+   it (empty air cubes too), so that tick's heightmap packet wraps to 0 and clients drop the column's height changes;
+   block changes the engine sent that tick keep the wrong heights their own packet gives (RESEARCH.md). Clients would
+   then light those spots as covered. Same lead for the cubes that look covered after `/time add` (below).
+2. Done (turn 24): the hook before players get a cube (COMPLETED.md); kept here so item 3 keeps its number.
 3. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
     later"): recheck after the turn 11 engine fix, which removed one cause (cut-short passes waiting behind every
-    queued cube) [low, user].
+    queued cube) [low, user; turn 24: the user will bring it up in a couple of turns].
 4. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
     `textures/font/splash.png`) [lowest until the user has made them, user].
 5. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
@@ -60,3 +67,12 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
   and no fire relit there until the next phase or day; likely Cubic Chunks lighting or heightmap lag after mass
   removal. Seen again in the turn 12 TOP_Y test: about 25 % of the area dark, without fire. Recheck after the turn 12
   engine clock (cubes no longer run at different times), then investigate after everything else [lowest, user].
+
+## Before a release
+- `use_mixins = true` (only for dev runs: Cubic Chunks needs MixinBooter there) makes the template's CurseForge and
+  Modrinth uploads list MixinBooter as required (`gradle/scripts/publishing.gradle`). The mod does not need it: drop
+  that requirement if those uploads are used (both are off now).
+
+## Later (relies on bottom-up mechanic from above)
+- "Lava Apocalypse" preset for an infinite phase coming from below, converting air into lava.
+- "Ice Apocalypse" preset mostly the same as normal config, but ice-ified, including SimpleDifficulty support and cold variants of some existing settings (cold damage, background cold damage e.t.c)

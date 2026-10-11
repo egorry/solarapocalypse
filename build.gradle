@@ -96,6 +96,10 @@ minecraft {
         args << '-Dmixin.checks.interfaces=true'
         args << '-Dmixin.debug.export=true'
     }
+    if (propertyBool('is_coremod')) {
+        // dev runs load the mod from the classpath, where Forge only finds a coremod named here
+        args << "-Dfml.coreMods.load=${propertyString('coremod_plugin_class_name')}".toString()
+    }
     extraRunJvmArguments.addAll(args)
     extraRunJvmArguments.addAll(propertyStringList('extra_jvm_args'))
 

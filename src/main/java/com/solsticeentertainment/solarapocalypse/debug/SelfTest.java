@@ -14,9 +14,11 @@ import com.solsticeentertainment.solarapocalypse.SunDamage;
 import com.solsticeentertainment.solarapocalypse.Timeline;
 import com.solsticeentertainment.solarapocalypse.cc.CubeEngine;
 import com.solsticeentertainment.solarapocalypse.compat.SimpleDifficultyHeat;
+import com.solsticeentertainment.solarapocalypse.core.SolarCore;
 import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubeProviderServer;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockAnvil;
@@ -124,6 +126,7 @@ public final class SelfTest {
             case 1:
                 if (!drained(600)) return;
                 census("after phase 1");
+                sendingCheck();
                 backgroundCheck();
                 settledCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
@@ -349,6 +352,51 @@ public final class SelfTest {
                         + " line {} (0); columns short of the rest by the block on top {} (liquids: their floor waits)", when, (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE),
                 String.format("%.1f", CubeEngine.behind(world) * 16.0 / Timeline.DAY), lost, String.format("%.1f", best * 100.0 / Math.max(1, columns)),
                 columns, mode, mode + 1, below, shortOf);
+    }
+
+    /**
+     * New cubes are up to date before anyone could be sent them (performance.updateBeforeSending, the Cubic Chunks
+     * patch), and not with the option off: at the end of phase 1 no grass is left in the open when a land column far
+     * from spawn loads, as its blocks have already changed.
+     */
+    private static void sendingCheck() {
+        int[] off = freshColumn(-1, false), on = freshColumn(1, true);
+        log("Cubic Chunks patch in {} (true); fresh land columns at the end of phase 1, exposed grass / blocks changed / cubes"
+                + " updated on loading: option off {} / {} / {} (some, 0, 0), on {} / {} / {} (0, some, 4)", SolarCore.patched,
+                off[0], off[1], off[2], on[0], on[1], on[2]);
+    }
+
+    /**
+     * Loads (generates and lights) the 4 cubes around the surface of the first land column from 30 columns east (west
+     * with -1) of spawn, top down, counting the grass under open sky in them.
+     */
+    private static int[] freshColumn(int direction, boolean option) {
+        boolean was = SolarConfig.updateBeforeSending;
+        SolarConfig.updateBeforeSending = option;
+        long prepared = CubeEngine.cubesPrepared;
+        long changed = BlockChanges.changed;
+        BlockPos spawn = world.getSpawnPoint();
+        CwgSurface model = CubicSky.model(world);
+        int cx = spawn.getX() >> 4, cz = spawn.getZ() >> 4, top = 64;
+        for (int dx = 30; dx < 90; dx++) { // above the sea
+            cx = (spawn.getX() >> 4) + direction * dx;
+            top = model == null ? 70 : model.top((cx << 4) + 8, (cz << 4) + 8);
+            if (top != CwgSurface.NONE && top >= 66) break;
+        }
+        int grass = 0;
+        ICubeProviderServer cubes = (ICubeProviderServer) world.getChunkProvider();
+        for (int cy = (top >> 4) + 2; cy >= (top >> 4) - 1; cy--) {
+            ICube cube = cubes.getCubeNow(cx, cy, cz, ICubeProviderServer.Requirement.LIGHT);
+            ExtendedBlockStorage storage = cube == null ? null : cube.getStorage();
+            if (storage == null) continue;
+            for (int i = 0; i < 4096; i++) {
+                int y = (cy << 4) + (i >> 8);
+                if (storage.get(i & 15, i >> 8, (i >> 4) & 15).getBlock() == Blocks.GRASS
+                        && y >= ((IColumn) cube.getColumn()).getHeightValue(i & 15, (i >> 4) & 15) - 1) grass++;
+            }
+        }
+        SolarConfig.updateBeforeSending = was;
+        return new int[]{grass, (int) (BlockChanges.changed - changed), (int) (CubeEngine.cubesPrepared - prepared)};
     }
 
     /** Posts a load event for every loaded cube of 2 x 2 columns near spawn, as if a player had come back to them. */

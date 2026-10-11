@@ -106,6 +106,7 @@ public final class SolarConfig {
     public static double tickBudgetMs;
     public static double freeTickShare;
     public static int maxBlockChangesPerTick, statusLogSeconds;
+    public static boolean updateBeforeSending;
     // splash
     public static int splashTitleColor, splashFlickerColor, splashMessageColor;
     public static int splashFadeInTicks, splashStayTicks, splashFadeOutTicks;
@@ -256,6 +257,10 @@ public final class SolarConfig {
         skipTickBudgetMs = c.get(cat, "skipTickBudgetMs", 20.0, "Milliseconds per server tick during that boost.").getDouble();
         skipMaxBlockChangesPerTick = c.getInt("skipMaxBlockChangesPerTick", cat, 2048, 0, Integer.MAX_VALUE,
                 "Block changes per server tick during that boost (0 = no limit).");
+        updateBeforeSending = c.getBoolean("updateBeforeSending", cat, true,
+                "Cubic Chunks: bring each cube up to date the moment it is generated or loaded, before players are sent it, so\n" +
+                "exploring never shows terrain changing (within the time budget above; cubes past it change in view). Off: the\n" +
+                "engine's queue does it a moment later, in view. Uses the mod's one small patch to Cubic Chunks (no other mod needed).");
         statusLogSeconds = c.getInt("statusLogSeconds", cat, 0, 0, 86400,
                 "Verbose debug log: every this many seconds while a phase runs, the /solar status lines go to the log for each\n" +
                 "affected dimension (at its spawn point). Its slowest tick then counts from the last logged status. 0 = off.");
