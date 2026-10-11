@@ -8,6 +8,7 @@ import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
 
 /**
  * What the apocalypse does to one block at a given progress: a pure function of (block, position, the column's
@@ -173,33 +174,72 @@ public final class BlockChanges {
      * The fire that belongs above a column's surface block now: solar fire, vanilla fire (flammable surface), or null.
      * Fire comes after the phase's conversions (none while the surface block still has a conversion pending). Outside
      * infinite phases one roll serves every phase, so a phase's percent is the total alight (25 % then 50 % keeps the
-     * first 25 %) and lit fire is left alone. In an infinite phase each surface block rolls once: when the erosion takes
+     * first 25 %) and lit fire is left alone; a spot an earlier phase in that run lit keeps that phase's moment and tag, so
+     * it comes back at once after night or rain. In an infinite phase each surface block rolls once: when the erosion takes
      * it, the block below rolls for the new surface; fire on a surface the line has not reached stays as it is. Solar fire
-     * is tagged with the depth it was lit at (/solar fire). With blocks.nightDousesFire there is no fire at night (see dark).
+     * is tagged with the depth (infinite) or phase it was lit at (/solar fire). With blocks.nightDousesFire there is no fire
+     * at night (see dark), and with phase_n.rainDousesFire none under rain, where any solar fire goes out (see doused).
      */
     public IBlockState fire(World world, BlockPos surfacePos, IBlockState surface, long progress) {
         wake = NEVER;
+        doused = false;
         int phase = timeline.phaseAt(progress);
         if (phase < 0) return null;
         SolarConfig.Phase p = SolarConfig.phases[phase];
+        if (p.rainDousesFire && rainedOn(world, surfacePos.up())) { // any solar fire there goes, whichever phase lit it
+            doused = true;
+            return null;
+        }
         if (p.ignitePercent <= 0 && p.igniteFlammablePercent <= 0) return null;
         int x = surfacePos.getX(), y = surfacePos.getY(), z = surfacePos.getZ();
         BlockRules.Step pending = rules.convert(phase, surface);
         if (pending != null && pending.pick(x, y, z, surface, 1, phase) >= 0) return null;
         boolean infinite = timeline.infinite(phase);
         int line = timeline.track(phase);
-        int epoch = infinite ? (int) timeline.depthAt(progress, line) : phase;
         boolean flammable = burns(world, surface, surfacePos, EnumFacing.UP);
-        double percent = flammable ? p.igniteFlammablePercent : p.ignitePercent;
-        if (Timeline.hash(x, y, z, infinite ? FIRE_SALT : TOTAL_FIRE_SALT) * 100 >= percent) return null;
+        double roll = Timeline.hash(x, y, z, infinite ? FIRE_SALT : TOTAL_FIRE_SALT) * 100;
+        if (roll >= share(phase, flammable)) return null;
         if (!flammable && !surface.getMaterial().blocksMovement()) return null; // paths, glass, slabs too; not liquids
-        long due = infinite ? progress : spread(timeline.convertStart(phase), timeline.convertSpread(phase), x, y, z, FIRE_SALT - epoch);
+        int lit = phase; // the phase that lit the spot: the earliest of the finite phases in a row whose share covers the roll
+        while (!infinite && lit > 0 && !timeline.infinite(lit - 1) && roll < share(lit - 1, flammable)) lit--;
+        int epoch = infinite ? (int) timeline.depthAt(progress, line) : lit;
+        long due = infinite ? progress : spread(timeline.convertStart(lit), timeline.convertSpread(lit), x, y, z, FIRE_SALT - epoch);
         if (progress < due) {
             later(due);
             return null;
         }
         if (SolarConfig.nightDousesFire && dark(world, x, y, z, progress)) return null;
         return flammable ? Blocks.FIRE.getDefaultState() : SolarFire.forEpoch(epoch);
+    }
+
+    /** A phase's percent of surface blocks alight: flammable ones with vanilla fire, the others with solar fire. */
+    private static double share(int phase, boolean flammable) {
+        SolarConfig.Phase p = SolarConfig.phases[phase];
+        return flammable ? p.igniteFlammablePercent : p.ignitePercent;
+    }
+
+    private boolean doused;
+
+    /** Whether the last {@link #fire} call found rain falling there (solar fire goes out; it comes back after, where it belongs). */
+    public boolean doused() {
+        return doused;
+    }
+
+    /**
+     * Whether rain falls on the space above a column's surface: it rains, and the biome rains there (not in snowy or dry
+     * biomes, nor at heights where the biome gets too cold). In Cubic Chunks the rain comes down to the topmost opaque
+     * block, through glass and the like, as vanilla's isRainingAt has it there; the surface is never below that.
+     */
+    private static boolean rainedOn(World world, BlockPos pos) {
+        if (!world.isRaining()) return false;
+        Biome biome = world.getBiome(pos); // loaded: the cube being processed
+        return biome.canRain() && !biome.getEnableSnow() && biome.getTemperature(pos) >= 0.15F;
+    }
+
+    /** Whether rain puts out solar fire in the running phase (phase_n.rainDousesFire). */
+    public boolean rainDouses(long progress) {
+        int phase = timeline.phaseAt(progress);
+        return phase >= 0 && SolarConfig.phases[phase].rainDousesFire;
     }
 
     /** Time of day: sunset starts, sunrise starts; each spot's fire goes out (comes back) within FADE of them. */

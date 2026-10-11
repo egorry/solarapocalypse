@@ -72,6 +72,7 @@ public final class CubeEngine {
         final Map<CubePos, Long> wake = new HashMap<>();
         final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column
         long clock = UNSET; // the time every cube is brought up to
+        boolean raining; // as last seen: rain starting or stopping puts out or relights fire (phase_n.rainDousesFire)
     }
 
     private static final long UNSET = Long.MIN_VALUE;
@@ -99,6 +100,29 @@ public final class CubeEngine {
         State state = state(world);
         queueLoaded(world, state);
         if (jump) setClock(world, state, ApocalypseClock.progress());
+    }
+
+    /**
+     * Queues, for this round, the loaded cubes each loaded column's fire can stand in: from its lowest top to the block
+     * above its highest (height map reads only: cheap enough for one tick on a big server).
+     */
+    private static void queueSurfaces(WorldServer world, State state) {
+        for (Chunk column : world.getChunkProvider().getLoadedChunks()) {
+            IColumn heights = (IColumn) column;
+            int low = Integer.MAX_VALUE, high = Integer.MIN_VALUE;
+            for (int i = 0; i < 256; i++) {
+                int top = heights.getHeightValue(i & 15, i >> 4) - 1;
+                if (top < Integer.MIN_VALUE / 2) continue; // nothing opaque in the column
+                low = Math.min(low, top);
+                high = Math.max(high, top);
+            }
+            if (low > high) continue;
+            // ponytail: fire on glass or lava stacked a cube or more above the top waits for its cube's next look
+            for (ICube cube : heights.getLoadedCubes()) {
+                if (cube.getY() < Coords.blockToCube(low) || cube.getY() > Coords.blockToCube(high + 1)) continue;
+                if (state.queue.add(cube.getCoords())) state.wake.remove(cube.getCoords());
+            }
+        }
     }
 
     private static void queueLoaded(WorldServer world, State state) {
@@ -190,6 +214,10 @@ public final class CubeEngine {
         if (state.clock == UNSET || state.clock > progress) { // first run (the saved clock, else the present), or set back
             long saved = ApocalypseClock.engineClock(world.provider.getDimension());
             state.clock = saved < 0 || saved > progress ? progress : saved;
+        }
+        if (world.isRaining() != state.raining) {
+            state.raining = !state.raining;
+            if (changes.rainDouses(state.clock)) queueSurfaces(world, state);
         }
         boolean second = world.getTotalWorldTime() % 20 == 0;
         if (second) {
@@ -401,18 +429,21 @@ public final class CubeEngine {
                     }
                 }
                 // Fire: placed on the surface once the phase's conversions are done; removed when its ground goes (infinite
-                // phases) or at night (blocks.nightDousesFire). Fire that stays where it should is left alone.
+                // phases), at night (blocks.nightDousesFire) or under rain (phase_n.rainDousesFire). Fire that stays where it
+                // should is left alone.
                 IBlockState fire = null;
+                boolean doused = false; // rain on fire that belongs there otherwise
                 if (surfaceKnown && Coords.blockToCube(surface + 1) == cy) {
                     IBlockState below = blockAt(cubes, cx, cz, lx, surface, lz);
                     if (below != null) {
                         fire = changes.fire(world, pos.setPos(x, surface, z).toImmutable(), below, progress);
+                        doused = changes.doused();
                         wake = Math.min(wake, changes.wake());
                         if (fire != null && SolarFire.is(fire) && !(litInPlace && fireY == surface + 1)
                                 && nearFlammable(world, cubes, pos, x, surface + 1, z)) fire = null;
                     }
                 }
-                boolean stale = fireY != BlockChanges.NO_Y && manageFire && !(fire != null && SolarFire.is(fire) && fireY == surface + 1);
+                boolean stale = fireY != BlockChanges.NO_Y && (manageFire || doused) && !(fire != null && SolarFire.is(fire) && fireY == surface + 1);
                 if (stale) {
                     if (limited(edited, lz << 4 | lx)) return PARTIAL;
                     BlockChanges.apply(world, pos.setPos(x, fireY, z), storage.get(lx, Coords.blockToLocal(fireY), lz), AIR);
@@ -616,12 +647,12 @@ public final class CubeEngine {
      * A standing liquid, which the ground under it waits for: a vanilla source block (seas, lakes, pools), or any block of
      * another fluid. Vanilla water flowing into a cut after a pass does not hold the ground: it ebbs by itself, unseen.
      */
-    private static boolean standing(IBlockState state) {
+    public static boolean standing(IBlockState state) {
         return state.getMaterial().isLiquid() && !(state.getBlock() instanceof BlockLiquid && state.getValue(BlockLiquid.LEVEL) != 0);
     }
 
     /** A block of a loaded cube, or null if its cube is not loaded. */
-    private static IBlockState blockAt(ICubeProvider cubes, int cx, int cz, int lx, int y, int lz) {
+    public static IBlockState blockAt(ICubeProvider cubes, int cx, int cz, int lx, int y, int lz) {
         ICube cube = cubes.getLoadedCube(cx, Coords.blockToCube(y), cz);
         if (cube == null) return null;
         ExtendedBlockStorage storage = cube.getStorage();

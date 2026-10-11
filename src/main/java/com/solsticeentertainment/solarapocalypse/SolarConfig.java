@@ -45,6 +45,7 @@ public final class SolarConfig {
         public int convertDepth = 1; // conversions reach this many layers from the column's current surface (0: none)
         public double convertDays;   // conversions spread over this after destruction; -1 = rest of the phase's days
         public double ignitePercent, igniteFlammablePercent;
+        public boolean rainDousesFire = true;
         public String[] destroy;
         public String[] evaporate;
         public double sunDamage;
@@ -202,10 +203,10 @@ public final class SolarConfig {
                 "lighting work for the server and clients while fire moves with infinite erosion, a dimmer glow around it at\n" +
                 "night, and more mob spawns near it (they need block light 7 or less: at 8 none in its own space, a few beside\n" +
                 "it). Fire already burning keeps its old light until something relights it. Clients get the server's value.");
-        solarFireModel = enumValue(c, cat, "solarFireModel", FireModel.FULL,
-                "Client: FULL looks like vanilla fire (crossed flames and a flame wall on each side, 12 faces). SIMPLE draws only\n" +
-                "the crossed flames (4 faces), lighter for slower PCs with much fire in view. Applies when the game starts or\n" +
-                "textures reload (F3+T).");
+        solarFireModel = enumValue(c, cat, "solarFireModel", FireModel.SIMPLE,
+                "Client: SIMPLE draws only the crossed flames (4 faces): lighter with much fire in view, and it looks apart from\n" +
+                "vanilla fire. FULL looks like vanilla fire (crossed flames and a flame wall on each side, 12 faces). Applies when\n" +
+                "the game starts or textures reload (F3+T).");
 
         cat = "evaporation";
         c.setCategoryComment(cat, "How sun-exposed liquids vanish. Which liquids, from which phase: each phase's evaporate list.");
@@ -332,7 +333,7 @@ public final class SolarConfig {
                 "change it meanwhile; it lasts half a day into a following UNCHANGED phase. A thunderstorm darkens the sky so the\n" +
                 "world stops counting it as day: no direct sun damage while entities.sunNeedsDaytime applies, and players can\n" +
                 "sleep at any time (each sleep skips to the next morning, which the SUN clock counts). Rain puts out burning mobs\n" +
-                "and vanilla fire under the open sky; solar fire stays.",
+                "and vanilla fire under the open sky, and solar fire with rainDousesFire.",
                 new String[]{"INHERIT", "UNCHANGED", "NONE", "RAIN", "THUNDER"}).trim().toUpperCase(Locale.ROOT);
         for (Weather w : Weather.values()) if (w.name().equals(weather)) p.weather = w;
         if (p.weather == null && !weather.equals("INHERIT")) SolarApocalypse.LOGGER.warn("Config {}.weather: unknown value '{}', using INHERIT", cat, weather);
@@ -388,6 +389,10 @@ public final class SolarConfig {
         p.igniteFlammablePercent = c.get(cat, "igniteFlammablePercent", d.igniteFlammable,
                 "Percent of flammable surface blocks (wood, leaves, wool...) set alight with vanilla fire instead, which spreads\n" +
                 "and burns them as usual.").getDouble();
+        p.rainDousesFire = c.getBoolean("rainDousesFire", cat, true,
+                "Rain puts solar fire out while this phase runs, where it falls (open sky; not in snowy or dry biomes, nor\n" +
+                "where the height makes it snow), as it does vanilla fire, and the phase's fire lights again when it stops; no\n" +
+                "new fire (solar or vanilla) is lit there meanwhile. The surface cubes are looked at when rain starts and stops.");
         p.sunDamage = c.get(cat, "sunDamage", d.sunDamage, "Damage to mobs in direct sunlight per interval (2 = one heart).").getDouble();
         p.sunFireSeconds = c.getInt("sunFireSeconds", cat, d.sunFire, 0, 3600, "Seconds mobs in direct sunlight are set on fire.");
         p.backgroundDamage = c.get(cat, "backgroundDamage", d.backgroundDamage,

@@ -8,8 +8,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bright either way. Less light is less lighting work while fire moves with infinite erosion; at 8 mobs still cannot
   spawn in the fire's own space. Clients get the server's value.
 - `convertDepth` 0: no conversions at all while the phase runs, earlier phases' rules included.
-- `blocks.solarFireModel` (client): `SIMPLE` draws only the fire's crossed flames (4 faces instead of 12), for slower
-  PCs with much fire in view; `FULL` (default) looks like vanilla fire.
+- `phase_n.rainDousesFire` (default true): rain puts solar fire out where it falls (not in snowy or dry biomes), and
+  the phase's fire lights again when it stops; no new fire is lit in the rain.
+- `blocks.solarFireModel` (client): `SIMPLE` (default) draws only the fire's crossed flames (4 faces instead of 12):
+  lighter with much fire in view, and it looks apart from vanilla fire; `FULL` looks like vanilla fire.
 - `layer=2` / `layer=2-4` on a convert rule: it acts only in those layers below the surface, so a whole gradient of
   stages can run ahead of infinite erosion (`depth=3` still means the top 3 layers).
 - Thrown water bottles (splash and lingering) put out solar fire, as they do vanilla fire.
@@ -80,6 +82,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Fire an earlier phase lit comes back at once after night (`blocks.nightDousesFire`) or rain, instead of at the next
+  phase's own moment for the spot.
 - Vitrified sand is opaque: more sand than glass, no light or sight through it (same texture).
 - Ground under standing water or lava (seas, lakes, pools) is no longer eroded while the liquid is there: it waits until
   the liquid has evaporated or been destroyed, then catches up, so sea and lake floors keep their shape and drain flat

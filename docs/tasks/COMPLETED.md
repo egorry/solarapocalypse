@@ -2,6 +2,24 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 17 (2026-10-11)
+- `blocks.solarFireModel` defaults to `SIMPLE` (the user prefers its look, apart from vanilla fire, and found it
+  performs much better).
+- Confirmed by the user's test: fire light 8 is fine (mobs do not spawn on the fire, and later phases kill them
+  anyway); the spawner flames fix; the opaque vitrified sand texture.
+- Read the user's spark profiles: server thread only (spark's `/spark` in singleplayer samples the integrated
+  server), so they do not cover the fire model, which is drawn by the client; no retest needed, as the user already
+  saw SIMPLE perform better (SPEC section 4: what the server thread did, and `/sparkc` for the client).
+- Answered the water question (settings for seas draining before the land): the user's config already does it with
+  turn 16's hold; checked on their settings with the new bench variants `sea` and `liquidsout` (SPEC section 3,
+  Evaporation: the settings, the measurement, and a lead-in phase for every sea gone before any land erodes).
+- Rain puts out solar fire (to-do, the user's turn 11 ask): `phase_n.rainDousesFire` (default true); the engine
+  relooks at the surface cubes when rain starts and stops. Found by a review of this turn's work: fire an earlier
+  phase lit waited for the running phase's own moment, so rain missed it and night or rain could leave it dark for up
+  to a phase's length; it now keeps the moment of the phase that lit it. Self-test checks (both).
+- The self-test's TOP_Y lag check found 4 terrain blocks cut ahead of the line on one seed; turn 16's code does the
+  same there (TODO, terrain cut ahead of the TOP_Y line).
+
 ## Turn 16 (2026-10-11)
 - Vitrified sand is opaque (the user: more sand than glass; same texture without its transparency); bench: ~23 % more
   layers where it is the surface, as sky light no longer goes through it.

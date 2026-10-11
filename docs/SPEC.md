@@ -127,6 +127,27 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    `evaporation.mode`: `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
    evaporation has started.
+   **Seas before the land** (turn 17, the user asked for the settings that drain the water before the land under it):
+   with the hold under standing liquid (point 1), a phase that both erodes and evaporates drains each sea flat from
+   `evaporation.topY` and each floor then catches up with the land around it. Settings: `evaporation.mode = LAYERS`,
+   `evaporation.layersPerDay` at least the phase's `layersPerDay` (more: the water goes down faster than the land), and
+   the liquids in an `evaporate` list from that phase or earlier. A destroy list with `*` takes liquids too, by their
+   height above the floor (anything more than `world.surfaceMargin`, 48, above it at the phase start, the rest over the
+   first tenth of the phase); with the user's phase (2 days, 200 layers a day) the level comes first in seas shallower
+   than ~40. `!material:water` and `!material:lava` in the destroy list leave liquids to evaporation alone, which is
+   worse for water below the sea floor (flooded caves and ravines the line opens): with `*` it goes with the line, without
+   it waits for the level and holds the ground under it meanwhile; and a liquid in no `evaporate` list would hold the
+   ground under it for ever. So keep `*`. Measured on the user's settings (bench variant `sea`:
+   seed 14014, ~30 k sea columns of a vanilla-like preset, no fire or conversions): the wet columns' water top stayed on
+   one or two Y values all the way down; no standing water over air after the start; drained floors lost as many layers
+   as the land (e.g. 18-19 at line 19 against the land's 18-19); water above the level only under leaves (no sun) until
+   the tree went; pockets below the floor (flooded caves and ravines) went with the line. With the liquids out of the
+   destroy list (variant `liquidsout`) the sea came down the same, but those pockets waited for the level (columns
+   still wet at lines 38 / 46 / 53: 345 / 431 / 567, against 190 / 82 / 63 with `*`). For every sea gone before any land
+   erodes, as in the default phases (water evaporates in phase 3, the erosion starts in phase 7), put a phase before the
+   erosion that only evaporates: no destroy list, depth 0, `evaporate` with the liquids, and days enough for the
+   deepest water: (`evaporation.topY` - the lowest sea floor) / `evaporation.layersPerDay`, e.g. 0.35 for 64 deep at 200
+   a day (or `INSTANT` and a short phase; whole seas then go top down cube by cube at its start).
 4. **Fire**: once the surface block of a column has no conversion left in the phase, `ignitePercent` % of surface
    positions (chosen at random but fixed, over the conversion time) get **solar fire** on top: vanilla fire's looks,
    sound, light and entity burning (mobs and players catch fire, dropped items burn up; it tells Forge it burns, as
@@ -149,9 +170,10 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    blocks), sent to clients on login and
    on `/solar reload` (clients light the world too and must agree); the flames are drawn full-bright whatever the
    level, and fire already burning keeps the light it was placed with until something relights the spot. Its model
-   (client, `blocks.solarFireModel`): `FULL` is vanilla fire's (four crossed flames plus a flame wall on each side,
-   double-faced: 12 faces; each part picks one of two or four texture variants), `SIMPLE` the crossed flames only (4
-   faces); read when models bake (game start, F3+T). Vanilla fire is left to vanilla (it spreads and burns out). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
+   (client, `blocks.solarFireModel`): `SIMPLE` (the default since turn 17: the user prefers its look, apart from
+   vanilla fire's, and found it performs much better) the crossed flames only (4 faces), `FULL` vanilla fire's (four
+   crossed flames plus a flame wall on each side, double-faced: 12 faces; each part picks one of two or four texture
+   variants); read when models bake (game start, F3+T). Vanilla fire is left to vanilla (it spreads and burns out). `blocks.nightDousesFire` (default false): night puts solar fire out, each spot at its own moment
    between time of day 12000 and 14000, and lights the same spots again between 23000 and 1000; no new fire (solar or
    vanilla) is lit at night, vanilla fire already burning is left to vanilla. It reads the world's time of day, so
    sleeping and `/time set` take effect on the next look at each cube (in `TICKS` clock mode, when the cube's next look
@@ -160,8 +182,18 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    would take the space vanilla fire spreads into, or look odd next to wood that never catches (fire spread off). Those
    positions just stay empty (checked on each look at the cube). Ice and snow next to or near solar fire melt as vanilla
    has them (ice at block light 9+, about 6 blocks from fire; snow at 12+, about 3 blocks), on their random ticks.
-   Water flowing or placed into solar fire replaces it, as with vanilla fire. Rain does not put it out yet (vanilla
-   fire dies in rain on its own random tick, which solar fire never gets): planned per phase, see TODO.md.
+   Water flowing or placed into solar fire replaces it, as with vanilla fire. **Rain** puts it out with
+   `phase_n.rainDousesFire` (default true; turn 17, the user's turn 11 ask: players expect it, and solar fire should differ
+   from vanilla fire only in spreading): where rain falls on the fire's spot (a biome that rains there: not snowy or
+   dry biomes, nor heights where the biome gets too cold; in Cubic Chunks rain comes down to the topmost opaque block,
+   through glass, as vanilla's own rain check has it there), solar fire goes out on the engine's next look, whichever
+   phase lit it, and the spots the phase has fire on light again once the rain stops; no new fire, solar or vanilla, is
+   lit there meanwhile (vanilla fire already burning is left to vanilla, which puts it out in rain on its own ticks).
+   When rain starts or stops (the world's rain strength crossing vanilla's 0.2), the engine queues each loaded column's
+   cubes from its lowest top to the block above its highest for its current round (height map reads only), so it takes
+   a few seconds to go round. Outside infinite phases a spot an earlier phase lit keeps that phase's moment, so after
+   rain or night it comes back at once instead of at the running phase's own moment for the spot (turn 17: until then a
+   spot phase 3 lit could stay dark for up to phase 4's length after a night, and rain did not reach it either).
 
 - **Vitrified sand** (`solarapocalypse:vitrified_sand`, `variant` sand or red_sand like vanilla sand): sand the sun
   melted in place, a rough, cloudy glass, opaque (turn 16, the user: more sand than glass; it was see-through until
@@ -190,7 +222,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   thunder end together). Vanilla consequences: a thunderstorm darkens
   the sky enough that the world no longer counts it as day, so there is no direct sun damage while
   `entities.sunNeedsDaytime` applies, and players can sleep at any time (each sleep skips to the next morning, which
-  the `SUN` clock counts); rain puts out burning mobs and vanilla fire under the open sky (not solar fire yet).
+  the `SUN` clock counts); rain puts out burning mobs and vanilla fire under the open sky, and solar fire with
+  `phase_n.rainDousesFire` (above), so a `RAIN` or `THUNDER` phase has solar fire only where no rain falls (snowy and
+  dry biomes).
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
   `blocks.vanillaFireBlacklist` (default TNT); those blocks are treated like the rest (solar fire, which lights nothing).
 - Changes use `setBlockState` flag 2|16 (clients told, neighbours not: nothing flows or falls); `blocks.blockPhysics`
@@ -327,6 +361,16 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   change): less light is less lighting work, outside the engine's budget, so at 8 the server spends ~30 % less time a
   layer than at 15. The first attempt at the water hold (only the block right under a liquid waited) left a crust over
   eroded ground and cost a quarter of the layers; it was replaced before release.
+- The user's spark profiles (turn 17; spark 1.6.3, `/spark profiler` in singleplayer, `--stop --save-to-file`): it
+  samples only the integrated server's "Server thread", so the fire model (drawn by the client: its render thread, its
+  chunk builders and the GPU) is not in them; `/sparkc profiler --thread *` samples the client's threads (CPU only: the
+  GPU's work shows as time waiting in the render thread), and FPS from F3 stays the direct measure. The user's SIMPLE
+  run (the first minutes of phase 1 on a new world: the sea draining, terrain still generating around the player;
+  ~92 s sampled): the thread idle ~55 % of the time, Cubic Chunks generating cubes ~26 %, its lighting ~24 %, the
+  engine ~14 % (block changes ~half of it), mobs ~10 % (these overlap: lighting runs inside cube loading). The FULL
+  run (~46 layers in, the engine 15 layers behind; ~98 s): idle ~71 %, lighting ~11 %, the engine ~5 %. Spark's
+  built-in Java sampler times are approximate (a method's children can add up to more than it). The two runs differ in
+  what the server was doing, not only in the model.
 - Clients (Cubic Chunks 0.0.1271): a cube resent whole replaces the client's blocks but keeps its tile entities, also
   where the block is gone (vanilla's chunk packets drop them; Cubic Chunks' `PacketCubes` does not), so a destroyed
   spawner kept making flames for the user (turn 15). The client removes tile entities whose block no longer has one,
@@ -434,6 +478,17 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   catch-up (its water had ebbed by itself), so only standing liquid holds now. Turn 16's first run found the
   conversion checks at 0 because throwaway phases had `convertDepth` 0, which now means no conversions; a phase's
   `convertDepth` defaults to 1 in code too.
+  Turn 17 (2026-10-11, seed 699324865493784867): rain on phase 4's fire (stages 8-10; phase 4's held `NONE` weather
+  lifted for it): 4337 solar fires, under rain 0 where it rains (no spot where the biome snows on that seed), 4337 again
+  once it stopped; turn 16's code on the same seed keeps all 4337 in the rain, so the check tells the two apart. Fire
+  phase 3 lit, looked at just after phase 4 starts: 20 of 20 spots alight at once with phase 3's tag, all 20 out under
+  rain (turn 16's code waited for phase 4's own moment for each spot). Fire is now tagged by the phase that lit it: at
+  the end of phase 3, 847 by phase 2 and 1249 by phase 3 (the same 2097 in all; before, the jump over phase 2 tagged them
+  all phase 3). Every
+  other check as before (line checks 0, evenness 99.1-99.2 %, pillar 2 then 0), except the TOP_Y lag check: 4 terrain
+  blocks at Y -38 gone below both lines (TOP_Y engine line at -29, SURFACE line there at 16-18), the same with turn 16's
+  code, so not from this turn (TODO, terrain cut ahead of the TOP_Y line); the check now prints the SURFACE line at each
+  such block.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched. From turn 13, phase 11's settings as the only phase, starting after a quarter
   day, so it runs as in play without skips (no backlog from a jump). Turn 14 ("Phase 11 SURFACE Test 5", 2048 changes

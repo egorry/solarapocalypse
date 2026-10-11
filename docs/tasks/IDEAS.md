@@ -16,4 +16,9 @@
 - Per-phase evaporation rate (the user, turn 12, asked for water to come down by its own level next to the TOP_Y line:
   that is `evaporation.mode = LAYERS`, already the default, but its `layersPerDay` and `topY` are one setting for every
   phase). Per-phase values if a set of phases needs water to go at different speeds.
-- Measure client cost (packets, render rebuilds) with `runClient`; the user tests multiplayer themselves first.
+- Measure client cost (packets, render rebuilds) with `runClient`; the user tests multiplayer themselves first. The
+  user has spark 1.6.3 for Forge 1.12.2 now (turn 17): `/sparkc profiler --thread *` samples the client's threads
+  (render thread, chunk builders; `*` = every thread in 1.6.3 too), `/spark profiler` only the server's. Spark Unforged
+  1.11.140, which the user tried first, failed in the dev client on a mixin accessor for Minecraft's thread field
+  (`field_152352_aC` not found: the dev workspace runs with readable names, not the obfuscated ones the mod targets),
+  so it probably works in the real pack.

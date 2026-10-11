@@ -100,6 +100,7 @@ public final class SelfTest {
                 carryCheck();
                 aboveCheck();
                 settleCheck();
+                rainCheck();
                 cap = SolarConfig.maxBlockChangesPerTick;
                 SolarConfig.maxBlockChangesPerTick = 0; // catch-ups at full speed; the cap is checked at the end
                 SolarConfig.phases[3].message = "&6The ground cracks"; // the phase 4 start log line carries it
@@ -169,13 +170,25 @@ public final class SelfTest {
                 break;
             case 8:
                 if (!drained(3000)) return;
-                fire("morning (expect 10 % again)");
+                fireCount = fire("morning (expect 10 % again)");
                 SolarConfig.nightDousesFire = false;
+                SolarConfig.phases[3].weather = SolarConfig.Weather.UNCHANGED; // phase 4 holds NONE: lets this rain fall
+                rain(true, "rain on phase 4's fire (rainDousesFire)");
+                break;
+            case 9:
+                if (ticks - waited < 20 || !drained(3000)) return; // the engine sees the rain on its next tick
+                rainFire("rain (expect none where it rains; where no rain falls it burns on)");
+                rain(false, "the rain stops: the same fire comes back");
+                break;
+            case 10:
+                if (ticks - waited < 20 || !drained(3000)) return;
+                log("solar fire after the rain: {} (was {})", fire("after the rain"), fireCount);
+                SolarConfig.phases[3].weather = SolarConfig.Weather.NONE;
                 world.getWorldInfo().setRaining(true); // phase 5 inherits phase 4's NONE: this rain must stop
                 world.getWorldInfo().setThundering(true);
                 jump(t.start(4) + Timeline.days(0.5), "phase 5 + 0.5 days");
                 break;
-            case 9:
+            case 11:
                 if (!drained(3000)) return;
                 log("weather in phase 5 (NONE, inherited from phase 4; rain was set before the jump): raining {} (false),"
                         + " thundering {} (false)", world.getWorldInfo().isRaining(), world.getWorldInfo().isThundering());
@@ -192,7 +205,7 @@ public final class SelfTest {
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
                 lastChanged = BlockChanges.changed;
                 break;
-            case 10:
+            case 12:
                 maxChanges = Math.max(maxChanges, BlockChanges.changed - lastChanged);
                 lastChanged = BlockChanges.changed;
                 if (ticks - waited < 100) return;
@@ -202,7 +215,7 @@ public final class SelfTest {
                 stage++;
                 waited = ticks;
                 break;
-            case 11:
+            case 13:
                 if (!drained(3000)) return; // the skip's catch-up first
                 evenness("caught up after the skip");
                 SolarConfig.maxBlockChangesPerTick = cap;
@@ -211,7 +224,7 @@ public final class SelfTest {
                 stage++;
                 waited = ticks;
                 break;
-            case 12:
+            case 14:
                 ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 16 / 20); // a phase 5 layer per 20 ticks; phase 6 from tick 320
                 if (ticks - waited < 400) return;
                 evenness("the clock running ahead of the engine");
@@ -222,7 +235,7 @@ public final class SelfTest {
                 jump(t.reachTime(planeY, SolarApocalypse.topY(world), Timeline.TOP),
                         "phase 6 (TOP_Y line from Y " + SolarApocalypse.topY(world) + ") down to Y " + planeY);
                 break;
-            case 13:
+            case 15:
                 if (!drained(3000)) return;
                 long top = SolarApocalypse.topY(world) - (long) t.depthAt(ApocalypseClock.progress(), Timeline.TOP) + 1;
                 lineCheck("TOP_Y line at Y " + top, (x, z) -> (int) top);
@@ -232,7 +245,7 @@ public final class SelfTest {
                 jump(t.reachTime(lagY, SolarApocalypse.topY(world), Timeline.TOP), "phase 6, TOP_Y line down to Y " + lagY
                         + " (just below the lowest ground)");
                 break;
-            case 14:
+            case 16:
                 if (!drained(3000)) return;
                 solidBefore = solidColumns();
                 SolarConfig.maxBlockChangesPerTick = 4096; // fast enough to step many layers in the run, still slower than the clock
@@ -242,7 +255,7 @@ public final class SelfTest {
                 stage++;
                 waited = ticks;
                 break;
-            case 15:
+            case 17:
                 ApocalypseClock.set(ApocalypseClock.progress() + Timeline.DAY / 64 / 20);
                 if (ticks - waited == 400) reloadCubes();
                 if (ticks - waited < 800) return;
@@ -253,7 +266,7 @@ public final class SelfTest {
                 stage++;
                 waited = ticks;
                 break;
-            case 16:
+            case 18:
                 if (!drained(3000)) return;
                 log("a stone pillar under water in the eroded zone (water's destroy and evaporation off): {} of 2 stones kept (2)", poolStones());
                 world.setBlockState(poolAt.up(2), Blocks.AIR.getDefaultState(), 2);
@@ -261,7 +274,7 @@ public final class SelfTest {
                 stage++;
                 waited = ticks;
                 break;
-            case 17:
+            case 19:
                 if (!drained(3000)) return;
                 log("the same pillar once its water is gone: {} of 2 stones kept (0)", poolStones());
                 server.initiateShutdown();
@@ -409,7 +422,9 @@ public final class SelfTest {
             below += sunk.cardinality();
             for (int b = sunk.nextSetBit(0); b >= 0 && strays.size() < 5; b = sunk.nextSetBit(b + 1)) {
                 BlockPos at = new BlockPos((int) (e.getKey() >> 32), b + SOLID_LOW, (int) (long) e.getKey());
-                strays.add(at + " now " + world.getBlockState(at) + ", above " + world.getBlockState(at.up()));
+                int ground = CubeEngine.groundAt(world, at.getX(), at.getZ()); // the SURFACE line, frozen in phase 6, can be deeper
+                strays.add(at + " now " + world.getBlockState(at) + ", above " + world.getBlockState(at.up()) + ", SURFACE line at Y "
+                        + (ground == BlockChanges.NO_Y ? "?" : ground - (long) SolarApocalypse.timeline().depthAt(ApocalypseClock.progress(), Timeline.SURFACE) + 1));
             }
             int from = Math.max(0, line + 1 - SOLID_LOW);
             if (from < now.length()) above += now.get(from, now.length()).cardinality();
@@ -498,6 +513,45 @@ public final class SelfTest {
         engineBlocks = BlockChanges.changed;
         waited = ticks;
         stage++;
+    }
+
+    /** Starts or stops rain at once (vanilla's rain fades in and out over 100 ticks); the engine notices on its next tick. */
+    private static void rain(boolean on, String what) {
+        world.getWorldInfo().setRaining(on);
+        world.getWorldInfo().setRainTime(12000);
+        world.prevRainingStrength = world.rainingStrength = on ? 1 : 0; // setRainStrength is client-only
+        log("--- {}", what);
+        engineNanos = CubeEngine.nanos;
+        engineCubes = CubeEngine.cubesProcessed;
+        engineBlocks = BlockChanges.changed;
+        waited = ticks;
+        stage++;
+    }
+
+    /** Counts solar fire in the loaded spawn columns where rain falls on it, and where none falls (snowy and dry biomes). */
+    private static void rainFire(String when) {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int rained = 0, dry = 0;
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                for (ICube cube : new ArrayList<>(((IColumn) column).getLoadedCubes())) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty()) continue;
+                    for (int i = 0; i < 4096; i++) {
+                        if (!SolarFire.is(storage.get(i & 15, i >> 8, (i >> 4) & 15))) continue;
+                        BlockPos pos = new BlockPos((cx << 4) + (i & 15), (cube.getY() << 4) + (i >> 8), (cz << 4) + ((i >> 4) & 15));
+                        net.minecraft.world.biome.Biome biome = world.getBiome(pos);
+                        if (biome.canRain() && !biome.getEnableSnow() && biome.getTemperature(pos) >= 0.15F) rained++;
+                        else dry++;
+                    }
+                }
+            }
+        }
+        log("solar fire at {}: where it rains {} (0), where no rain falls (snowy and dry biomes) {}; raining {} (true)", when, rained, dry,
+                world.isRaining());
     }
 
     /** Sets the overworld's time of day (days ahead) and queues every loaded cube (the clock stands still: no players). */
@@ -838,6 +892,36 @@ public final class SelfTest {
     }
 
     /** Turns grass under tall grass and under a sunflower into path: both pop off at once, and nothing drops. */
+    /**
+     * Fire an earlier phase lit, looked at just after the next phase starts (turn 17): it belongs there at once (the
+     * phase that lit it keeps its moment), so it comes back after night or rain without waiting for the new phase's own
+     * moment for the spot; under rain it goes out.
+     */
+    private static void rainCheck() {
+        BlockChanges c = SolarApocalypse.changes(world);
+        Timeline t = SolarApocalypse.timeline();
+        IBlockState ground = Blocks.BEDROCK.getDefaultState(); // unbreakable: no conversion pending
+        BlockPos spawn = world.getSpawnPoint();
+        int found = 0, back = 0, epochKept = 0, doused = 0;
+        float strength = world.rainingStrength;
+        for (int i = 0; i < 4096 && found < 20; i++) {
+            BlockPos pos = new BlockPos(spawn.getX() + (i & 63), spawn.getY(), spawn.getZ() + (i >> 6));
+            net.minecraft.world.biome.Biome biome = world.getBiome(pos.up());
+            if (!biome.canRain() || biome.getEnableSnow() || biome.getTemperature(pos.up()) < 0.15F) continue;
+            IBlockState lit = c.fire(world, pos, ground, t.end(2) - 1); // phase 3, all but its last moments
+            if (lit == null || !SolarFire.is(lit)) continue;
+            found++;
+            IBlockState next = c.fire(world, pos, ground, t.start(3) + 1);
+            if (next != null && SolarFire.is(next)) back++;
+            if (next != null && SolarFire.epochOf(next) == SolarFire.epochOf(lit)) epochKept++;
+            world.prevRainingStrength = world.rainingStrength = 1;
+            if (c.fire(world, pos, ground, t.start(3) + 1) == null && c.doused()) doused++;
+            world.prevRainingStrength = world.rainingStrength = strength;
+        }
+        log("fire phase 3 lit, just after phase 4 starts: {} spots, alight at once {} ({}), tagged phase 3 still {} ({}); under rain"
+                + " out {} ({})", found, back, found, epochKept, found, doused, found);
+    }
+
     private static void settleCheck() {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();
