@@ -38,5 +38,7 @@ bash scripts/probe_server.sh <tag>            # fresh dev world + research probe
 bash scripts/smoke_server.sh <tag>            # start/stop the dev server, copy its log to research/
 python -I scripts/cubescan.py <save dir>       # liquid resting on air in a Cubic Chunks save (scan a copy, not a world in use)
 ./gradlew runServer -Pno_dev_mods             # dev server without Cubic Chunks; the next normal run restores it
+./gradlew runClient -Pcompat_mods             # also Simple Difficulty and BuildCraft (the optional integrations); removed on the next run without it
+GRADLE_ARGS=-Pcompat_mods bash scripts/probe_server.sh <tag> selftest   # the self-test with them (their checks run)
 javap -p -c -cp ../SRPCCC/research/deobf/opencubicchunks-292243-5135427-deobf.jar <class>   # exact CC signatures
 ```

@@ -12,7 +12,8 @@ for f in latest.log debug.log; do [ -f run/logs/$f ] && cp run/logs/$f research/
 rm -rf run/world_cubic run/logs/latest.log
 # the self-test's own config: the engine is checked against fixed phases, whatever the defaults or run/config say
 [ "$MODE" != probe ] && cp scripts/$MODE.cfg run/config/solarapocalypse-$MODE.cfg
-./gradlew runServer --console=plain "-Pextra_jvm_args=-Dsolarapocalypse.$MODE=$VARIANT" > research/${MODE}_gradle_$TAG.log 2>&1 &
+# GRADLE_ARGS=-Pcompat_mods also installs Simple Difficulty and BuildCraft (their checks run when they are loaded)
+./gradlew runServer --console=plain $GRADLE_ARGS "-Pextra_jvm_args=-Dsolarapocalypse.$MODE=$VARIANT" > research/${MODE}_gradle_$TAG.log 2>&1 &
 GPID=$!
 for i in $(seq 1 240); do
   sleep 5

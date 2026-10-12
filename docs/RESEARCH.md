@@ -180,6 +180,10 @@ rebuilds (a headless server has no watchers).
   every x/z of the cube's column (and a row of each neighbour's) for every new or reloaded cube, empty ones too, so
   that tick's update for a column players have wraps to 0. A non-empty cube's own packet carries the column's heights
   (`WorldEncoder`), which repairs them; other block changes in that column that tick keep their wrong heights.
+  Turn 25 check of the repair path: every block set in a surface-tracked cube marks its x/z (`MixinChunk_Cubes`
+  `onEBSSet_setBlockState_setOpacity` calls `onHeightUpdate` whatever the height does), and `PlayerCubeMap.tick` sends
+  cube changes before column updates, so the correct heights normally arrive after the wrong ones; only the wrapped
+  tick loses them.
 - Cube readiness order (CC 0.0.1271, `CubeProviderServer.postCubeLoadAttempt`): generate, populate (fully populated:
   nothing writes into it any more), first light, `trackSurface` (joins the column height map), then `CubeWatcher`
   sends it in the same `PlayerCubeMap` tick, which clears the block changes queued before (`sendToPlayers`). No event

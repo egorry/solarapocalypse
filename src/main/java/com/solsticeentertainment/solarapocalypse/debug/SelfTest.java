@@ -52,6 +52,8 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fluids.Fluid;
+import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -130,8 +132,7 @@ public final class SelfTest {
                 backgroundCheck();
                 settledCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
-                pigs("phase 1 (fire only)");
-                for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) pig.setEntityInvulnerable(true); // live through phase 3
+                pigs("phase 1 (fire only; invulnerable until phase 4, so the sun pig burning is what counts)");
                 jump(t.end(2) - 1, "end of phase 3 (fire: 5 % solar)");
                 break;
             case 2:
@@ -166,6 +167,7 @@ public final class SelfTest {
             case 4:
                 if (!drained(3000)) return;
                 fireCount = fire("end of phase 4");
+                oilCheck();
                 dropCheck();
                 throwWater();
                 stage++;
@@ -361,8 +363,10 @@ public final class SelfTest {
      */
     private static void sendingCheck() {
         int[] off = freshColumn(-1, false), on = freshColumn(1, true);
+        log("height map marks this tick around the loaded column: it {} (256: no changes there this tick), east {}, south {}, south-east {}"
+                + " (16, 16, 1)", on[3], on[4], on[5], on[6]);
         log("Cubic Chunks patch in {} (true); fresh land columns at the end of phase 1, exposed grass / blocks changed / cubes"
-                + " updated on loading: option off {} / {} / {} (some, 0, 0), on {} / {} / {} (0, some, 4)", SolarCore.patched,
+                + " updated on loading: option off {} / {} / {} (grass where the biome has it, 0, 0), on {} / {} / {} (0, some, 4)", SolarCore.patched,
                 off[0], off[1], off[2], on[0], on[1], on[2]);
         SolarCore.missing = true;
         log("warning for a Cubic Chunks version the hook does not fit: {}", SolarApocalypse.hookWarning());
@@ -400,7 +404,30 @@ public final class SelfTest {
             }
         }
         SolarConfig.updateBeforeSending = was;
-        return new int[]{grass, (int) (BlockChanges.changed - changed), (int) (CubeEngine.cubesPrepared - prepared)};
+        return new int[]{grass, (int) (BlockChanges.changed - changed), (int) (CubeEngine.cubesPrepared - prepared),
+                CubeEngine.markedHeights(world, cx, cz), CubeEngine.markedHeights(world, cx + 1, cz),
+                CubeEngine.markedHeights(world, cx, cz + 1), CubeEngine.markedHeights(world, cx + 1, cz + 1)};
+    }
+
+    /** With BuildCraft (GRADLE_ARGS=-Pcompat_mods): its oil burns, so the sun's fire rules put vanilla fire on it; not on water. */
+    private static void oilCheck() {
+        Fluid oil = FluidRegistry.getFluid("oil");
+        if (oil == null || oil.getBlock() == null) return;
+        IBlockState state = oil.getBlock().getDefaultState(), water = Blocks.WATER.getDefaultState();
+        BlockChanges changes = SolarApocalypse.changes(world);
+        long progress = ApocalypseClock.progress();
+        BlockPos spawn = world.getSpawnPoint();
+        int onOil = 0, onWater = 0, n = 0;
+        for (int dx = 0; dx < 20; dx++) {
+            for (int dz = 0; dz < 20; dz++, n++) {
+                BlockPos pos = new BlockPos(spawn.getX() + dx, 250, spawn.getZ() + dz);
+                IBlockState fire = changes.fire(world, pos, state, progress);
+                if (fire != null && fire.getBlock() == Blocks.FIRE) onOil++;
+                if (changes.fire(world, pos, water, progress) != null) onWater++;
+            }
+        }
+        log("BuildCraft oil ({}) in the sun at the end of phase 4: vanilla fire on {} of {} (about 75 %), on water {} (0)",
+                state.getBlock().getRegistryName(), onOil, n, onWater);
     }
 
     /** Posts a load event for every loaded cube of 2 x 2 columns near spawn, as if a player had come back to them. */
@@ -675,6 +702,8 @@ public final class SelfTest {
         world.setBlockState(new BlockPos(dx, dy + 1, z), Blocks.AIR.getDefaultState(), 18);
         deepPig = pig(dx, dy, z);
         for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) {
+            // until phase 4: the fire's damage in phase 1 grows with the catch-up time, which differs between worlds
+            pig.setEntityInvulnerable(true);
             BlockPos eye = new BlockPos(pig.posX, pig.posY + pig.getEyeHeight(), pig.posZ);
             log("pig at {}: sun {}, heat {}", eye, Sky.at(world, eye), Sky.heat(world, eye));
         }

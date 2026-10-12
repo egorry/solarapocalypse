@@ -38,6 +38,12 @@ configurations {
         canBeResolved = true
         transitive = false
     }
+    // ...plus these with -Pcompat_mods: the optional integrations' mods, for testing them in the dev client
+    compatDevMods {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 
 dependencies {
@@ -95,6 +101,9 @@ dependencies {
     devMods rfg.deobf('curse.maven:cubicworldgen-304171:3546646')
     // SimpleDifficulty 1.12.2-0.3.9: also soft (compat/SimpleDifficultyHeat, its temperature modifier; only loaded with it)
     compileOnly rfg.deobf('curse.maven:simpledifficulty-360779:3613814')
+    compatDevMods rfg.deobf('curse.maven:simpledifficulty-360779:3613814')
+    // BuildCraft 7.99.24.8 (the pack's): only for testing burning liquids (its oil and fuels) in the dev client
+    compatDevMods rfg.deobf('curse.maven:buildcraft-906300:4720327')
 }
 
 // Need reobfJar to use uber jars, so dependencies that are shaded in are present

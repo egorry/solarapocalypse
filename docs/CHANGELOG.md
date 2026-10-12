@@ -136,6 +136,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
 ### Fixed
+- Cubic Chunks: block changes made in a tick where Cubic Chunks added a cube to the same column could leave clients a
+  wrong height map there (a likely cause of dark spots); the engine now waits a tick in such columns.
 - Liquids that say they block movement (BuildCraft's) could get solar fire, and counted as ground in a recorded
   surface (Cubic Chunks without CubicWorldGen).
 - Cubic Chunks worlds: ground uncovered two or more cubes below (a tree crown or a roof gone, an air gap between) got

@@ -9,28 +9,71 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- Cubic Chunks version mismatch for `performance.updateBeforeSending` (turn 24): done as a warning in the log and in chat
-  to the host or operators, the game running on without the feature. Forge's error screen (as for incompatible mods)
-  would instead stop the game from loading, for an optional feature; Claude's view: keep the chat warning [low, user].
 - Simple Difficulty default temperatures (turn 23, Claude's values): sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0, 0,
   1, 1, 2, 2, 3, 4, 5, 6, 7 over phases 1 to 11, added up in the sun (its normal is 11-14, hot 15-19, burning 20-25).
-  Change them as you like after testing [low, user].
+  The user tunes them while testing (turn 25; checklist section E) [low, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-- Updated before sending (turn 24, with the turn 23 items): explore new terrain in a later phase (`/solar phase 5`) with
-  `performance.updateBeforeSending` on: terrain loading in never changes in view; off: it does, a moment later.
-  `/solar status` counts the cubes done before sending. Also: the game starts normally with the mod as a coremod (the
-  log names `SolarApocalypseCore`; Forge warns about a coremod jar holding a mod, harmless, CubicWorldGen gets the same).
-- The optional items and break effects (turn 23; the user tests them together):
-  - Break effects: near a change, vanilla break particles and sounds (a fizz and smoke for liquids), none beyond 16
-    blocks, and no client lag when a whole layer goes near you (at most 8 a tick).
-  - Simple Difficulty: hotter in the sun and under cover open to the sky as the phases go on; sealed rooms and caves
-    normal. Note: in a self-test with Simple Difficulty loaded, the sun pig died faster than without it (its cause not
-    looked into; the pig checks assume a pack without it).
-  - Burning liquids: a BuildCraft oil pool in the sun in phase 2 or 3 catches fire and burns away.
-- Settled sand and gravel (turn 21; the user will test it later, turn 22) in a client: they should look exactly like vanilla sand, red sand and gravel (same
-  models, random rotation), with the same break particles and sounds, and pick block giving the vanilla item. Seen
-  with F3 as `solarapocalypse:settled_block[type=...]` where conversions made them.
+The user's test pass (turn 25 checklist; the user does it in turn 26). Tick the boxes here, and write what you saw
+(coordinates from F3 for anything odd) into prompt.txt, item by item.
+
+Setup
+- [ ] Pull, then start the dev client with `-Pcompat_mods` on the Gradle command line (`./gradlew runClient
+  -Pcompat_mods`, or in the IntelliJ run configuration's arguments). It adds Simple Difficulty and BuildCraft to
+  `run/mods` for sections E and F (the first start downloads them); the next run without it removes them again.
+- [ ] Config: to see every new default (the background conversions too), move `run/config/solarapocalypse.cfg` aside so
+  a fresh one is written. Keeping yours also works: new options come in with their defaults, but its empty
+  `backgroundConvert` lists stay empty.
+- [ ] A new Custom Cubic world (the default preset), creative, cheats on. Commands used below: `/solar phase <n>`
+  (jumps to a phase's start), `/solar status`, `/solar reload` (after editing the config), `/time add`.
+
+A. The game starts with the mod as a coremod (turn 24)
+- [ ] The client starts and a world loads normally. `run/logs/latest.log` names `SolarApocalypseCore`; a Forge warning
+  about a coremod jar that also holds a mod is harmless (CubicWorldGen gets the same one).
+- [ ] `/solar status` shows "... updated before sending" (not "Cubic Chunks patch not loaded"). No chat warning about
+  the Cubic Chunks version on joining.
+
+B. Terrain updated before you see it (turn 24, `performance.updateBeforeSending`)
+- [ ] `/solar phase 4`, then fly into terrain never loaded before: it arrives already changed (no grass or leaves,
+  dirt turned to gravel, no water) and nothing changes in view as it loads. The count in `/solar status` grows.
+- [ ] Set `updateBeforeSending=false` in the config, `/solar reload`, fly into new terrain the other way: it loads
+  as generated and changes in view a moment later. Set it back to `true` and `/solar reload`.
+
+C. Dark spots (to-do item 1 and the "covered after /time add" item; turn 25 guard, see below)
+- [ ] While doing the rest, watch the ground in the open: by day no darker patches, at night every fire spot lit.
+- [ ] `/solar phase 8`, then `/time add 24000` twice: no areas that look covered (dark as if blocks sat above them).
+- [ ] If you see a dark spot: note its coordinates and F3's light line there, run `/solar status` standing on it, then
+  rejoin the world (or fly 300+ blocks away and back). Tell me whether rejoining cleared it: if it did, it was the
+  clients' height maps (the turn 25 guard was meant to stop that); if not, it is the server's.
+
+D. Break effects (turn 23, `blocks.breakEffects`)
+- [ ] `/solar phase 3` beside trees and grass: leaves, plants and dirt changing near you show vanilla break particles and
+  sounds; water evaporating near you fizzes and smokes. Nothing for changes more than 16 blocks away.
+- [ ] `/solar phase 11` (a whole layer at a time, 200 a day): no client lag or stutter while the layers go near you.
+- [ ] Expected: terrain updated before you see it (section B) makes no effects.
+
+E. Simple Difficulty (turn 23; needs `-Pcompat_mods`)
+- [ ] Temperature in the sun rises as the phases go on (phases 1, 4, 8, 10), also under trees and overhangs open to the
+  sky (background heat); sealed rooms and caves stay normal.
+- [ ] Tune `phase_n.sunTemperature` and `phase_n.backgroundTemperature` to taste (turn 25: you do this while testing);
+  tell me the values you settle on and I make them the defaults.
+
+F. Burning liquids (turn 23; needs `-Pcompat_mods`)
+- [ ] A BuildCraft oil pool in the sun, `/solar phase 3`, then wait (fire comes to 10 % of burnable surfaces, spread over
+  the phase): the oil catches vanilla fire, which spreads over the pool and burns it away. Water beside it gets none.
+  (In phase 4 all liquids but lava evaporate, oil too.)
+
+G. Settled sand and gravel (turn 21)
+- [ ] After `/solar phase 4` (dirt became gravel in phase 3, gravel sand in phase 4): F3 on the converted ground shows
+  `solarapocalypse:settled_block[type=...]`. It looks exactly like vanilla sand and gravel (same textures, random
+  rotation), breaks with the same particles and sound, drops the vanilla item, and pick block gives the vanilla item.
+- [ ] Dig under it: it does not fall.
+
+H. Optional
+- [ ] Water evaporating in slivers rather than chunks (to-do item 3, which you will bring up): anything you notice
+  while watching water in phase 3.
+- [ ] The production coremod path: `./gradlew build`, then `build/libs/solarapocalypse-0.0.1.jar` in a copy of your
+  pack (not tried yet outside the dev client): it loads and section A holds there too.
 
 ## Will do (Cubic Chunks)
 1. Dark spots: why ground counts as under cover in open sky at all on a vanilla-like Cubic Chunks preset (the user,
@@ -46,10 +89,12 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
    user's spot is open and correct in one and under a real oak canopy in the other. Both reports predate the turn 12
    engine clock: recheck on the current code; if a spot shows again, Claude would add a self-test count of open-sky
    ground the engine treats as covered.
-   Lead (turn 24, not checked yet): Cubic Chunks marks every x/z of a column's heights whenever it tracks a new cube in
-   it (empty air cubes too), so that tick's heightmap packet wraps to 0 and clients drop the column's height changes;
-   block changes the engine sent that tick keep the wrong heights their own packet gives (RESEARCH.md). Clients would
-   then light those spots as covered. Same lead for the cubes that look covered after `/time add` (below).
+   Lead (turn 24): Cubic Chunks marks every x/z of a column's heights whenever it tracks a new cube in it (empty air
+   cubes too), so that tick's heightmap packet wraps to 0 and clients drop the column's height changes; block changes
+   sent that tick keep the wrong heights their own packet gives, (x, x) for (x, z) (RESEARCH.md). Clients would then
+   light those spots as covered. Same lead for the cubes that look covered after `/time add` (below). Turn 25: guarded
+   (the engine makes no change in such a column that tick; with the Cubic Chunks patch only); the user's test pass
+   (checklist section C) tells whether spots still show.
 2. Done (turn 24): the hook before players get a cube (COMPLETED.md); kept here so item 3 keeps its number.
 3. Water evaporating in slivers rather than chunks (the user, turn 11: "something we can definitely try to address
     later"): recheck after the turn 11 engine fix, which removed one cause (cut-short passes waiting behind every
@@ -70,11 +115,6 @@ Nothing here is dropped: each needs a yes or no (or another choice) from the use
   and no fire relit there until the next phase or day; likely Cubic Chunks lighting or heightmap lag after mass
   removal. Seen again in the turn 12 TOP_Y test: about 25 % of the area dark, without fire. Recheck after the turn 12
   engine clock (cubes no longer run at different times), then investigate after everything else [lowest, user].
-
-## Before a release
-- `use_mixins = true` (only for dev runs: Cubic Chunks needs MixinBooter there) makes the template's CurseForge and
-  Modrinth uploads list MixinBooter as required (`gradle/scripts/publishing.gradle`). The mod does not need it: drop
-  that requirement if those uploads are used (both are off now).
 
 ## Later (relies on bottom-up mechanic from above)
 - "Lava Apocalypse" preset for an infinite phase coming from below, converting air into lava.

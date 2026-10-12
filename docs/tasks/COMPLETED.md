@@ -2,6 +2,22 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 25 (2026-10-12)
+- The user's decisions: the Cubic Chunks mismatch stays a chat warning (not Forge's error screen); the user tunes the
+  Simple Difficulty temperatures while testing. Their ask: one more turn on to-do items that need no test, and a test
+  checklist for turn 26 (TODO.md, "Waiting for the user's test").
+- Dark spots lead (to-do item 1): confirmed in Cubic Chunks' code and guarded. When it tracks a cube, the column takes no
+  engine change that tick, and the columns beside it count the edge row it marks; the hook no longer changes the cube
+  above a new cube (players may have it). Self-test: 256 for the loaded column, 16, 16 and 1 beside it.
+- `-Pcompat_mods` puts Simple Difficulty and BuildCraft (the pack's versions, deobfuscated) into `run/mods` for testing
+  the integrations in the dev client; the self-test checks BuildCraft oil under the fire rules when it is loaded.
+- Publishing no longer lists MixinBooter as required (was "Before a release").
+- The sun pig that died faster with Simple Difficulty loaded (turn 23 note): not Simple Difficulty (it has no hook on
+  mobs), but the self-test's timing. The pig burns through phase 1's catch-up, which took 200 ticks in that world
+  instead of 140. The test pigs are now invulnerable until phase 4.
+- Not started: the vanilla-world block engine (TODO.md), several turns of work; after the test pass rather than half
+  done before it.
+
 ## Turn 24 (2026-10-12)
 - The user's question: can the Cubic Chunks hook be optional, config-based and without a mixin mod (no hard
   dependencies)? Yes: a plain Forge coremod (one class, `core/SolarCore`) adds one call to Cubic Chunks' `Cube.trackSurface`,

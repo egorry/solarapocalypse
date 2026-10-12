@@ -474,7 +474,10 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   `performance.statusLogSeconds` (0 = off; turn 22, the user's verbose debug mode) writes the status lines to the log
   every that many seconds while a phase runs, one line per affected dimension, measured at its spawn point.
 - Fewer than 256 x/z per column change per tick (CC's client heightmap packet counts them in a byte), except in cubes
-  no player has yet (above).
+  no player has yet (above). In a tick where Cubic Chunks tracks a new or reloaded cube, it marks the whole column
+  itself (and the edge row of the columns east and south), which wraps that update: the engine then makes no change in
+  that column until the next tick (turn 25), as a block change sent then would leave clients wrong heights (to-do item
+  1, dark spots). Known only with the Cubic Chunks patch in.
 - Nothing loads or generates a cube: a cube is processed only when it and what its blocks depend on are loaded,
   otherwise it waits, and catch-up makes it right later. The one exception is opt-in: `blocks.blockPhysics` notifies
   neighbours, which can generate a cube at a cube edge. Vanilla fire checks that its area is loaded (Forge).

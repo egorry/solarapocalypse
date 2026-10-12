@@ -15,13 +15,16 @@ def devModsMarker = file('run/mods/.solarapocalypse-dev-mods')
 def installDevMods = tasks.register('installDevMods') {
     group 'solarapocalypse'
     description 'Installs the devMods configuration (deobfuscated CubicChunks, CubicWorldGen) into run/mods'
-    def modJars = configurations.devMods
+    def compat = project.hasProperty('compat_mods')
+    def modJars = compat ? configurations.devMods + configurations.compatDevMods : configurations.devMods
     inputs.files(modJars)
     inputs.property('noDevMods', project.hasProperty('no_dev_mods'))
+    inputs.property('compatMods', compat)
     outputs.dir(devModsDir)
     doLast {
         devModsDir.mkdirs()
-        // -Pno_dev_mods removes them instead: checks that the mod runs without Cubic Chunks
+        // -Pno_dev_mods removes them instead: checks that the mod runs without Cubic Chunks; -Pcompat_mods adds
+        // Simple Difficulty and BuildCraft (removed again on the next run without it)
         Set<String> wanted = project.hasProperty('no_dev_mods') ? [] as Set : modJars.files.collect { it.name } as Set
         if (devModsMarker.exists()) {
             devModsMarker.readLines().findAll { it && !wanted.contains(it) }.each { new File(devModsDir, it).delete() }

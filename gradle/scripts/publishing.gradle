@@ -63,9 +63,7 @@ if (propertyBool('publish_to_curseforge')) {
             mainFile.changelog = parserChangelog()
             mainFile.changelogType = 'markdown'
         }
-        if (propertyBool('use_mixins')) {
-            mainFile.addRequirement 'mixin-booter'
-        }
+        // no MixinBooter requirement: use_mixins only serves dev runs (Cubic Chunks needs it there), the mod declares no mixins
         if (propertyBool('use_asset_mover')) {
             mainFile.addRequirement 'assetmover'
         }
@@ -87,11 +85,8 @@ if (propertyBool('publish_to_modrinth')) {
         gameVersions = ['1.12.2']
         loaders = ['forge']
         debugMode = propertyBool('modrinth_debug')
-        if (propertyBool('use_mixins') || propertyBool('use_asset_mover')) {
+        if (propertyBool('use_asset_mover')) { // no MixinBooter: see above
             dependencies {
-                if (propertyBool('use_mixins')) {
-                    required.project 'mixinbooter'
-                }
                 if (propertyBool('use_asset_mover')) {
                     required.project 'assetmover'
                 }

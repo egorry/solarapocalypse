@@ -73,7 +73,7 @@ public final class CubeEngine {
         final Set<CubePos> next = new LinkedHashSet<>();    // loaded, placed into or ready since the round began: the next round
         final Set<CubePos> notReady = new HashSet<>();      // looked at again every 20 ticks
         final Map<CubePos, Long> wake = new HashMap<>();
-        final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column
+        final Map<Long, BitSet> columnEdits = new HashMap<>(); // x/z edited this tick, per column (or WHOLE)
         long clock = UNSET; // the time every cube is brought up to
         boolean raining; // as last seen: rain starting or stopping puts out or relights fire (phase_n.rainDousesFire)
     }
@@ -82,6 +82,9 @@ public final class CubeEngine {
 
     /** CC's client heightmap packet counts changed x/z in a byte: keep a column under 256 per tick. */
     private static final int MAX_COLUMN_EDITS_PER_TICK = 255;
+
+    /** columnEdits of a column whose heights Cubic Chunks marked whole this tick (markHeights): no change there. */
+    private static final BitSet WHOLE = new BitSet(0);
 
     private static final Map<World, State> STATES = new WeakHashMap<>();
 
@@ -203,7 +206,15 @@ public final class CubeEngine {
 
     @SubscribeEvent
     public static void onWorldTick(TickEvent.WorldTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || event.world.isRemote || !SolarApocalypse.isActive(event.world)) return;
+        if (event.world.isRemote) return;
+        if (event.phase == TickEvent.Phase.START) {
+            // Cubic Chunks sends the tick's height map and block changes early in the world's tick, before it generates
+            // (and tracks) new cubes: from here to the next start is one client update
+            State state = STATES.get(event.world);
+            if (state != null) state.columnEdits.clear();
+            return;
+        }
+        if (!SolarApocalypse.isActive(event.world)) return;
         if (!(event.world instanceof WorldServer) || !CubicSky.isCubic(event.world)) return;
         long progress = ApocalypseClock.progress();
         if (progress < SolarApocalypse.timeline().firstStart()) return;
@@ -224,6 +235,7 @@ public final class CubeEngine {
     public static void surfaceTracked(ICube cube) {
         if (hookBroken) return;
         try {
+            markHeights(cube);
             prepare(cube);
         } catch (LinkageError e) {
             hookBroken = true;
@@ -232,6 +244,38 @@ public final class CubeEngine {
     }
 
     private static boolean hookBroken;
+
+    /**
+     * Cubic Chunks marks every x/z of a cube's column for clients' height maps when it tracks the cube (and the edge row
+     * of the columns east and south), so that tick's height map update for the column counts 256 x/z, which its byte
+     * wraps to none (RESEARCH.md). A block change sent there in the same tick would leave clients the wrong heights its
+     * own packet gives them (dark spots): the column takes no change this tick, and its neighbours count the row.
+     */
+    private static void markHeights(ICube cube) {
+        State state = STATES.get(cube.getWorld());
+        if (state == null) return;
+        int cx = cube.getX(), cz = cube.getZ();
+        state.columnEdits.put(columnKey(cx, cz), WHOLE);
+        markRow(state, cx + 1, cz, 16, 16); // x 0, every z
+        markRow(state, cx, cz + 1, 1, 16);  // z 0, every x
+        markRow(state, cx + 1, cz + 1, 1, 1);
+    }
+
+    private static void markRow(State state, int cx, int cz, int step, int count) {
+        BitSet edited = state.columnEdits.computeIfAbsent(columnKey(cx, cz), k -> new BitSet(256));
+        if (edited != WHOLE) for (int i = 0; i < count; i++) edited.set(i * step);
+    }
+
+    private static long columnKey(int cx, int cz) {
+        return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
+    }
+
+    /** For the self-test: x/z of a column counted this tick, 256 if Cubic Chunks marked it whole, -1 if none. */
+    public static int markedHeights(World world, int cx, int cz) {
+        State state = STATES.get(world);
+        BitSet edited = state == null ? null : state.columnEdits.get(columnKey(cx, cz));
+        return edited == null ? -1 : edited == WHOLE ? 256 : edited.cardinality();
+    }
 
     /** Why performance.updateBeforeSending cannot work with the installed Cubic Chunks, or null (it can, or it is off). */
     public static String hookWarning() {
@@ -270,7 +314,6 @@ public final class CubeEngine {
 
     private static void run(WorldServer world, long progress) {
         State state = state(world);
-        state.columnEdits.clear();
         BlockChanges changes = SolarApocalypse.changes(world);
         if (state.clock == UNSET || state.clock > progress) { // first run (the saved clock, else the present), or set back
             long saved = ApocalypseClock.engineClock(world.provider.getDimension());
@@ -418,7 +461,7 @@ public final class CubeEngine {
         boolean openedBelow = false;
         int deep = changes.deepestLayer();
         // no column limit for a cube no player has yet: Cubic Chunks marks its whole column's heights this tick itself
-        BitSet edited = BlockChanges.unseen ? null : state.columnEdits.computeIfAbsent(((long) cx << 32) | (cz & 0xFFFFFFFFL), k -> new BitSet(256));
+        BitSet edited = BlockChanges.unseen ? null : state.columnEdits.computeIfAbsent(columnKey(cx, cz), k -> new BitSet(256));
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
@@ -475,6 +518,7 @@ public final class CubeEngine {
                         // through its neighbour update)
                         IBlockState above = ly < 15 ? storage.get(lx, ly + 1, lz) : blockAt(cubes, cx, cz, lx, y + 1, lz);
                         if (above != null && SolarFire.is(above)) {
+                            if (ly == 15 && BlockChanges.unseen) return PARTIAL; // the cube above: players may have it
                             BlockChanges.apply(world, pos.setPos(x, y + 1, z), above, AIR);
                             if (fireY == y + 1) fireY = BlockChanges.NO_Y;
                             if (limited(edited, lz << 4 | lx)) return PARTIAL;
@@ -631,6 +675,7 @@ public final class CubeEngine {
     private static boolean limited(BitSet edited, int xz) {
         if (!SolarApocalypse.hasBudget(System.nanoTime() - cubeStart)) return true;
         if (edited == null) return false;
+        if (edited == WHOLE) return true;
         if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
         edited.set(xz);
         return false;
