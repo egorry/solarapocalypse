@@ -292,7 +292,8 @@ public final class SelfTest {
                 break;
             case 18:
                 if (!drained(3000)) return;
-                log("a stone pillar under water in the eroded zone (water's destroy and evaporation off): {} of 2 stones kept (2)", poolStones());
+                if (!poolLoaded) log("pillar checks skipped: the line passed below the loaded cubes in this world");
+                else log("a stone pillar under water in the eroded zone (water's destroy and evaporation off): {} of 2 stones kept (2)", poolStones());
                 world.setBlockState(poolAt.up(2), Blocks.AIR.getDefaultState(), 2);
                 SolarApocalypse.requeueAll();
                 stage++;
@@ -300,7 +301,7 @@ public final class SelfTest {
                 break;
             case 19:
                 if (!drained(3000)) return;
-                log("the same pillar once its water is gone: {} of 2 stones kept (0)", poolStones());
+                if (poolLoaded) log("the same pillar once its water is gone: {} of 2 stones kept (0)", poolStones());
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -376,7 +377,8 @@ public final class SelfTest {
 
     /**
      * Loads (generates and lights) the 4 cubes around the surface of the first land column from 30 columns east (west
-     * with -1) of spawn, top down, counting the grass under open sky in them.
+     * with -1) of spawn, counting the grass under open sky in them. With the option on bottom up, as Cubic Chunks often
+     * lights a surface before the cubes above it (the hook generates those itself to know the sky, turn 26).
      */
     private static int[] freshColumn(int direction, boolean option) {
         boolean was = SolarConfig.updateBeforeSending;
@@ -393,7 +395,8 @@ public final class SelfTest {
         }
         int grass = 0;
         ICubeProviderServer cubes = (ICubeProviderServer) world.getChunkProvider();
-        for (int cy = (top >> 4) + 2; cy >= (top >> 4) - 1; cy--) {
+        for (int n = 0; n < 4; n++) {
+            int cy = option ? (top >> 4) - 1 + n : (top >> 4) + 2 - n;
             ICube cube = cubes.getCubeNow(cx, cy, cz, ICubeProviderServer.Requirement.LIGHT);
             ExtendedBlockStorage storage = cube == null ? null : cube.getStorage();
             if (storage == null) continue;
@@ -562,6 +565,8 @@ public final class SelfTest {
      * line: nothing under standing liquid goes before the liquid). Water is taken out of every destroy and evaporate list,
      * so it stays; the stones are due.
      */
+    private static boolean poolLoaded;
+
     private static void poolSetup() {
         for (SolarConfig.Phase p : SolarConfig.phases) {
             if (p.destroy.length > 0) {
@@ -574,7 +579,8 @@ public final class SelfTest {
         int line = SolarApocalypse.topY(world) - (int) SolarApocalypse.timeline().depthAt(CubeEngine.clock(world), Timeline.TOP) + 1;
         poolAt = world.getSpawnPoint().add(3, 0, 3);
         poolAt = new BlockPos(poolAt.getX(), line + 4, poolAt.getZ());
-        log("pool at {} (TOP_Y line at Y {}), loaded {}", poolAt, line, world.isBlockLoaded(poolAt.up(2)));
+        poolLoaded = world.isBlockLoaded(poolAt) && world.isBlockLoaded(poolAt.up(2));
+        log("pool at {} (TOP_Y line at Y {}), loaded {}", poolAt, line, poolLoaded);
         SolarConfig.maxBlockChangesPerTick = 0;
         world.setBlockState(poolAt, Blocks.STONE.getDefaultState(), 2);
         world.setBlockState(poolAt.up(), Blocks.STONE.getDefaultState(), 2);
