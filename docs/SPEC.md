@@ -62,6 +62,8 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
   the phase's section: `message` in chat, `sound` (any sound name the client knows, played at the player), `splash` (a
   title on screen with the message small underneath; fonts, colours and timing in the `splash` section). All empty by
   default. `&` formatting codes work in both texts. `/solar announce [n]` replays a phase's announcement to yourself.
+  Several phases crossed at once (`/solar phase`, `/solar set` or `add`, a time skip): every start is logged, only the
+  last is announced (turn 27, the user's ask).
 - Splash fonts are client textures in the layout of `minecraft:textures/font/ascii.png` (`splash.titleFont`, default
   `solarapocalypse:textures/font/splash.png`, not shipped yet; `splash.messageFont`); Minecraft's font while missing. The
   title flickers between `splash.titleColor` and `splash.flickerColor`.
@@ -164,8 +166,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
-   `evaporation.mode`: `INSTANT` (the default again since turn 26, the user's ask: `LAYERS` showed as slivers) clears
-   whole bodies as their phase starts, cube by cube, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
+   A vanilla still liquid's name takes its flowing block too (`minecraft:water` takes `minecraft:flowing_water`, turn 27).
+   `evaporation.mode`: `INSTANT` clears whole bodies as their phase starts, cube by cube, `LAYERS` (the default; turn 26
+   made it `INSTANT` and turn 27 back, the user's call) lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
    evaporation has started.
    **Seas before the land** (turn 17, the user asked for the settings that drain the water before the land under it):
@@ -354,7 +357,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   above are generated first (not lit or sent), or its sky would count as unknown and nothing that needs the sun would
   change (turn 26: the user's test saw new terrain arrive unchanged). Not held by the engine's time budget: it runs
   inside Cubic Chunks' cube generation, whose own time limit per tick (`maxCubeGenerationTimeMillis`) counts it, so it
-  slows loading, not ticks. Cubes that load during another cube's pass wait in the queue as before. Lighting still runs after the changes: doing them before
+  slows loading, not ticks. Cubes that load during another cube's pass wait in the queue as before. Cubes such a pass
+  opens (the next cube down a draining sea, the cube above whose fire waited for the ground) go first on the next tick,
+  not at the end of the round (turn 27). Lighting still runs after the changes: doing them before
   the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
   the mod is also a Forge coremod (`core/SolarCore`; no mixin mod or other dependency) that adds one call at the end of
   Cubic Chunks' `Cube.trackSurface`; nothing else, and nothing without Cubic Chunks. A Cubic Chunks version the hook

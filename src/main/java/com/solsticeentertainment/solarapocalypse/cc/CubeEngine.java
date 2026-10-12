@@ -334,7 +334,9 @@ public final class CubeEngine {
         state.notReady.remove(pos);
         if (wake == PARTIAL) state.resume.add(pos);
         else if (wake != BlockChanges.NEVER) state.wake.put(pos, Math.max(wake, at + changes.minWake(at)));
-        state.queue.addAll(later);
+        // first on the next tick, not at the end of a round that holds every cube just loaded (a sea's next cube down,
+        // which players may have already, waited minutes after a teleport: the user, turn 27)
+        state.resume.addAll(later);
     }
 
     private static void run(WorldServer world, long progress) {

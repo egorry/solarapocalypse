@@ -2,6 +2,42 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 27 (2026-10-12)
+- The user's retest (the turn 26 list; ticked without a note = worked): `-Pcompat_mods` (their run configuration
+  fixed), terrain updated before sending, break effects at each block, dark spots (every fire spot lit at night). The
+  production jar loaded in a copy of their pack ("I did try this last turn, and yes it loaded fine"). Solar fire steps
+  not ticked: carried to the turn 27 retest.
+- Closed with those results: dark spots (to-do item 1, turns 19-26) and the cubes that looked covered after `/time add`
+  (turn 11; none in the turn 26 test). Reopen either if seen again.
+- Water slivers: "So for the water slivers to-do item, you never did any engine changes? In that case, don't worry
+  about this." Right: that item was a recheck after turn 11's engine fix (which removed one cause); turn 26 changed only
+  the default mode. Closed, as the user says. "Can we change this back to LAYERS as default, if that's how it was
+  before?": yes, `evaporation.mode` defaults to `LAYERS` again. The user: `INSTANT` left no water in their tests; the
+  flowing water was with `LAYERS`.
+- Flowing water (the user's "Water Flowing Test" save, phase 8, and its screenshot; scanned read-only): around
+  398 73 240, 2,102 water blocks, only 123 of them sources (in caves, Y 0-25); the rest is settled flow (still water
+  with a level, 1,640 of it falling) at Y 33-51, lying on vitrified sand and settled blocks. All of it is below the
+  `LAYERS` level, which had come down to Y 52 (phase 3 from day 0.75, 4 layers a day, the engine at day 3.85): it goes
+  as the level passes (Y 44 by day 5.75), except where it lies under an overhang (shaded, so never, as any covered
+  water). What set the water flowing after the sea came down is not found: with `blocks.blockPhysics` off the mod's
+  changes notify no neighbours, and a save does not show the cause (TODO.md retest asks for a live sighting).
+- Flowing liquids in evaporate lists ("is it possible to include the moving version of liquids for evaporation
+  alongside their still versions"): the defaults already take them (`material:water` and `*` match flowing water at
+  every level). An entry naming the still block now takes the flowing one too (`minecraft:water` takes
+  `minecraft:flowing_water`, lava alike); the self-test checks it.
+- "I'm guessing that the coremod affecting chunk generation doesn't apply to water?": it does (every rule, evaporation
+  too), but with `LAYERS` water below the level is not due yet, and a sea deeper than one cube drains a cube at a time:
+  when the cube below reached the player first, its water was still under water, and it then waited at the end of a
+  round that holds every cube just loaded (minutes after a teleport). Fixed: cubes a pass before sending opens go first
+  on the next tick.
+- `/solar phase 11` played every phase's sound, splash and message up to 11 (the user's tweak): a jump across several
+  phases now announces only the one it lands in (each start is still logged).
+- The user (mid-turn): Cubic Chunks SRP Test is their current pack, Cubic Chunks the old one (why Pollution of the
+  Realms is only there); they test in this workspace, so Claude looks at their instances only when asked (CLAUDE.md).
+  The versions question went to TODO.md.
+- Filed: phase stingers (the fire's sound cuts the phase sound short; stingers to act as music), the Simple Difficulty
+  "Thirst" switches (a question for the user), the user's Pollution of the Realms plan (TODO.md).
+
 ## Turn 26 (2026-10-12)
 - The user's test pass (the turn 25 checklist; ticked without a note = worked). Worked: the mod loading as a coremod
   (its log line, `/solar status` showing "updated before sending", no warning); no client lag in phase 11 and no

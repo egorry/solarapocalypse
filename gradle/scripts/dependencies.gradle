@@ -90,7 +90,7 @@ dependencies {
     // }
 
     // ---- Solar Apocalypse dependencies ----
-    // Versions pinned to the user's CurseForge instance "Cubic Chunks" (CubicChunks 0.0.1271, CubicWorldGen 0.0.152).
+    // Versions pinned to the user's old CurseForge instance "Cubic Chunks" (CubicChunks 0.0.1271, CubicWorldGen 0.0.152).
     // Cubic Chunks is a SOFT dependency: compiled against, never required at runtime (CC-referencing code is only loaded
     // when the mod is present). At dev runtime both mods are installed into run/mods as deobfuscated jars (extra.gradle).
     // CubicChunks 1.12.2-0.0.1271.0-SNAPSHOT (cubic world API: cubes, columns, heightmaps, cube events)

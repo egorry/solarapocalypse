@@ -135,9 +135,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Infinite erosion comes down evenly, a layer at a time, when the engine cannot keep up with `layersPerDay`: it then
   runs slower than set instead of leaving trenches several layers deep.
 - Solar fire's steps sound like stone (they were silent; vanilla fire sounds like wool when you walk along a ledge over it).
-- Evaporation clears whole bodies of water again by default (`evaporation.mode = INSTANT`); configs written before keep
-  their mode.
+- A jump across several phases (`/solar phase`, a skip) announces only the phase it lands in (message, sound,
+  splash), not each one crossed.
+- An `evaporate` entry naming a still liquid (`minecraft:water`) takes its flowing form too.
 ### Fixed
+- Cubic Chunks: after a teleport, the lower part of a sea deeper than 16 blocks could stay for minutes before draining.
 - Break effects all showed at one spot in each cube (the last block changed) instead of at each block.
 - Cubic Chunks: terrain updated before players get it often arrived unchanged, as the sky above a new surface was not
   known yet.

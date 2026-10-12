@@ -1,6 +1,7 @@
 package com.solsticeentertainment.solarapocalypse;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockDynamicLiquid;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.properties.IProperty;
@@ -301,7 +302,7 @@ public final class BlockRules {
                 }
                 if (changes) matched.put(state, list);
                 if (gone != null && gone.test(as)) removals.putIfAbsent(state, i);
-                if (dry != null && isLiquid(state) && dry.test(state)) rules.evaporate.putIfAbsent(state, i);
+                if (dry != null && isLiquid(state) && (dry.test(state) || dry.test(still(state)))) rules.evaporate.putIfAbsent(state, i);
             }
             for (Map.Entry<IBlockState, List<Rule>> e : matched.entrySet()) {
                 Step step = rules.convert.get(e.getKey());
@@ -510,6 +511,16 @@ public final class BlockRules {
         int n = 0;
         for (int q : evaporate.values()) if (q == phase) n++;
         return n;
+    }
+
+    /**
+     * A vanilla flowing liquid as its still block at the same level, else the state: an evaporate list naming
+     * minecraft:water takes minecraft:flowing_water too (the user, turn 27).
+     */
+    private static IBlockState still(IBlockState state) {
+        Material m = state.getMaterial();
+        if (!(state.getBlock() instanceof BlockDynamicLiquid) || m != Material.WATER && m != Material.LAVA) return state;
+        return BlockLiquid.getStaticBlock(m).getDefaultState().withProperty(BlockLiquid.LEVEL, state.getValue(BlockLiquid.LEVEL));
     }
 
     public static boolean isLiquid(IBlockState state) {

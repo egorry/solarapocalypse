@@ -5,7 +5,7 @@ erosion, sun damage, all applied retroactively to chunks loaded later) work in C
 position may never have been generated? How does CC know what faces the sky?
 
 Targets: CubicChunks 1.12.2-0.0.1271, CubicWorldGen 0.0.152, Forge 14.23.5, the user's `Cubic Chunks` CurseForge instance
-(world `CC - Migrated`, LongerDays x3). Sources: CC 0.0.1271 and CWG decompiled (`../SRPCCC/research/decomp/`), MC/Forge
+(world `CC - Migrated`, LongerDays x3; their old pack: the current one is `Cubic Chunks SRP Test`, turn 27). Sources: CC 0.0.1271 and CWG decompiled (`../SRPCCC/research/decomp/`), MC/Forge
 sources (`../SRPCCC/build/rfg/minecraft-src/java`), the pack's jars (javap), prior-art repositories, and a headless probe
 on a dev server (section 9). Five research agents read the code; four adversarial verifiers re-checked the code claims
 (section 10). Code citations below are shortened: `CC/` = `io/github/opencubicchunks/cubicchunks/` in the CC decomp,

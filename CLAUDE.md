@@ -25,7 +25,8 @@
 - Priorities: the user's where given, otherwise Claude's with the reason, labelled in TODO.md. Cubic Chunks items before
   vanilla-world items. Do what fits comfortably in a turn, not everything at once; keep it simple within reason.
 - Before a dev run that can overwrite the user's files (configs, logs), copy them aside and restore them afterwards.
-- The user's CurseForge instances may be read, never modified. Target pack: `C:\Users\Solstice\curseforge\minecraft\Instances\Cubic Chunks`.
+- The user's CurseForge instances: look at them only when the user asks (they test in this workspace), never modify
+  them. Current pack: `Cubic Chunks SRP Test`; `Cubic Chunks` is their old one, which the pinned versions came from.
 - Sibling projects `../SRPCCC` and `../SolsticeCCPatches` share the setup and research material (CC 0.0.1271 decomp:
   `../SRPCCC/research/decomp/CubicChunks`, CC source: `../SRPCCC/research/repos/CubicChunks`, CWG:
   `../SRPCCC/research/{decomp,repos}/CubicWorldGen`, MC sources: `../SRPCCC/build/rfg/minecraft-src/java`).

@@ -30,7 +30,8 @@ import java.util.UUID;
 
 /**
  * Phase starts: one log line, and from the phase's config a chat message, a sound and a splash title for every player;
- * several phases crossed at once are announced one after another; a player who joins later gets the running phase's.
+ * of several phases crossed at once (a skip, /solar phase) only the last is announced (each is logged); a player who
+ * joins later gets the running phase's.
  */
 public final class Announcer {
 
@@ -44,14 +45,14 @@ public final class Announcer {
         MinecraftForge.EVENT_BUS.register(Announcer.class);
     }
 
-    /** Phases still to announce to everyone, one after another (a skip can cross several). */
+    /** Phases still to announce to everyone, each once the previous splash is over. */
     private static final Deque<Integer> QUEUE = new ArrayDeque<>();
     private static int wait;
     /** Players who just joined, ticks until they get the running phase's announcement if they missed it. */
     private static final Map<UUID, Integer> JOINED = new HashMap<>();
     private static final String SEEN = Tags.MOD_ID + ":announcedPhase";
 
-    /** Phases first..last (0-based) have just started, in order; each is announced once the previous splash is over. */
+    /** Phases first..last (0-based) have just started, in order: all logged, only the last announced (the user, turn 27). */
     public static void phasesStarted(int first, int last, long progress) {
         Timeline timeline = SolarApocalypse.timeline();
         for (int phase = first; phase <= last; phase++) {
@@ -59,8 +60,9 @@ public final class Announcer {
             long day = phase == last ? progress : timeline.start(phase);
             SolarApocalypse.LOGGER.info("Solar apocalypse phase {} begins on day {}{}", phase + 1,
                     String.format("%.2f", day / (double) Timeline.DAY), p.message.isEmpty() ? "" : ": " + p.message);
-            QUEUE.add(phase);
         }
+        QUEUE.clear(); // one not shown yet is passed already
+        QUEUE.add(last);
     }
 
     /** Every server tick: the next queued phase announcement, and those owed to players who joined. */

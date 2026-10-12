@@ -25,6 +25,7 @@ import net.minecraft.block.BlockAnvil;
 import net.minecraft.block.BlockCrops;
 import net.minecraft.block.BlockDoublePlant;
 import net.minecraft.block.BlockLeaves;
+import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.BlockSand;
 import net.minecraft.block.BlockStairs;
 import net.minecraft.block.BlockTallGrass;
@@ -807,7 +808,7 @@ public final class SelfTest {
         b.convert = new String[]{"minecraft:sand -> minecraft:dirt"};
         b.destroy = new String[0];
         a.evaporate = new String[]{"material:water, !temperature>=1000"};
-        b.evaporate = new String[]{"fluid:lava"};
+        b.evaporate = new String[]{"minecraft:lava"}; // the still block's name: takes flowing lava too
         a.convert = append(a.convert, "minecraft:glowstone -> minecraft:cobblestone");
         b.convert = append(b.convert, "minecraft:glowstone -> minecraft:magma dimensions=-1");
         b.destroy = new String[]{"minecraft:soul_sand dimensions=0, -1"};
@@ -828,7 +829,7 @@ public final class SelfTest {
                 vitrified == null ? -1 : vitrified.getBlock().damageDropped(vitrified));
         log("rules: evaporation from phase water {} (expect 0), flowing water {} (0), lava {} (1), flowing lava {} (1), stone {} (-1)",
                 r.evaporationPhase(Blocks.WATER.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_WATER.getDefaultState()),
-                r.evaporationPhase(Blocks.LAVA.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_LAVA.getDefaultState()),
+                r.evaporationPhase(Blocks.LAVA.getDefaultState()), r.evaporationPhase(Blocks.FLOWING_LAVA.getDefaultState().withProperty(BlockLiquid.LEVEL, 3)),
                 r.evaporationPhase(Blocks.STONE.getDefaultState()));
         IBlockState dirt = Blocks.DIRT.getDefaultState(), sand = Blocks.SAND.getDefaultState(), gravel = Blocks.GRAVEL.getDefaultState();
         BlockRules.Step d = r.convert(1, dirt);
