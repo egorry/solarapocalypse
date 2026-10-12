@@ -15,6 +15,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.CubeEvent;
 import io.github.opencubicchunks.cubicchunks.api.world.IColumn;
 import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProvider;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubeProviderServer;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
@@ -266,6 +267,28 @@ public final class CubeEngine {
         if (edited != WHOLE) for (int i = 0; i < count; i++) edited.set(i * step);
     }
 
+    /**
+     * A surface counts as sun-exposed only with the cubes up to world.skyClearance above it loaded, and Cubic Chunks
+     * lights a cube before those (it goes by distance from the player): for a cube a column's surface lies in, they are
+     * generated here (not lit or sent; Cubic Chunks would generate them for the player soon), so its surface changes
+     * before it is sent. The one place the mod generates cubes.
+     */
+    private static void knowSky(WorldServer world, ICube cube) {
+        IColumn column = (IColumn) cube.getColumn();
+        int cx = cube.getX(), cy = cube.getY(), cz = cube.getZ(), minY = cy << 4, highest = Integer.MIN_VALUE;
+        for (int i = 0; i < 256; i++) {
+            int top = column.getHeightValue(i & 15, i >> 4) - 1;
+            if (top >= minY - 1 && top <= minY + 15) highest = Math.max(highest, top); // fire on the cube below's top layer too
+        }
+        if (highest == Integer.MIN_VALUE) return;
+        int needed = Math.min(highest + SolarConfig.skyClearance, CubicSky.ceiling(world, (cx << 4) + 8, (cz << 4) + 8));
+        ICubeProvider loaded = ((ICubicWorld) world).getCubeCache();
+        ICubeProviderServer cubes = (ICubeProviderServer) world.getChunkProvider();
+        for (int c = cy + 1; c <= Coords.blockToCube(needed); c++) {
+            if (loaded.getLoadedCube(cx, c, cz) == null) cubes.getCubeNow(cx, c, cz, ICubeProviderServer.Requirement.GENERATE);
+        }
+    }
+
     private static long columnKey(int cx, int cz) {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
     }
@@ -293,7 +316,9 @@ public final class CubeEngine {
         State state = STATES.get(world);
         long progress = ApocalypseClock.progress();
         if (state == null || state.clock == UNSET || state.clock > progress || progress < SolarApocalypse.timeline().firstStart()) return;
-        if (!cube.isFullyPopulated() || !cube.isInitialLightingDone() || !SolarApocalypse.hasBudget()) return;
+        // no engine budget: this runs inside Cubic Chunks' cube generation, whose own time limit per tick counts it
+        if (!cube.isFullyPopulated() || !cube.isInitialLightingDone()) return;
+        knowSky((WorldServer) world, cube);
         CubePos pos = cube.getCoords();
         BlockChanges changes = SolarApocalypse.changes(world);
         List<CubePos> later = new ArrayList<>();
@@ -458,7 +483,7 @@ public final class CubeEngine {
         boolean manageFire = changes.managesFire(progress);
         boolean background = changes.background(progress) && world.provider.hasSkyLight(); // looks below the line too
         long wake = BlockChanges.NEVER;
-        boolean openedBelow = false;
+        boolean openedBelow = false, fireAbove = false;
         int deep = changes.deepestLayer();
         // no column limit for a cube no player has yet: Cubic Chunks marks its whole column's heights this tick itself
         BitSet edited = BlockChanges.unseen ? null : state.columnEdits.computeIfAbsent(columnKey(cx, cz), k -> new BitSet(256));
@@ -552,6 +577,9 @@ public final class CubeEngine {
                             if (c < cy - 1 && c > cy - 64 && cubes.getLoadedCube(cx, c, cz) != null) later.add(new CubePos(cx, c, cz));
                         }
                     }
+                    // the surface is the cube's top layer: its fire stands in the cube above, which decided on it before
+                    // this change (fire waits for the ground's conversions) and needs another look (the dark spots, turn 26)
+                    if (ly == 15 && y == surface) fireAbove = true;
                 }
                 // Fire: placed on the surface once the phase's conversions are done; removed when its ground goes (infinite
                 // phases), at night (blocks.nightDousesFire) or under rain (phase_n.rainDousesFire). Fire that stays where it
@@ -584,6 +612,7 @@ public final class CubeEngine {
                 }
             }
         }
+        if (fireAbove && cubes.getLoadedCube(cx, cy + 1, cz) != null) later.add(new CubePos(cx, cy + 1, cz));
         return wake;
     }
 
@@ -673,8 +702,8 @@ public final class CubeEngine {
      * marks x/z if not. The budget is checked here too, so one cube with many slow changes (lighting) cannot overrun it.
      */
     private static boolean limited(BitSet edited, int xz) {
+        if (edited == null) return false; // a cube no player has: see surfaceTracked
         if (!SolarApocalypse.hasBudget(System.nanoTime() - cubeStart)) return true;
-        if (edited == null) return false;
         if (edited == WHOLE) return true;
         if (!edited.get(xz) && edited.cardinality() >= MAX_COLUMN_EDITS_PER_TICK) return true;
         edited.set(xz);
@@ -683,7 +712,7 @@ public final class CubeEngine {
 
     /** Fire in the loaded cubes of the columns within a radius (in columns) of a block position. */
     public static final class FireCensus {
-        public int solar, vanilla, columns;
+        public int solar, vanilla, columns, bottomLayer; // bottomLayer: solar fire in a cube's lowest layer (ground in the cube below)
         public final Map<Integer, Integer> epochs = new TreeMap<>();
     }
 
@@ -703,6 +732,7 @@ public final class CubeEngine {
                         IBlockState s = storage.get(i & 15, i >> 8, (i >> 4) & 15);
                         if (SolarFire.is(s)) {
                             census.solar++;
+                            if (i >> 8 == 0) census.bottomLayer++;
                             census.epochs.merge(SolarFire.epochOf(s), 1, Integer::sum);
                         } else if (s.getBlock() == Blocks.FIRE) {
                             census.vanilla++;

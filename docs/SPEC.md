@@ -164,7 +164,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 3. **Evaporation**: a liquid goes wherever the sun reaches it from the first phase whose `evaporate` list has it
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
-   `evaporation.mode`: `INSTANT` clears whole bodies, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
+   `evaporation.mode`: `INSTANT` (the default again since turn 26, the user's ask: `LAYERS` showed as slivers) clears
+   whole bodies as their phase starts, cube by cube, `LAYERS` lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
    evaporation has started.
    **Seas before the land** (turn 17, the user asked for the settings that drain the water before the land under it):
@@ -217,9 +218,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    fire away before its ground goes, and where the block below is the new surface and stays, the block the erosion
    takes becomes the new fire in the same change (turn 14: ~1.85 changes per column per layer at 85 % fire, from ~2.7). Punching the block under it, water, or a thrown water bottle
    (splash or lingering: the spot it hits and the four beside it, as vanilla does for vanilla fire) puts it out; it
-   comes back on the engine's next look at the cube. Its steps are silent: an entity's step plays the sound of the
-   block 0.2 below its centre, which is the fire when the centre hangs over it beside a ledge (vanilla fire sounds
-   like wool there). Its light is `blocks.solarFireLight` (default 8, vanilla fire 15; turn 16, the user's choice: less light
+   comes back on the engine's next look at the cube. Its steps sound like stone (the user, turn 26; silent before): an
+   entity's step plays the sound of the block 0.2 below its centre, which is the fire mid-jump through it or when the
+   centre hangs over it beside a ledge (vanilla fire sounds like wool there). Its light is `blocks.solarFireLight` (default 8, vanilla fire 15; turn 16, the user's choice: less light
    is less lighting work, and 8 still keeps mobs from spawning in the fire's own space, as they need block light 7 or
    less, more often the darker; beside it, at 7, 1 try in 8 passes the light check, where 15 kept them off within ~7
    blocks), sent to clients on login and
@@ -348,8 +349,12 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   moment Cubic Chunks has lit a new or reloaded cube and added it to its column's height map, before any player is sent
   it, the engine brings it up to its clock there and then. Exploring never shows terrain changing, and nothing extra is
   sent: no block changes, no break effects, no column limit (Cubic Chunks marks the whole column's heights in that tick
-  itself, and the cube packet carries the column's heights). Done within the time budget; cubes past it, and cubes that
-  load during another cube's pass, wait in the queue as before. Lighting still runs after the changes: doing them before
+  itself, and the cube packet carries the column's heights). Cubic Chunks lights a cube before the cubes above it (it
+  goes by distance from the player), so for a cube a column's surface lies in, the cubes up to `world.skyClearance`
+  above are generated first (not lit or sent), or its sky would count as unknown and nothing that needs the sun would
+  change (turn 26: the user's test saw new terrain arrive unchanged). Not held by the engine's time budget: it runs
+  inside Cubic Chunks' cube generation, whose own time limit per tick (`maxCubeGenerationTimeMillis`) counts it, so it
+  slows loading, not ticks. Cubes that load during another cube's pass wait in the queue as before. Lighting still runs after the changes: doing them before
   the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
   the mod is also a Forge coremod (`core/SolarCore`; no mixin mod or other dependency) that adds one call at the end of
   Cubic Chunks' `Cube.trackSurface`; nothing else, and nothing without Cubic Chunks. A Cubic Chunks version the hook
@@ -479,8 +484,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   that column until the next tick (turn 25), as a block change sent then would leave clients wrong heights (to-do item
   1, dark spots). Known only with the Cubic Chunks patch in.
 - Nothing loads or generates a cube: a cube is processed only when it and what its blocks depend on are loaded,
-  otherwise it waits, and catch-up makes it right later. The one exception is opt-in: `blocks.blockPhysics` notifies
-  neighbours, which can generate a cube at a cube edge. Vanilla fire checks that its area is loaded (Forge).
+  otherwise it waits, and catch-up makes it right later. Two exceptions: `blocks.blockPhysics` (opt-in) notifies
+  neighbours, which can generate a cube at a cube edge, and updating before sending generates the cubes above a new
+  surface (above). Vanilla fire checks that its area is loaded (Forge).
 
 ## 5. Sky and the unknown above
 CC counts never-generated cubes as air. A position counts as sun-exposed only when nothing opaque is known above it

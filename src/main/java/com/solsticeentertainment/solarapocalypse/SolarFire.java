@@ -8,7 +8,6 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.projectile.EntityPotion;
 import net.minecraft.init.PotionTypes;
-import net.minecraft.init.SoundEvents;
 import net.minecraft.item.ItemStack;
 import net.minecraft.potion.PotionUtils;
 import net.minecraft.util.EnumFacing;
@@ -37,18 +36,14 @@ public final class SolarFire extends BlockFire {
     /** Light given off: the server's blocks.solarFireLight (set on every config load; clients get it on login and reload). */
     public static int light = 8;
 
-    /**
-     * Vanilla fire sounds like wool (SoundType.CLOTH). An entity's step plays the sound of the block 0.2 below its centre,
-     * which is the fire when the centre hangs over a fire beside a ledge: silent here, as air would be. The crackle stays.
-     */
-    private static final SoundType SILENT = new SoundType(0.0F, 1.0F, SoundEvents.BLOCK_CLOTH_BREAK, SoundEvents.BLOCK_CLOTH_STEP,
-            SoundEvents.BLOCK_CLOTH_PLACE, SoundEvents.BLOCK_CLOTH_HIT, SoundEvents.BLOCK_CLOTH_FALL);
 
     private SolarFire() {
         setTickRandomly(false);
         setHardness(0.0F);
         setLightLevel(1.0F);
-        setSoundType(SILENT);
+        // vanilla fire sounds like wool: an entity's step plays the block 0.2 below its centre, the fire itself mid-jump
+        // through it or with the centre over a fire beside a ledge; stone here (the user, turn 26; silent before)
+        setSoundType(SoundType.STONE);
         setTranslationKey(Tags.MOD_ID + ".solar_fire");
         setRegistryName(Tags.MOD_ID, "solar_fire");
         disableStats();

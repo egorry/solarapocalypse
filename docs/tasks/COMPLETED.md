@@ -2,6 +2,37 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 26 (2026-10-12)
+- The user's test pass (the turn 25 checklist; ticked without a note = worked). Worked: the mod loading as a coremod
+  (its log line, `/solar status` showing "updated before sending", no warning); no client lag in phase 11 and no
+  effects from terrain done before sending; Simple Difficulty temperatures rising in the sun and the heat, normal in
+  sealed rooms and caves; BuildCraft oil catching fire and burning away; settled sand and gravel (looks, sounds, drops,
+  pick block, does not fall); no covered-looking areas after `/time add`. The user's config keeps Claude's Simple
+  Difficulty values, so they stay the defaults (the decision is closed).
+- `-Pcompat_mods` "didn't work": the user's run configuration says `-Pcompact_mods`. They copied the pack's jars into
+  `run/mods` instead, which works too (TODO.md retest).
+- Updated before sending: "I arrive at normal vanilla chunks, then after a short delay (5-10 seconds) they then apply
+  all previous and the current phase rules quickly" (15-25 s with it off). The hook did run (18,072 cubes in their
+  log), but Cubic Chunks lights a cube before the cubes above it (it goes by distance from the player), so a new
+  surface's sky was unknown and nothing that needs the sun changed. Fixed: the hook generates the cubes up to
+  `world.skyClearance` above a new surface first, and is no longer held by the engine's time budget (it runs inside
+  Cubic Chunks' cube generation, whose own time limit counts it).
+- Break effects: "Block particles appears to only happen one per chunk, in its corner. It needs to happen per block.
+  Not sure if water evap has particles either." The effect packet kept the engine's reused position object, which had
+  moved on by the time the network thread wrote it. Fixed (the fizz and smoke too).
+- Dark spot at 61 47 -397 (Full Phase Test world, screenshot in `test_log_files`), on a former sea floor, fire later:
+  full sky light on the client (not the turn 25 lead). The ground was a cube's top layer; its fire stands in the cube
+  above, which was not looked at again after the ground's conversion until the next phase. The turn 19 spot was the
+  same. Fixed: that cube looks again in the same round. Self-test, same world with and without: 2,131 against 2,100
+  fires by the end of phase 3.
+- Water slivers: "a regression I think, and it didn't really need to be done anyway. Are we able to revert that back
+  to before it?" The `evaporation.mode` default goes back to `INSTANT` (whole bodies at their phase's start, the
+  default until the phase defaults of 2026-10-08 made it `LAYERS`, a level coming down 4 layers a day). Their observation
+  "Causes some leftovers, which I think mostly is moving water, which isn't picked up by evaporation": Forge has no
+  event for ordinary water flow, so the cause is not clear without a spot (TODO.md retest).
+- Solar fire steps sound like stone (the user's tweak; silent since turn 11, also the user's ask then).
+- New to-do item from the user: Pollution of the Realms integration (TODO.md, Will do).
+
 ## Turn 25 (2026-10-12)
 - The user's decisions: the Cubic Chunks mismatch stays a chat warning (not Forge's error screen); the user tunes the
   Simple Difficulty temperatures while testing. Their ask: one more turn on to-do items that need no test, and a test

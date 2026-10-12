@@ -1195,8 +1195,10 @@ public final class SelfTest {
     /** Counts solar fire (by epoch) and vanilla fire in the loaded spawn columns; returns the solar fire count. */
     private static int fire(String when) {
         CubeEngine.FireCensus c = CubeEngine.fireCensus(world, world.getSpawnPoint(), RADIUS);
-        log("fire at {}: solar {} ({} % of {} x/z positions, by epoch {}), vanilla {}", when, c.solar,
-                String.format("%.1f", c.solar * 100.0 / (c.columns * 256)), c.columns * 256, c.epochs, c.vanilla);
+        log("fire at {}: solar {} ({} % of {} x/z positions, by epoch {}), vanilla {}; in a cube's bottom layer {} % (about 6:"
+                        + " its ground is the top of the cube below, turn 26)", when, c.solar,
+                String.format("%.1f", c.solar * 100.0 / (c.columns * 256)), c.columns * 256, c.epochs, c.vanilla,
+                String.format("%.1f", c.solar == 0 ? 0 : c.bottomLayer * 100.0 / c.solar));
         return c.solar;
     }
 

@@ -412,7 +412,8 @@ public final class BlockChanges {
             effectsSent.clear();
         }
         boolean liquid = from.getMaterial().isLiquid();
-        double r = SolarConfig.breakEffectsRadius, x = pos.getX() + 0.5, y = pos.getY() + 0.5, z = pos.getZ() + 0.5;
+        BlockPos at = pos.toImmutable(); // a packet keeps it until the network thread writes it; the engine's moves on
+        double r = SolarConfig.breakEffectsRadius, x = at.getX() + 0.5, y = at.getY() + 0.5, z = at.getZ() + 0.5;
         for (EntityPlayer player : world.playerEntities) {
             if (!(player instanceof EntityPlayerMP) || player.getDistanceSq(x, y, z) > r * r) continue;
             int sent = effectsSent.getOrDefault(player, 0);
@@ -420,10 +421,10 @@ public final class BlockChanges {
             effectsSent.put(player, sent + 1);
             EntityPlayerMP to = (EntityPlayerMP) player;
             if (!liquid) {
-                to.connection.sendPacket(new SPacketEffect(2001, pos, Block.getStateId(from), false));
+                to.connection.sendPacket(new SPacketEffect(2001, at, Block.getStateId(from), false));
                 continue;
             }
-            to.connection.sendPacket(new SPacketEffect(1009, pos, 0, false)); // fire extinguish: the fizz
+            to.connection.sendPacket(new SPacketEffect(1009, at, 0, false)); // fire extinguish: the fizz
             to.connection.sendPacket(new SPacketParticles(EnumParticleTypes.SMOKE_LARGE, false, (float) x, (float) y, (float) z,
                     0.3F, 0.3F, 0.3F, 0, 8));
         }

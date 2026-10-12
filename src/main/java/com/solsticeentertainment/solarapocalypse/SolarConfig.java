@@ -221,7 +221,7 @@ public final class SolarConfig {
 
         cat = "evaporation";
         c.setCategoryComment(cat, "How sun-exposed liquids vanish. Which liquids, from which phase: each phase's evaporate list.");
-        evaporationMode = enumValue(c, cat, "mode", EvaporationMode.LAYERS,
+        evaporationMode = enumValue(c, cat, "mode", EvaporationMode.INSTANT,
                 "INSTANT: every exposed liquid block goes as soon as its phase starts (spread over ticks by the time budget).\n" +
                 "LAYERS: from its phase's start, a level descends from topY at layersPerDay; exposed liquid above it goes.");
         evaporationLayersPerDay = c.get(cat, "layersPerDay", 4.0, "LAYERS mode: layers per day.").getDouble();

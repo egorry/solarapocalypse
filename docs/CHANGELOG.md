@@ -134,8 +134,15 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in the top layer during infinite phases; per block and layer the latest phase with a rule there wins.
 - Infinite erosion comes down evenly, a layer at a time, when the engine cannot keep up with `layersPerDay`: it then
   runs slower than set instead of leaving trenches several layers deep.
-- Solar fire's steps are silent (vanilla fire sounds like wool when you walk along a ledge over it).
+- Solar fire's steps sound like stone (they were silent; vanilla fire sounds like wool when you walk along a ledge over it).
+- Evaporation clears whole bodies of water again by default (`evaporation.mode = INSTANT`); configs written before keep
+  their mode.
 ### Fixed
+- Break effects all showed at one spot in each cube (the last block changed) instead of at each block.
+- Cubic Chunks: terrain updated before players get it often arrived unchanged, as the sky above a new surface was not
+  known yet.
+- Fire came only at the next phase on ground in a cube's top layer once that ground changed (such as drained sea
+  floors): dark spots at night.
 - Cubic Chunks: block changes made in a tick where Cubic Chunks added a cube to the same column could leave clients a
   wrong height map there (a likely cause of dark spots); the engine now waits a tick in such columns.
 - Liquids that say they block movement (BuildCraft's) could get solar fire, and counted as ground in a recorded
