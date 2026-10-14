@@ -2,6 +2,53 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 29 (2026-10-15)
+- The user's retest (turn 28 list): the sea while exploring, hanging falls and the turn 27 sea test ticked; the
+  optional flow sighting answered (below). Simple Difficulty switches not tested yet (carried).
+- Teleports "do not honor our hook" (the user: "chunks loaded when you teleport are completely vanilla and then subject
+  to catchup destruction"; their `/tp` to -708.5 36 4.5 and screenshot). Cause: Cubic Chunks generates and lights the
+  cubes nearest the player first, so landing at Y 36 in a sea lit the cube Y 32-47 before the sea's top cube; its water
+  then waited for the water above (not loaded yet) and was sent full, and the engine drained it later, in view (the
+  walls of water). Flying high, the top cubes come first, which is why exploring worked. Fixed: before such a cube is
+  updated, the cube above is loaded and lit first when a standing liquid on its top layer lies under the column's top
+  and would change in the open; that runs the hook for it too, up to the sea's top. Self-test: a sea cube lit before
+  the one above it.
+- Water that did not clear (save `Retest 2`, read-only; the user's screenshots at -439 28 -395 and -470 45 -480):
+  vanilla flows that had settled (still water at levels 1 and 9: a 17-block fall from Y 45 at -470 -480, a level-1
+  spread over a fall at -439 -395), with no source left. They started after the engine's last look at their cubes,
+  and a cube is looked at again only when something in it falls due (the next layer: 20 minutes at 1 layer a day).
+  Fixed: a liquid flowing into a block queues its cube for the engine's next round (a few seconds), whatever started
+  the flow. This also covers to-do item 6 (falling gravel, Claude's turn 28 guess; the user saw no gravel there),
+  closed.
+- Pollution of the Realms (to-do item 4) with the user's answers: (i) dust from destroyed blocks, yes; (ii) carbon and
+  sulfur once when a solar fire is lit, yes; (iii) "phase 11 won't have pollution of the realms emissions ... This
+  doesn't mean apply that logic to infinite phases, the player can do that if they want at their own detriment (so add
+  a warning somewhere in the config for that) ... Happy for even 0.5 to be the defaults for both ... a block whitelist
+  ... * @ 0.5% or minecraft:dirt @ 5% e.t.c. Would that work better?" Yes: a list beats one percent, first match
+  wins; (iv) "A phase outside of pollutionEndsPhase would clean up all pollution. If a user wants to retain pollution,
+  they can set pollution events to 0% chance". Done: the `pollution` section (`destructionPollution`,
+  `destructionPollutionBlocks` default `* @ 0.5%`, `solarFirePollution`, `solarFirePollutionPercent` 0.5,
+  `pollutionStartsPhase` 2, `pollutionEndsPhase` 11, with the infinite-phase warning); `-Pcompat_mods` installs AdPother
+  and ForgeEndertech (the current pack's versions; their CurseForge ids read from that pack's instance file,
+  read-only). Self-test (with Pollution of the Realms installed): after 8 layers of erosion, 6,010 dust units for
+  destroyed blocks and 608 carbon and sulfur units for solar fire; with the running phase made `pollutionEndsPhase`,
+  the gas around spawn went from 13,768 blocks to 0 (39,571 cleared). Its gas blocks are not solid and let all light
+  through (opacity 0), so they never shade the sun. Its own carbon (from vanilla fire) drifts up to the highest loaded
+  cubes; the self-test's line checks skip gas.
+- OUTOFSCOPE.md said players joining later get no announcement replay (the user: "We've made it so they get the current
+  phase, and only the current phase on join, right?"): right since turn 21 or so; the line now says that, and SPEC.md
+  has it.
+- The user's question on the Simple Difficulty switches (keep or revert, and why they exist): answered in TODO.md
+  "Waiting for the user's decision" (Claude: keep).
+- The user's order for after the Will do items (asset foundations, then the Ice Apocalypse config, before vanilla
+  worlds) and their Ice Apocalypse plan ("Makes sense?": yes): TODO.md.
+- Found by the self-test with Pollution of the Realms: the engine's check whether blocks next to a fire spot can burn
+  looked through each block class's methods, which on a dedicated server throws for a modded block whose methods name
+  client-only classes (AdPother's gas: `ParticleManager`), and stopped the server. Fixed: such a class counts as one
+  whose flammability is not remembered (asked each time instead).
+- Self-test: the Simple Difficulty check now measures where the pigs were put (a hurt pig ran into shade in a forest
+  seed and read 1.0 instead of 4.0).
+
 ## Turn 28 (2026-10-14)
 - The user's retest (turn 27 list): solar fire steps sound like stone, and `/solar phase 11` announces only phase 11:
   both ticked. The sea drained before sending and the live flow sighting carry to the turn 28 retest.

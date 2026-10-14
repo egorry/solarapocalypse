@@ -8,6 +8,7 @@ import com.solsticeentertainment.solarapocalypse.SolarConfig;
 import com.solsticeentertainment.solarapocalypse.SolarFire;
 import com.solsticeentertainment.solarapocalypse.SurfaceRecord;
 import com.solsticeentertainment.solarapocalypse.Timeline;
+import com.solsticeentertainment.solarapocalypse.compat.Pollution;
 import com.solsticeentertainment.solarapocalypse.core.SolarCore;
 import io.github.opencubicchunks.cubicchunks.api.util.Coords;
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
@@ -149,6 +150,13 @@ public final class CubeEngine {
         else wakeUntil(state, progress);
     }
 
+    /** For the self-test: whether the cube holding a block waits for the engine's next round (or this one). */
+    public static boolean waiting(World world, BlockPos pos) {
+        State state = STATES.get(world);
+        CubePos cube = CubePos.fromBlockCoords(pos);
+        return state != null && (state.next.contains(cube) || state.queue.contains(cube) || state.resume.contains(cube));
+    }
+
     /** Ready cubes waiting to be processed (not counting cubes not yet lit or scheduled for a later time). */
     public static int queued(World world) {
         State state = STATES.get(world);
@@ -191,6 +199,22 @@ public final class CubeEngine {
         World world = event.getWorld();
         if (world.isRemote || !SolarApocalypse.isActive(world) || !CubicSky.isCubic(world)) return;
         state(world).next.add(CubePos.fromBlockCoords(event.getPos()));
+    }
+
+    /**
+     * A liquid flowing into a block (vanilla flow: a sea's edge next to a drained hole, water a player pours) gets a look in
+     * the engine's next round, not at its cube's next due look, which can be a layer's time away: flows that started after
+     * the last look stood in a drained sea (the user's turn 29 test; settled flows stop ticking).
+     */
+    @SubscribeEvent
+    public static void onNeighborNotify(BlockEvent.NeighborNotifyEvent event) {
+        World world = event.getWorld();
+        if (world.isRemote || !SolarApocalypse.isActive(world) || !CubicSky.isCubic(world)) return;
+        IBlockState state = event.getState();
+        // pollution drifting in once the apocalypse clears it (pollution.pollutionEndsPhase)
+        if (state.getMaterial().isLiquid() || Pollution.isGas(state) && Pollution.clears(SolarApocalypse.timeline().phaseAt(ApocalypseClock.progress()))) {
+            state(world).next.add(CubePos.fromBlockCoords(event.getPos()));
+        }
     }
 
     @SubscribeEvent
@@ -289,6 +313,35 @@ public final class CubeEngine {
         }
     }
 
+    /**
+     * Cubic Chunks lights the cubes nearest a player first, so after a teleport into a sea the cube under its top one can be
+     * lit before it (the user's turn 29 test): its water would wait for the water above and reach players full, to drain
+     * in view later. When a standing liquid on its top layer lies under the column's top and would change in the open, the
+     * cube above is loaded and lit first, which runs this hook for it (and so on up to the sea's top).
+     */
+    private static void coverFirst(WorldServer world, ICube cube, long at) {
+        ExtendedBlockStorage storage = cube.getStorage();
+        if (storage == null || storage.isEmpty()) return;
+        int cx = cube.getX(), cy = cube.getY(), cz = cube.getZ(), y = (cy << 4) + 15;
+        ICubeProvider loaded = ((ICubicWorld) world).getCubeCache();
+        ICube above = loaded.getLoadedCube(cx, cy + 1, cz);
+        if (above != null && above.isSurfaceTracked()) return;
+        Chunk column = loaded.getLoadedColumn(cx, cz);
+        if (column == null) return;
+        for (int i = 0; i < 256; i++) {
+            int lx = i & 15, lz = i >> 4;
+            IBlockState state = storage.get(lx, 15, lz);
+            if (!standing(state) || ((IColumn) column).getHeightValue(lx, lz) - 1 <= y) continue;
+            // ponytail: the first such liquid decides for the cube (a sea is one liquid)
+            int x = (cx << 4) + lx, z = (cz << 4) + lz;
+            int ground = ground(world, loaded, column, lx, lz, x, z, BlockChanges.NO_Y, false);
+            if (SolarApocalypse.changes(world).evaluate(state, new BlockPos(x, y, z), ground, SolarApocalypse.topY(world), y, Sky.EXPOSED, false, at) != state) {
+                ((ICubeProviderServer) world.getChunkProvider()).getCubeNow(cx, cy + 1, cz, ICubeProviderServer.Requirement.LIGHT);
+            }
+            return;
+        }
+    }
+
     private static long columnKey(int cx, int cz) {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
     }
@@ -318,6 +371,7 @@ public final class CubeEngine {
         if (state == null || state.clock == UNSET || state.clock > progress || progress < SolarApocalypse.timeline().firstStart()) return;
         // no engine budget: this runs inside Cubic Chunks' cube generation, whose own time limit per tick counts it
         if (!cube.isFullyPopulated() || !cube.isInitialLightingDone()) return;
+        coverFirst((WorldServer) world, cube, state.clock);
         knowSky((WorldServer) world, cube);
         CubePos pos = cube.getCoords();
         BlockChanges changes = SolarApocalypse.changes(world);
@@ -488,6 +542,7 @@ public final class CubeEngine {
         long wake = BlockChanges.NEVER;
         boolean openedBelow = false, fireAbove = false;
         int deep = changes.deepestLayer();
+        boolean clearGas = Pollution.clears(SolarApocalypse.timeline().phaseAt(progress));
         // no column limit for a cube no player has yet: Cubic Chunks marks its whole column's heights this tick itself
         BitSet edited = BlockChanges.unseen ? null : state.columnEdits.computeIfAbsent(columnKey(cx, cz), k -> new BitSet(256));
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -513,6 +568,13 @@ public final class CubeEngine {
                         still = true; // so is every block below it
                     }
                     IBlockState from = storage.get(lx, ly, lz);
+                    if (Pollution.isGas(from)) { // the apocalypse clears it from pollution.pollutionEndsPhase on, else leaves it be
+                        if (!clearGas) continue;
+                        if (limited(edited, lz << 4 | lx)) return PARTIAL;
+                        BlockChanges.apply(world, pos.setPos(x, y, z), from, AIR);
+                        Pollution.cleared++;
+                        continue;
+                    }
                     if (from.getMaterial() == Material.AIR) continue;
                     boolean lit = background && (surfaceKnown || top - y + 1 > deep) && lit(cubes, storage, cx, cy, cz, lx, ly, lz, y, top);
                     if (still && !lit) continue; // only a background conversion can change it
@@ -684,7 +746,9 @@ public final class CubeEngine {
             try {
                 return type.getMethod("isFlammable", IBlockAccess.class, BlockPos.class, EnumFacing.class).getDeclaringClass() == Block.class
                         && type.getMethod("getFlammability", IBlockAccess.class, BlockPos.class, EnumFacing.class).getDeclaringClass() == Block.class;
-            } catch (NoSuchMethodException e) {
+            } catch (NoSuchMethodException | LinkageError e) {
+                // LinkageError: on a dedicated server, a modded block whose methods name client-only classes (Pollution of
+                // the Realms' gas: ParticleManager) cannot be looked through; it stopped the server (turn 29 self-test)
                 return false;
             }
         }

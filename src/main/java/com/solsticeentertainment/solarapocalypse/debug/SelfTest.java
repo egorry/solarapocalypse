@@ -1,5 +1,8 @@
 package com.solsticeentertainment.solarapocalypse.debug;
 
+import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fml.common.registry.ForgeRegistries;
+import com.solsticeentertainment.solarapocalypse.compat.Pollution;
 import com.solsticeentertainment.solarapocalypse.ApocalypseClock;
 import com.solsticeentertainment.solarapocalypse.BlockChanges;
 import com.solsticeentertainment.solarapocalypse.BlockRules;
@@ -79,6 +82,7 @@ public final class SelfTest {
     private static WorldServer world;
     private static int stage, ticks, waited;
     private static EntityPig sunPig, roofPig, deepPig;
+    private static BlockPos sunSpot, roofSpot, deepSpot; // where they were put (a hurt pig runs: into shade in a forest)
     private static long engineNanos, engineCubes, engineBlocks;
     private static int fireCount, cap, planeY;
     private static long lastChanged, maxChanges;
@@ -133,6 +137,8 @@ public final class SelfTest {
                 census("after phase 1");
                 sendingCheck();
                 fallCheck();
+                flowCheck();
+                seaCheck();
                 backgroundCheck();
                 settledCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
@@ -160,9 +166,9 @@ public final class SelfTest {
                 log("pigs after the first hit in phase 4 (expect sun 5, roof 9, deep 10): sun {}, roof {}, deep {}",
                         firstHit[0], firstHit[1], deepPig.getHealth());
                 if (Loader.isModLoaded("simpledifficulty")) { // phase 4 defaults: 3 degrees in the sun, 1 in the heat
-                    log("Simple Difficulty: modifier registered {} (true), degrees added at the sun pig {} (4.0), roof pig {} (1.0),"
-                                    + " deep pig {} (0.0)", SimpleDifficultyHeat.registered(), SimpleDifficultyHeat.heat(world, sunPig.getPosition()),
-                            SimpleDifficultyHeat.heat(world, roofPig.getPosition()), SimpleDifficultyHeat.heat(world, deepPig.getPosition()));
+                    log("Simple Difficulty: modifier registered {} (true), degrees added where the pigs were put: sun {} (4.0), roof {} (1.0),"
+                                    + " deep {} (0.0)", SimpleDifficultyHeat.registered(), SimpleDifficultyHeat.heat(world, sunSpot),
+                            SimpleDifficultyHeat.heat(world, roofSpot), SimpleDifficultyHeat.heat(world, deepSpot));
                 }
                 sunPig.setHealth(1); // the sun or its heat kills it during the jump (dropCheck)
                 sunPig.hurtResistantTime = 0;
@@ -228,6 +234,10 @@ public final class SelfTest {
                     return ground == BlockChanges.NO_Y ? BlockChanges.NO_Y : (int) (ground - depth + 1);
                 });
                 layerCheck();
+                if (Pollution.on) log("Pollution of the Realms (defaults: dust from 0.5 % of destroyed blocks, carbon and sulfur from"
+                                + " 0.5 % of solar fires, phases 2 to 10): units placed for destroyed blocks {}, for solar fire {} (both some);"
+                                + " gas blocks around spawn {}; dust block: material solid {}, light opacity {}", Pollution.dustPlaced,
+                        Pollution.smokePlaced, gasAroundSpawn(), dustState().getMaterial().isSolid(), dustState().getLightOpacity());
                 solidBefore = solidColumns(); // evenness counts terrain gone below the line against this
                 SolarConfig.maxBlockChangesPerTick = cap;
                 jump(t.start(4) + Timeline.days(2), "phase 5 + 2 days, block changes capped at " + cap + " per tick");
@@ -299,6 +309,10 @@ public final class SelfTest {
                 if (!poolLoaded) log("pillar checks skipped: the line passed below the loaded cubes in this world");
                 else log("a stone pillar under water in the eroded zone (water's destroy and evaporation off): {} of 2 stones kept (2)", poolStones());
                 world.setBlockState(poolAt.up(2), Blocks.AIR.getDefaultState(), 2);
+                if (Pollution.on) { // the running phase is pollutionEndsPhase: the round below clears the gas
+                    gasBefore = gasAroundSpawn();
+                    SolarConfig.pollutionEndsPhase = t.phaseAt(ApocalypseClock.progress()) + 1;
+                }
                 SolarApocalypse.requeueAll();
                 stage++;
                 waited = ticks;
@@ -306,6 +320,8 @@ public final class SelfTest {
             case 19:
                 if (!drained(3000)) return;
                 if (poolLoaded) log("the same pillar once its water is gone: {} of 2 stones kept (0)", poolStones());
+                if (Pollution.on) log("pollutionEndsPhase reached: gas blocks around spawn {} (were {}; 0, or what drifted below the"
+                        + " line), {} cleared", gasAroundSpawn(), gasBefore, Pollution.cleared);
                 server.initiateShutdown();
                 stage++;
                 break;
@@ -711,6 +727,9 @@ public final class SelfTest {
         world.setBlockState(new BlockPos(dx, dy, z), Blocks.AIR.getDefaultState(), 18);
         world.setBlockState(new BlockPos(dx, dy + 1, z), Blocks.AIR.getDefaultState(), 18);
         deepPig = pig(dx, dy, z);
+        sunSpot = sunPig.getPosition();
+        roofSpot = roofPig.getPosition();
+        deepSpot = deepPig.getPosition();
         for (EntityPig pig : new EntityPig[]{sunPig, roofPig, deepPig}) {
             // until phase 4: the fire's damage in phase 1 grows with the catch-up time, which differs between worlds
             pig.setEntityInvulnerable(true);
@@ -1117,6 +1136,49 @@ public final class SelfTest {
         log("falling water left hanging when the engine takes the source above it: {} water blocks after phase 1 (0)", water);
     }
 
+    /** Vanilla water flowing into a block queues its cube for the engine's next round (CubeEngine.onNeighborNotify). */
+    private static void flowCheck() {
+        BlockPos pos = fallTop.up(2);
+        boolean before = CubeEngine.waiting(world, pos);
+        world.setBlockState(pos, Blocks.FLOWING_WATER.getDefaultState(), 3);
+        log("water poured where the engine is done: its cube waiting for the engine before {} (false), after {} (true)", before,
+                CubeEngine.waiting(world, pos));
+    }
+
+    /**
+     * A sea's cube under its top one lit first (Cubic Chunks lights the cubes nearest a player first: a teleport into the
+     * water, the user's turn 29 test) is not sent full: the hook lights and updates the cube above first.
+     */
+    private static void seaCheck() {
+        CwgSurface model = CubicSky.model(world);
+        ICubeProvider loaded = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int cx = 0, cz = 0, cy = ((world.getSeaLevel() - 1) >> 4) - 1;
+        boolean found = false;
+        for (int d = 20; d < 300 && !found; d++) {
+            for (int side = 0; side < 4 && !found; side++) { // east, south, west, north of spawn's column
+                cx = (spawn.getX() >> 4) + (side == 0 ? d : side == 2 ? -d : 0);
+                cz = (spawn.getZ() >> 4) + (side == 1 ? d : side == 3 ? -d : 0);
+                found = model != null && model.top((cx << 4) + 8, (cz << 4) + 8) < (cy << 4) + 8 // sea over half the cube
+                        && loaded.getLoadedCube(cx, cy, cz) == null && loaded.getLoadedCube(cx, cy + 1, cz) == null;
+            }
+        }
+        if (!found) {
+            log("sea check skipped: no sea found within 300 columns of spawn");
+            return;
+        }
+        ICube cube = ((ICubeProviderServer) world.getChunkProvider()).getCubeNow(cx, cy, cz, ICubeProviderServer.Requirement.LIGHT);
+        ICube above = loaded.getLoadedCube(cx, cy + 1, cz);
+        ExtendedBlockStorage storage = cube == null ? null : cube.getStorage();
+        int water = 0;
+        for (int i = 0; storage != null && i < 4096; i++) {
+            if (storage.get(i & 15, i >> 8, (i >> 4) & 15).getMaterial() == Material.WATER) water++;
+        }
+        log("a sea's cube under its top one lit first (column {} {}, Y {} to {}; a teleport into the water): the cube above lit"
+                + " first {} (true), water left in it at the end of phase 1 {} (0)", cx, cz, cy << 4, (cy << 4) + 15,
+                above != null && above.isSurfaceTracked(), water);
+    }
+
     /**
      * blocks.dropItems false: removing a log takes the leaves only it held. A row in open air: a player's leaf, log A, seven
      * leaves, log B; A goes, so the three leaves more than 4 steps from B go too, B's four and the player's leaf stay.
@@ -1304,7 +1366,8 @@ public final class SelfTest {
                     if (storage == null || storage.isEmpty() || !cube.isSurfaceTracked()) continue;
                     cubesSeen++;
                     for (int i = 0; i < 4096; i++) {
-                        if (storage.get(i & 15, i >> 8, (i >> 4) & 15).getMaterial() != Material.AIR) highest = Math.max(highest, cube.getY() * 16 + (i >> 8));
+                        IBlockState block = storage.get(i & 15, i >> 8, (i >> 4) & 15);
+                        if (block.getMaterial() != Material.AIR && !Pollution.isGas(block)) highest = Math.max(highest, cube.getY() * 16 + (i >> 8));
                     }
                     for (int i = 0; i < 256; i++) {
                         int x = (cx << 4) + (i & 15), z = (cz << 4) + (i >> 4);
@@ -1318,7 +1381,8 @@ public final class SelfTest {
                             if (y < gone) continue;
                             checked++;
                             IBlockState left0 = storage.get(i & 15, ly, i >> 4);
-                            if (left0.getMaterial() == Material.AIR || SolarFire.is(left0)) continue; // solar fire stands on the surface
+                            // solar fire stands on the surface; Pollution of the Realms' gas drifts about (cleared from pollutionEndsPhase)
+                            if (left0.getMaterial() == Material.AIR || SolarFire.is(left0) || Pollution.isGas(left0)) continue;
                             left++;
                             if (leftover.size() < 4) leftover.add(new BlockPos(x, y, z) + " " + left0 + " line Y " + gone + " cube populated "
                                     + cube.isFullyPopulated() + " lit " + cube.isInitialLightingDone() + " queued " + CubeEngine.queued(world));
@@ -1348,6 +1412,31 @@ public final class SelfTest {
     }
 
     /** Counts block kinds in the loaded cubes of the columns around spawn: total, and sun-exposed (at or above the top). */
+    private static int gasBefore;
+
+    /** Pollution of the Realms' gas blocks in the loaded cubes of the census area. */
+    private static int gasAroundSpawn() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int gas = 0;
+        for (int cx = (spawn.getX() >> 4) - RADIUS; cx <= (spawn.getX() >> 4) + RADIUS; cx++) {
+            for (int cz = (spawn.getZ() >> 4) - RADIUS; cz <= (spawn.getZ() >> 4) + RADIUS; cz++) {
+                Chunk column = cubes.getLoadedColumn(cx, cz);
+                if (column == null) continue;
+                for (ICube cube : ((IColumn) column).getLoadedCubes()) {
+                    ExtendedBlockStorage storage = cube.getStorage();
+                    if (storage == null || storage.isEmpty()) continue;
+                    for (int i = 0; i < 4096; i++) if (Pollution.isGas(storage.get(i & 15, i >> 8, (i >> 4) & 15))) gas++;
+                }
+            }
+        }
+        return gas;
+    }
+
+    private static IBlockState dustState() {
+        return ForgeRegistries.BLOCKS.getValue(new ResourceLocation("adpother", "dust")).getDefaultState();
+    }
+
     private static void census(String when) {
         ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
         BlockPos spawn = world.getSpawnPoint();

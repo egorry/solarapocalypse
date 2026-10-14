@@ -210,6 +210,7 @@ public final class BlockRules {
     private final List<Map<IBlockState, Integer>> destroy = new ArrayList<>(); // state -> earliest phase destroying it
     private final Set<IBlockState> noVanillaFire = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<IBlockState, Integer> evaporate = new IdentityHashMap<>(); // liquid state -> first phase evaporating it
+    private final Map<IBlockState, Double> dust = new IdentityHashMap<>(); // pollution.destructionPollutionBlocks: state -> share
 
     private BlockRules(SolarConfig.Phase[] phases) {
         convertDepth = new int[phases.length];
@@ -257,7 +258,7 @@ public final class BlockRules {
                 int[] layer = {0, 0}; // the default layers (Step.hi)
                 for (int w = 1; w < words.length; w++) {
                     Matcher depth = LAYERS.matcher(words[w]);
-                    if (words[w].equals("@") && w + 1 < words.length) chance = percent(words[++w], where);
+                    if (words[w].equals("@") && w + 1 < words.length) chance = percent(words[++w], where + ".convert");
                     else if (words[w].equalsIgnoreCase("preserveState")) preserve = true;
                     else if (depth.matches() && back) {
                         SolarApocalypse.LOGGER.warn("{}: '{}' in '{}' ignored: background conversions have no layers", list, words[w], raw);
@@ -333,6 +334,18 @@ public final class BlockRules {
         }
         Predicate<IBlockState> noFire = selectors(SolarConfig.vanillaFireBlacklist, "blocks.vanillaFireBlacklist");
         if (noFire != null) for (IBlockState state : states) if (noFire.test(state)) rules.noVanillaFire.add(state);
+        // '<selectors> @ <percent>': the first entry matching a state gives its share
+        String where = "pollution.destructionPollutionBlocks";
+        for (String entry : scoped(SolarConfig.destructionPollutionBlocks, dimension)) {
+            int at = entry.lastIndexOf('@');
+            double share = at < 0 ? 1 : percent(entry.substring(at + 1), where);
+            Predicate<IBlockState> match = selectors(new String[]{at < 0 ? entry : entry.substring(0, at)}, where);
+            if (match == null || share < 0) continue;
+            for (IBlockState state : states) {
+                Material m = state.getMaterial();
+                if (m != Material.AIR && m != Material.FIRE && !isLiquid(state) && match.test(SettledBlock.real(state))) rules.dust.putIfAbsent(state, share);
+            }
+        }
         return rules;
     }
 
@@ -459,9 +472,15 @@ public final class BlockRules {
         try {
             return Math.max(0, Math.min(100, Double.parseDouble(raw.trim().replace("%", "").trim()))) / 100;
         } catch (NumberFormatException e) {
-            SolarApocalypse.LOGGER.warn("{}.convert: '{}' is not a percentage", where, raw.trim());
+            SolarApocalypse.LOGGER.warn("{}: '{}' is not a percentage", where, raw.trim());
             return -1;
         }
+    }
+
+    /** The share of a destroyed block state that leaves dust (pollution.destructionPollutionBlocks), 0 for none. */
+    public double dustShare(IBlockState state) {
+        Double share = dust.get(state);
+        return share == null ? 0 : share;
     }
 
     /** Whether a block never gets vanilla fire from the sun (blocks.vanillaFireBlacklist). */

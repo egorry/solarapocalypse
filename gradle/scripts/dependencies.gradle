@@ -104,6 +104,12 @@ dependencies {
     compatDevMods rfg.deobf('curse.maven:simpledifficulty-360779:3613814')
     // BuildCraft 7.99.24.8 (the pack's): only for testing burning liquids (its oil and fuels) in the dev client
     compatDevMods rfg.deobf('curse.maven:buildcraft-906300:4720327')
+    // Pollution of the Realms (AdPother) 1.12.2-1.2.25.0, the user's current pack's: also soft (compat/AdPotherGas places its
+    // gas; only loaded with it). It needs ForgeEndertech 1.12.2-4.5.6.1 (the same pack's)
+    compileOnly rfg.deobf('curse.maven:pollution-of-the-realms-269973:4760625')
+    compatDevMods rfg.deobf('curse.maven:pollution-of-the-realms-269973:4760625')
+    compileOnly rfg.deobf('curse.maven:forgeendertech-244844:4402062')
+    compatDevMods rfg.deobf('curse.maven:forgeendertech-244844:4402062')
 }
 
 // Need reobfJar to use uber jars, so dependencies that are shaded in are present

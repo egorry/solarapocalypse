@@ -367,3 +367,8 @@ From `javap` on the jar in the user's current pack (`AdPother-1.12.2-1.2.25.0-bu
 - Its own events cover chunk loads, entities, players and anvils; it adds a coremod (`LoadingPlugin`) with transformers.
 - Unknown until tried in a Cubic Chunks world: whether its 2D chunk data and generator (`pollution.Generator`, chunk
   bounds) behave with cubes, and whether `generateAt` reads unloaded cubes (which would generate them there).
+- Turn 29 (integration built, dev setup with `-Pcompat_mods`): the gas blocks are `adpother:dust`, `adpother:carbon`,
+  `adpother:sulfur`. `generateAt`'s radius walks up and down from the spot (`pos.up(k)`, `pos.down(k)`); the mod
+  passes 0 (the spot only). Its block classes have methods naming client-only classes (`ParticleManager`) without
+  `@SideOnly`: on a dedicated server, reflection over them (`Class.getMethod`) throws `NoClassDefFoundError`, which
+  stopped the server through the engine's flammability cache until it caught `LinkageError`.

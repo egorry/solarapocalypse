@@ -9,39 +9,33 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- Pollution of the Realms (to-do item 4, the user's plan): Claude's way, from the turn 28 look at AdPother's code
-  (docs/RESEARCH.md section 12). A yes, or other choices, on each:
-  1. Dust: AdPother's own block-break pollution only knows coal and sulfur ores and blocks, so the mod emits dust
-     itself: `destructionPollutionPercent` of the blocks the erosion destroys (not liquids, air or fire) each emit one
-     unit of dust where they were.
-  2. Solar fire: `solarFirePollutionPercent` of the solar fires the mod lights each emit one unit of carbon and one of
-     sulfur, once, when lit (solar fire never burns anything, so not again while it stands).
-  3. Amounts: at 5 %, one eroded layer over a 25 x 25-column view (160,000 blocks) makes about 8,000 dust units, and
-     an infinite phase does that every few seconds; AdPother then spreads each as gas blocks. Claude's view: 5 % for
-     fire, but 0.5 % (or a cap per column per layer) for destruction; the user's call.
-  4. From `pollutionEndsPhase` (11): nothing is emitted, and the engine removes AdPother's gas blocks above the line in
-     each pass (the line it erodes to: SURFACE or TOP_Y), with the chunk pollution AdPother keeps for those chunks
-     left alone (it fades by itself). Emission only where the cubes around are loaded (AdPother looks around the spot
-     and would generate cubes otherwise).
-  Config as the user wrote: `destructionPollution`, `destructionPollutionPercent`, `solarFirePollution`,
-  `solarFirePollutionPercent`, `pollutionStartsPhase`, `pollutionEndsPhase` (a `pollution` section) [low, user].
+- Simple Difficulty switches (`entities.simpleDifficultySunTemperature`, `entities.simpleDifficultyBackgroundTemperature`):
+  the user (turn 29): "I'm not sure they're needed? ... each phase dictates what SimpleDifficulty's temperature is
+  anyway ... What would you recommend here: keep it as is, or remove/revert? If you can remember the why". The why: the
+  user's own turn 27 to-do item, "simpleDifficultySunlightThirst=true and simpleDifficultyBackgroundThirst=true global
+  vars to enable/disable SimplyDifficulty integration without needing a simpleDifficultyIntegration bool"; in turn 28
+  they chose temperature switches over a new thirst feature. Claude's view: keep. Turning the heat off otherwise means
+  zeroing up to 22 values (and losing them for later), and it is the same shape as the Pollution switches the user
+  designed (`destructionPollution`, `solarFirePollution`: on/off besides amounts). Removing is a two-line revert; the
+  same question then covers the two Pollution switches (an empty list or 0 % does the same) [low, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
-- [ ] A sea while you explore (your Retest test): phase 10, fly fast over a sea never loaded. At the edge of your view
-  the water comes down to the level with the rest, and no sea is left standing in the cube under its drained top
-  (Y 32-47 there), even while cubes keep loading.
-- [ ] Hanging falls: water falling one or two blocks with nothing above it no longer stays; it drains away within
-  seconds (vanilla flow). Flat flowing water below the `LAYERS` level still waits for the level, as all water there.
-- [ ] Simple Difficulty switches: `entities.simpleDifficultySunTemperature=false` stops the sun's degrees,
-  `entities.simpleDifficultyBackgroundTemperature=false` the background heat's (both on by default).
-- [ ] From turn 27, not ticked: a sea drained before you see it: `evaporation.mode=LAYERS` with your phases,
-  `/solar set 10`, then teleport over a sea never loaded: it arrives drained down to the level, and a sea deeper than
-  16 blocks drains its lower part within a second or so of arriving.
-- [ ] Optional: water you see start flowing (not leftovers): coordinates, and what changed next to it just before
-  (gravel falling? see the falling gravel item below).
+Turn 29 retest. Tick the boxes and write what you saw into prompt.txt.
+- [ ] Teleport into a sea (your turn 29 find): phase 10, teleport into a sea never loaded, below its surface (as your
+  `/tp` to Y 36): it arrives drained, with no walls of water draining in view.
+- [ ] Flows in a drained sea (your water that was not clearing): water that starts flowing into the drained sea goes
+  within seconds (the engine's next round), not only at the next layer (20 minutes at 1 layer a day).
+- [ ] Pollution of the Realms (`-Pcompat_mods` now puts it and ForgeEndertech in `run/mods`): from phase 2, dust where
+  the erosion destroys blocks (0.5 % of them) and carbon and sulfur above new solar fire (0.5 %); from phase 11
+  (`pollution.pollutionEndsPhase`) none, and the gas goes as the line passes. How it looks, and how the server copes.
+- [ ] Carried from turn 28: Simple Difficulty switches (if you keep them, the decision above):
+  `entities.simpleDifficultySunTemperature=false` stops the sun's degrees, `entities.simpleDifficultyBackgroundTemperature=false`
+  the background heat's (both on by default).
 
 ## Will do (Cubic Chunks)
+Order (the user, turn 29): the items here that do not wait for the user's assets; then the functionality the asset
+items need (items 1 and 2), built and kept on today's behaviour by default until the assets arrive (then switched on);
+then the Ice Apocalypse config (below, moved up); all before vanilla worlds.
 1. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
    `textures/font/splash.png`) [lowest until the user has made them, user].
 2. Phase stingers (the user, turn 27, a future item): "Sound of fire cancels out the phase lighting strike sound. This
@@ -57,19 +51,6 @@ Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
    user]. Turn 19's offset on seed -5479930802988752619 (1,701 positions above the ground, up to 6) was CWG's snow
    populator turning surface water into ice after the model, so the self-test counted it as ground; turn 20 rerun with
    ice not counted: 0.
-4. Pollution of the Realms integration investigation (the user, turn 26) [low, Claude: after the retest fixes]. The
-   user's plan (turn 27): "If we can have solar fire create carbon/sulfur, and dust on block destruction without
-   causing too much to be created, some way to limit that. Even 1 of each type per XZ coordinate would still be lots
-   of pollution blocks created. I think the best way is probably a global percentage of solar fires and block
-   destruction. Then I think for phase 11 (infinite * destruction) that it clears any pollution above the SURFACE/Y
-   line and stops producing any pollution. These should be config options. I can't see a need for per-phase, so global
-   options that take the phase n integer is probably best here. Something like:"
-   `destructionPollution=true`, `destructionPollutionPercent=5`, `solarFirePollution=true`,
-   `solarFirePollutionPercent=5`, `pollutionStartsPhase=2`, `pollutionEndsPhase=11`.
-   Found (turn 27): Pollution of the Realms is `adpother` 1.12.2-1.2.25.0 (needs ForgeEndertech), in the user's current
-   pack (Cubic Chunks SRP Test); its pollution package has carbon, sulfur and dust as gas blocks. Investigated (turn
-   28): docs/RESEARCH.md section 12; Claude's way is in "Waiting for the user's decision". Building it also needs both
-   jars in the dev setup (`-Pcompat_mods`).
 5. The user's item (turn 28): "Optional make sun bigger per phase (in a compatible way. Defaults to off though).
    Respects phases value, and if phases=1 then progressively expand the sun to max over 10 seconds (the fallback),
    otherwise honor the phase's days if set to something other than 0" [low, user: optional, off by default]. Claude's
@@ -77,13 +58,17 @@ Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
    (`phases.count`), each phase's share over its `days`; with one phase, or a phase whose `days` is 0, it grows over 10
    seconds instead. Compatible way: scale only the sun's quad in the vanilla sky render (client), not replace the sky
    renderer, which sky mods also replace.
-
-6. Falling gravel (Claude, turn 28) [low, Claude: an unproven cause]: the user's Retest save has 1,617 gravel blocks
-   with a pending tick (gravel placed by world generation is told to check its support once); gravel lies beside each
-   of the frozen falls. When such a tick runs after the engine took what held the gravel, it falls (vanilla), and
-   leaving and landing tells the blocks around it, which sets water there flowing (the flows the user keeps seeing).
-   Not proven; the turn 28 retest asks for a live sighting. If it holds: the engine makes such gravel settled (it
-   already does for sand and gravel its rules place) or clears its pending tick.
+6. Ice Apocalypse config (the user, turn 29; was under "Later", as it does not need the bottom-up direction): "the ice
+   apocalypse item technically doesn't rely on nor even use directional apocalypse, so we can easily make its changes
+   and create an alternate config file for it. I would keep it as the same config file, but duplicated and changed to
+   fit the ice apocalypse, that the player would have to manually rename. That's how other configs should be. Solar
+   Apocalypse is the default that is actually loaded on first boot." The earlier note: "mostly the same as normal
+   config, but ice-ified, including SimpleDifficulty support and cold variants of some existing settings (cold damage,
+   background cold damage e.t.c)". Claude agrees: one config format, presets as whole config files. Notes for when it
+   starts: cold needs settings the mod lacks (negative Simple Difficulty degrees, cold instead of fire damage, freezing
+   instead of evaporating); how the file reaches players (shipped in the jar and written next to the main config on
+   first boot if missing, named like the user's `solarapocalypse - <name>.cfg`) is for the user to say [after the asset
+   foundations, user].
 
 ## Will do (vanilla worlds)
 - Block engine on chunks (sun damage already works there), recorded surface on chunks, fire.
@@ -93,4 +78,4 @@ Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
 
 ## Later (relies on bottom-up mechanic from above)
 - "Lava Apocalypse" preset for an infinite phase coming from below, converting air into lava.
-- "Ice Apocalypse" preset mostly the same as normal config, but ice-ified, including SimpleDifficulty support and cold variants of some existing settings (cold damage, background cold damage e.t.c)
+- ("Ice Apocalypse" moved up to Will do item 6, turn 29: it does not need the bottom-up direction.)

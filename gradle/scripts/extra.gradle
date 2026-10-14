@@ -24,7 +24,7 @@ def installDevMods = tasks.register('installDevMods') {
     doLast {
         devModsDir.mkdirs()
         // -Pno_dev_mods removes them instead: checks that the mod runs without Cubic Chunks; -Pcompat_mods adds
-        // Simple Difficulty and BuildCraft (removed again on the next run without it)
+        // Simple Difficulty, BuildCraft and Pollution of the Realms (removed again on the next run without it)
         Set<String> wanted = project.hasProperty('no_dev_mods') ? [] as Set : modJars.files.collect { it.name } as Set
         if (devModsMarker.exists()) {
             devModsMarker.readLines().findAll { it && !wanted.contains(it) }.each { new File(devModsDir, it).delete() }

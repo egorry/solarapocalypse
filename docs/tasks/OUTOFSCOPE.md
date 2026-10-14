@@ -25,7 +25,8 @@
   `world.dimensions`; single entries can be scoped with `dimensions=...` (turn 9).
 - **Webs dropping string**: melting ice turns to water, the water breaks a web and it drops string (vanilla; found by
   the user). Not patched.
-- **Announcements** reach the players online when a phase starts; players joining later get no replay.
+- **Announcements** of earlier phases: a player who was offline gets only the running phase's announcement on
+  joining (once), not the ones they missed before it.
 - **Entities without nearby players** stop ticking (vanilla), so burning does no damage there; sun damage still applies
   but hurt cooldowns do not run down.
 - **Trees in the SURFACE reference** (the user's turn 14 enquiry; their decision, turn 15: the bandaid is enough, and

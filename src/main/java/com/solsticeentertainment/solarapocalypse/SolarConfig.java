@@ -103,6 +103,10 @@ public final class SolarConfig {
     public static int backgroundMinSkyLight;
     public static Set<String> entityBlacklist;
     public static boolean simpleDifficultySunTemperature, simpleDifficultyBackgroundTemperature;
+    public static boolean destructionPollution, solarFirePollution;
+    public static String[] destructionPollutionBlocks;
+    public static double solarFirePollutionPercent;
+    public static int pollutionStartsPhase, pollutionEndsPhase;
     // performance
     public static double tickBudgetMs;
     public static double freeTickShare;
@@ -247,6 +251,24 @@ public final class SolarConfig {
                 "With Simple Difficulty: the phases' sunTemperature applies (false: never, whatever the phases say).");
         simpleDifficultyBackgroundTemperature = c.getBoolean("simpleDifficultyBackgroundTemperature", cat, true,
                 "With Simple Difficulty: the phases' backgroundTemperature applies (false: never, whatever the phases say).");
+
+        cat = "pollution";
+        c.setCategoryComment(cat, "With Pollution of the Realms (adpother) installed, the apocalypse pollutes; nothing happens without it.");
+        destructionPollution = c.getBoolean("destructionPollution", cat, true,
+                "Blocks the erosion destroys leave one unit of dust where they were, as often as destructionPollutionBlocks says.");
+        destructionPollutionBlocks = c.getStringList("destructionPollutionBlocks", cat, new String[]{"* @ 0.5%"},
+                "Which destroyed blocks leave dust, and how often: '<selectors> @ <percent>', selectors as in the phases' destroy\n" +
+                "lists. The first entry matching a block counts, so put specific ones first (minecraft:dirt @ 5% above * @ 0.5%).\n" +
+                "Liquids, air and fire never do. dimensions=... limits an entry to those dimensions, as in convert.");
+        solarFirePollution = c.getBoolean("solarFirePollution", cat, true,
+                "Solar fire gives off one unit each of carbon and sulfur when the sun lights it, for solarFirePollutionPercent of fires.");
+        solarFirePollutionPercent = c.get(cat, "solarFirePollutionPercent", 0.5, "Percent of the solar fires lit that pollute.", 0, 100).getDouble();
+        pollutionStartsPhase = c.getInt("pollutionStartsPhase", cat, 2, 1, 1000, "First phase that pollutes.");
+        pollutionEndsPhase = c.getInt("pollutionEndsPhase", cat, 11, 0, 1000,
+                "From this phase on nothing pollutes, and the apocalypse clears the pollution it comes across (anything from\n" +
+                "Pollution of the Realms, down to its line as it erodes). 0 = never. To keep the pollution, set the percentages\n" +
+                "to 0 from a phase on instead. Warning: an infinite phase before it pollutes too, and it destroys a layer every\n" +
+                "few seconds: a great deal of pollution, heavy for the server and clients.");
 
         cat = "performance";
         tickBudgetMs = c.get(cat, "tickBudgetMs", 4.0, "At most this many milliseconds per server tick are spent changing blocks (updateBeforeSending's work not counted).").getDouble();

@@ -90,6 +90,7 @@ public class SolarApocalypse {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new SolarCommand());
+        com.solsticeentertainment.solarapocalypse.compat.Pollution.init();
     }
 
     /** For the log and operators: a Cubic Chunks version the mod's hook does not fit (CubeEngine.hookWarning), or null. */

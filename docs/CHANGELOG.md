@@ -9,6 +9,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   dependency needed).
 - Block-breaking effects: players near the apocalypse's block changes see and hear them as vanilla breaks a block,
   and liquids that evaporate fizz and smoke (`blocks.breakEffects`, `breakEffectsRadius` 16, `breakEffectsPerTick` 8).
+- Pollution of the Realms integration (optional): the erosion leaves dust (`pollution.destructionPollutionBlocks`,
+  default `* @ 0.5%`), solar fire gives off carbon and sulfur (`solarFirePollutionPercent`, 0.5), from phase 2
+  (`pollutionStartsPhase`); from phase 11 (`pollutionEndsPhase`) nothing pollutes and the apocalypse clears the gas.
 - Simple Difficulty integration (optional): the sun and its heat raise the temperature there
   (`phase_n.sunTemperature`, `phase_n.backgroundTemperature`), each with a global switch
   (`entities.simpleDifficultySunTemperature`, `entities.simpleDifficultyBackgroundTemperature`).
@@ -140,6 +143,12 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   splash), not each one crossed.
 - An `evaporate` entry naming a still liquid (`minecraft:water`) takes its flowing form too.
 ### Fixed
+- Cubic Chunks: teleporting into a sea brought it in full, to drain in view: Cubic Chunks lit its lower cubes before
+  the top one.
+- Cubic Chunks: water that flowed into a drained sea stayed until the next layer (up to a day): it now goes within
+  seconds.
+- A dedicated server could stop when solar fire was placed beside a modded block whose code names client-only classes
+  (found with Pollution of the Realms' gas).
 - Cubic Chunks: exploring fast over a sea could leave its water standing under the drained top cube at the edge of
   view: updating cubes before sending used up the engine's budget for the tick.
 - Falling water left hanging in the air when the apocalypse took the water above it now drains away.

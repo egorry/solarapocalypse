@@ -63,7 +63,8 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
   title on screen with the message small underneath; fonts, colours and timing in the `splash` section). All empty by
   default. `&` formatting codes work in both texts. `/solar announce [n]` replays a phase's announcement to yourself.
   Several phases crossed at once (`/solar phase`, `/solar set` or `add`, a time skip): every start is logged, only the
-  last is announced (turn 27, the user's ask).
+  last is announced (turn 27, the user's ask). A player who was offline when the running phase started gets its
+  announcement once, 3 seconds after joining (not earlier phases they missed).
 - Splash fonts are client textures in the layout of `minecraft:textures/font/ascii.png` (`splash.titleFont`, default
   `solarapocalypse:textures/font/splash.png`, not shipped yet; `splash.messageFont`); Minecraft's font while missing. The
   title flickers between `splash.titleColor` and `splash.flickerColor`.
@@ -327,7 +328,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   every cube due by it has been processed. A round takes the cubes whose earliest pending change falls due by the clock
   (at most one look per cube per 1/20 day, or per layer in an infinite phase), the cubes below that a pass opened, and
   the cubes that loaded (new and reloaded: the retroactive part) or had a block placed in them (by a player, a wand, an
-  enderman..., so placing cannot hold the apocalypse off) since the round before. While the engine keeps up, the clock
+  enderman..., so placing cannot hold the apocalypse off) or a liquid flow into a block (vanilla flow, a poured bucket:
+  turn 29, flows that started after a cube's last look stood in a drained sea until its next layer) since the round
+  before. While the engine keeps up, the clock
   is the present (moved every 20 ticks). While it cannot, the clock moves one step per round (a layer in an infinite
   phase; straight to the next change due when nothing is due before it), so the whole loaded world comes down evenly at
   the speed the engine manages, an onion layer at a time, and a cube that loads or wakes meanwhile joins at its
@@ -360,7 +363,11 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   inside Cubic Chunks' cube generation, whose own time limit per tick (`maxCubeGenerationTimeMillis`) counts it, so it
   slows loading, not ticks. Nor does it use the budget up: its time and changes are not counted against
   `tickBudgetMs` and `maxBlockChangesPerTick` (turn 28: counted, they left the engine nothing while players explored,
-  so the cube under a drained sea top waited and the user saw it full at the edge of view). Cubes that load during another cube's pass wait in the queue as before. Cubes such a pass
+  so the cube under a drained sea top waited and the user saw it full at the edge of view). Cubic Chunks lights the
+  cubes nearest a player first, so after a teleport into a sea the cube under its top one can come first: when a
+  standing liquid on a cube's top layer lies under the column's top and would change in the open, the cube above is
+  loaded and lit first (which runs the hook for it, and so on up to the sea's top), so its water is not sent full and
+  drained in view later (turn 29, the user's teleport test). Cubes that load during another cube's pass wait in the queue as before. Cubes such a pass
   opens (the next cube down a draining sea, the cube above whose fire waited for the ground) go first on the next tick,
   not at the end of the round (turn 27). Lighting still runs after the changes: doing them before
   the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
@@ -522,6 +529,15 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   0, 1, 1, 2, 2, 3, 4, 5, 6, 7 over the eleven phases (Claude's; in the sun hot from phase 4 or so, burning from 8). Fire
   Resistance does not cool it (Simple Difficulty has its own means). Global switches (turn 28, the user's ask):
   `entities.simpleDifficultySunTemperature` and `entities.simpleDifficultyBackgroundTemperature` (default true).
+- Pollution of the Realms (soft dependency, AdPother; turn 29, the user's plan): from `pollution.pollutionStartsPhase`
+  (2), `destructionPollutionBlocks` (`<selectors> @ <percent>`, the first entry matching a block counts; default
+  `* @ 0.5%`) of the blocks the apocalypse turns to air or fire leave one unit of dust where they were (above, for fire
+  in their place); liquids, air and fire never do. `solarFirePollutionPercent` (0.5) of the solar fires it lights give
+  off one unit of carbon above them and one of sulfur above that. Placed through AdPother's own `generateAt`, only where
+  the six neighbours are loaded. From `pollutionEndsPhase` (11; 0 = never) nothing pollutes, and the engine turns the
+  gas it passes (any of AdPother's dust, carbon and sulfur, down to its line) into air; gas flowing into a block then
+  queues its cube. The switches `destructionPollution` and `solarFirePollution` turn each part off. Updating before
+  sending pollutes too (terrain arriving eroded comes with its dust).
 - Damage source `solarapocalypse.sun` bypasses armour and is not fire damage; Fire Resistance protects as
   `entities.fireResistance` says (default `DIRECT`: the sun, not the heat). Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
   fire-immune mobs only if `entities.spareFireImmune` (default false).

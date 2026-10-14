@@ -1,5 +1,6 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import com.solsticeentertainment.solarapocalypse.compat.Pollution;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockFalling;
@@ -67,6 +68,11 @@ public final class BlockChanges {
         this.timeline = timeline;
         this.rules = rules;
         this.evaporationTopY = evaporationTopY;
+    }
+
+    /** The share of a destroyed block state that leaves dust (pollution.destructionPollutionBlocks). */
+    public double dustShare(IBlockState state) {
+        return rules.dustShare(state);
     }
 
     /** The deepest layer below a column's surface that a conversion acts in. */
@@ -391,6 +397,7 @@ public final class BlockChanges {
         if (!SolarConfig.dropItems && from.getBlock().canSustainLeaves(from, world, pos) && !to.getBlock().canSustainLeaves(to, world, pos))
             zapLeaves(world, pos);
         if (SolarConfig.breakEffects && !unseen) effects(world, pos, from);
+        if (Pollution.on) Pollution.changed(world, pos, from, to, destroyed);
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
         else if (to.getBlock() == Blocks.FIRE) vanillaFireLit++;
@@ -523,7 +530,7 @@ public final class BlockChanges {
     private static final EnumFacing[] SETTLE = {EnumFacing.UP, EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST};
 
     /** Whether a block's six neighbours are loaded (its update may look at them: generate nothing). */
-    private static boolean aroundLoaded(World world, BlockPos pos) {
+    public static boolean aroundLoaded(World world, BlockPos pos) {
         for (EnumFacing side : EnumFacing.values()) if (!world.isBlockLoaded(pos.offset(side))) return false;
         return true;
     }
