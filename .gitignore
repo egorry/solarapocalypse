@@ -30,3 +30,4 @@ research
 # the user's prompt scratch files and in-game test logs
 prompt.txt
 test_log_files
+__pycache__/
