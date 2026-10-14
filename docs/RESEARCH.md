@@ -351,3 +351,19 @@ the CWG noise bound (3.3), fire (6). Further implementation pitfalls they found:
 
 ## 11. Open questions
 All answered in turns 2-4; the decisions are in [SPEC.md](SPEC.md) and [DESIGN.md](DESIGN.md).
+
+## 12. Pollution of the Realms (AdPother 1.12.2-1.2.25.0, turn 28)
+From `javap` on the jar in the user's current pack (`AdPother-1.12.2-1.2.25.0-build.0673.jar`, needs
+`ForgeEndertech-1.12.2-4.5.6.1`; CurseForge `pollution-of-the-realms`). Package `com.endertech.minecraft.mods.adpother`.
+- Pollutants are blocks with an entity (`blocks.Pollutant<E>`, a `DENSITY` property): built-ins `CARBON`, `SULFUR`,
+  `DUST` (`init.Pollutants.BuiltIn`), found by name through `Pollutants.findBy(String)`.
+- `Pollutant.generateAt(World, BlockPos, int amount, int radius)` places pollution near a spot (it walks up and down
+  from the spot within the radius, up to the block's `getPollutionCapacity()` each). `Emissions.of().carbon(f).sulfur(f)
+  .dust(f)` is the amounts form used by its sources.
+- `pollution.WorldData` (per world): `onBlockBroken(World, BlockPos, IBlockState)` emits for configured breakables only
+  (built-ins: coal and sulfur ores and blocks, charcoal and coke blocks, two trash ores), `onFuelBurned(...)` for fuels
+  burnt in tile entities or by entities, `getChunkPollution(World, BlockPos)` (pollution kept per 2D chunk, besides the
+  gas blocks), `removePollutionInfoAt(ChunkLoc)`.
+- Its own events cover chunk loads, entities, players and anvils; it adds a coremod (`LoadingPlugin`) with transformers.
+- Unknown until tried in a Cubic Chunks world: whether its 2D chunk data and generator (`pollution.Generator`, chunk
+  bounds) behave with cubes, and whether `generateAt` reads unloaded cubes (which would generate them there).

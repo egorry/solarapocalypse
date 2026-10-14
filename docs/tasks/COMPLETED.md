@@ -35,6 +35,9 @@ Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CH
   instances rule.
 - Stingers (to-do item 2): the user's yes to music with vanilla music fading out over about half a second; filed there.
 - The user's new to-do item 5 (a bigger sun per phase, optional, off by default): filed with Claude's reading.
+- Pollution of the Realms investigation (to-do item 4, next by priority once the fixes were done): AdPother's API read
+  from its jar (copied read-only from the user's current pack, where they said looking was fine); findings in
+  RESEARCH.md section 12, Claude's way in TODO.md "Waiting for the user's decision".
 
 ## Turn 27 (2026-10-12)
 - The user's retest (the turn 26 list; ticked without a note = worked): `-Pcompat_mods` (their run configuration

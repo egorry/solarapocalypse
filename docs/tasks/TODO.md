@@ -9,7 +9,22 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- (none)
+- Pollution of the Realms (to-do item 4, the user's plan): Claude's way, from the turn 28 look at AdPother's code
+  (docs/RESEARCH.md section 12). A yes, or other choices, on each:
+  1. Dust: AdPother's own block-break pollution only knows coal and sulfur ores and blocks, so the mod emits dust
+     itself: `destructionPollutionPercent` of the blocks the erosion destroys (not liquids, air or fire) each emit one
+     unit of dust where they were.
+  2. Solar fire: `solarFirePollutionPercent` of the solar fires the mod lights each emit one unit of carbon and one of
+     sulfur, once, when lit (solar fire never burns anything, so not again while it stands).
+  3. Amounts: at 5 %, one eroded layer over a 25 x 25-column view (160,000 blocks) makes about 8,000 dust units, and
+     an infinite phase does that every few seconds; AdPother then spreads each as gas blocks. Claude's view: 5 % for
+     fire, but 0.5 % (or a cap per column per layer) for destruction; the user's call.
+  4. From `pollutionEndsPhase` (11): nothing is emitted, and the engine removes AdPother's gas blocks above the line in
+     each pass (the line it erodes to: SURFACE or TOP_Y), with the chunk pollution AdPother keeps for those chunks
+     left alone (it fades by itself). Emission only where the cubes around are loaded (AdPother looks around the spot
+     and would generate cubes otherwise).
+  Config as the user wrote: `destructionPollution`, `destructionPollutionPercent`, `solarFirePollution`,
+  `solarFirePollutionPercent`, `pollutionStartsPhase`, `pollutionEndsPhase` (a `pollution` section) [low, user].
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
 Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
@@ -52,7 +67,9 @@ Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
    `destructionPollution=true`, `destructionPollutionPercent=5`, `solarFirePollution=true`,
    `solarFirePollutionPercent=5`, `pollutionStartsPhase=2`, `pollutionEndsPhase=11`.
    Found (turn 27): Pollution of the Realms is `adpother` 1.12.2-1.2.25.0 (needs ForgeEndertech), in the user's current
-   pack (Cubic Chunks SRP Test); its pollution package has carbon, sulfur and dust as gas blocks. Not started.
+   pack (Cubic Chunks SRP Test); its pollution package has carbon, sulfur and dust as gas blocks. Investigated (turn
+   28): docs/RESEARCH.md section 12; Claude's way is in "Waiting for the user's decision". Building it also needs both
+   jars in the dev setup (`-Pcompat_mods`).
 5. The user's item (turn 28): "Optional make sun bigger per phase (in a compatible way. Defaults to off though).
    Respects phases value, and if phases=1 then progressively expand the sun to max over 10 seconds (the fallback),
    otherwise honor the phase's days if set to something other than 0" [low, user: optional, off by default]. Claude's
