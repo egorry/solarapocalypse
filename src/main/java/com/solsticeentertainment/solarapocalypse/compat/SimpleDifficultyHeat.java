@@ -15,7 +15,8 @@ import net.minecraft.world.World;
 /**
  * Simple Difficulty (soft dependency, loaded only with it): the sun warms the temperature there, as it damages mobs:
  * phase_n.sunTemperature in direct sunlight (as sunDamage: by day unless the phase has the sun at night) plus
- * phase_n.backgroundTemperature wherever background heat reaches (as backgroundDamage).
+ * phase_n.backgroundTemperature wherever background heat reaches (as backgroundDamage). Each has a global switch
+ * (entities.simpleDifficultySunTemperature, simpleDifficultyBackgroundTemperature).
  */
 public final class SimpleDifficultyHeat implements ITemperatureModifier {
 
@@ -33,8 +34,8 @@ public final class SimpleDifficultyHeat implements ITemperatureModifier {
         int phase = SolarApocalypse.timeline().phaseAt(ApocalypseClock.progress());
         if (phase < 0) return 0;
         SolarConfig.Phase p = SolarConfig.phases[phase];
-        boolean direct = p.sunTemperature != 0 && SunDamage.sunUp(world, phase) && Sky.at(world, pos) == Sky.EXPOSED;
-        boolean background = p.backgroundTemperature != 0 && Sky.heat(world, pos);
+        boolean direct = SolarConfig.simpleDifficultySunTemperature && p.sunTemperature != 0 && SunDamage.sunUp(world, phase) && Sky.at(world, pos) == Sky.EXPOSED;
+        boolean background = SolarConfig.simpleDifficultyBackgroundTemperature && p.backgroundTemperature != 0 && Sky.heat(world, pos);
         return (float) ((direct ? p.sunTemperature : 0) + (background ? p.backgroundTemperature : 0));
     }
 

@@ -322,12 +322,13 @@ public final class CubeEngine {
         CubePos pos = cube.getCoords();
         BlockChanges changes = SolarApocalypse.changes(world);
         List<CubePos> later = new ArrayList<>();
-        long at = state.clock, wake;
+        long at = state.clock, wake, nanos0 = nanos, changed0 = BlockChanges.changed;
         BlockChanges.unseen = true;
         try {
             wake = look((WorldServer) world, ((ICubicWorld) world).getCubeCache(), cube, changes, at, state, later);
         } finally {
             BlockChanges.unseen = false;
+            SolarApocalypse.spentBeforeSending(nanos - nanos0, BlockChanges.changed - changed0);
         }
         cubesPrepared++;
         state.next.remove(pos);

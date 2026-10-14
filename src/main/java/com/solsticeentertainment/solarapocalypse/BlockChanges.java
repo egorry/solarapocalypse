@@ -4,6 +4,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockBush;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLeaves;
+import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
@@ -383,6 +384,7 @@ public final class BlockChanges {
                 to = AIR;
             }
             if (!SolarConfig.blockPhysics && !nothingRests(from)) settle(world, pos, to);
+            if (!SolarConfig.blockPhysics && to.getMaterial() != from.getMaterial()) drainFall(world, pos, from);
         } finally {
             world.restoringBlockSnapshots = restoring;
         }
@@ -434,7 +436,7 @@ public final class BlockChanges {
      * Without block physics, what sits on top of or hangs on the side of a changed block still gets its neighbour update,
      * so what the new block cannot hold pops off now instead of later, with drops (plants and crops on paths, torches on
      * top or on the side, the top half of tall plants and doors, ladders, fire). Full blocks, sand and gravel, and liquids
-     * are not told: nothing falls or flows.
+     * are not told: nothing falls or flows (but see drainFall).
      */
     private static void settle(World world, BlockPos pos, IBlockState to) {
         for (EnumFacing side : SETTLE) {
@@ -501,6 +503,21 @@ public final class BlockChanges {
     private static boolean nothingRests(IBlockState from) {
         Material m = from.getMaterial();
         return m == Material.AIR || m == Material.FIRE;
+    }
+
+    /**
+     * Without block physics, a falling vanilla liquid under a liquid the engine takes is told, so it drains the vanilla
+     * way (each block it frees tells the next) instead of hanging in the air (the user's frozen falls, turn 28). Sources
+     * and sideways flows are not told: they would spread into the space just cleared.
+     */
+    private static void drainFall(World world, BlockPos pos, IBlockState from) {
+        if (!(from.getBlock() instanceof BlockLiquid)) return;
+        BlockPos below = pos.down();
+        if (!world.isBlockLoaded(below)) return;
+        IBlockState state = world.getBlockState(below);
+        if (state.getMaterial() != from.getMaterial() || !(state.getBlock() instanceof BlockLiquid)
+                || state.getValue(BlockLiquid.LEVEL) < 8 || !aroundLoaded(world, below)) return;
+        state.neighborChanged(world, below, from.getBlock(), pos);
     }
 
     private static final EnumFacing[] SETTLE = {EnumFacing.UP, EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST};

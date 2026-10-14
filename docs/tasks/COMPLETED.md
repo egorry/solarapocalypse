@@ -2,6 +2,40 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 28 (2026-10-14)
+- The user's retest (turn 27 list): solar fire steps sound like stone, and `/solar phase 11` announces only phase 11:
+  both ticked. The sea drained before sending and the live flow sighting carry to the turn 28 retest.
+- Simple Difficulty switches (the turn 27 question): the user chose (b), "on/off switches. Basically so the user can
+  have SimpleDifficulty installed, but disable either of the temperature features. I apologize, I didn't mean thirst
+  at all, but the temperature you get from direct sunlight or background." Done: `entities.simpleDifficultySunTemperature`
+  and `entities.simpleDifficultyBackgroundTemperature` (default true), named for temperature instead of the "Thirst" in
+  the user's turn 27 names; false turns that part off whatever the phases say.
+- Versions (the turn 27 question): "Current versions are all correct, no need to change anything." Closed.
+- The user's sea test (save `Retest` and its screenshot; scanned read-only): "I can see (new) ocean in the distance not
+  modified, and my character is near some flowing water sticking up out of the ground that was never culled. All
+  phase 10."
+  - Ocean in the distance: in the save, the columns 9-13 from the player (the edge of the loaded area) had their sea's
+    top cube (Y 48-63) drained and the cube under it (Y 32-47) still full, Y 34-47, far above the level (Y 36). The
+    hook drains the top cube and queues the one below for the next tick, but its own work (thousands of changes per
+    cube while the player flew) counted against the engine's 4 ms and 2,048 changes per tick, so the engine got no
+    budget at all while cubes kept loading and the queued cubes waited. Fixed: work done before sending no longer
+    counts against `tickBudgetMs` and `maxBlockChangesPerTick` (it sends nothing; Cubic Chunks' generation time limit
+    already covers it). Columns past the view distance are generated for population but not lit or sent: they wait,
+    untouched, until a player comes near (as before).
+  - Flowing water sticking up: falls one or two blocks high at Y 29-31 with air above them, and flat flows, near
+    gravel. The mod removed the water above a fall without telling it (no block physics), so it hung there; all of it
+    was below the `LAYERS` level (Y 36 at day 7.85: phase 3 from day 0.75 at 4 layers a day), so evaporation was not
+    due there yet (Y 31 at day 9.0). The sea itself went by the phase 7+ destroy list (`*` takes water: hardness 100),
+    down to the ground. Fixed: a fall under a liquid the engine takes now gets its update and drains the vanilla way.
+    What set the water flowing: likely gravel falling (1,617 pending gravel ticks in the save, gravel beside the
+    flows), not proven (TODO.md item 6).
+- The user on instances: "one of your task things was looking into my current save in one of my instances to try and
+  find the flowing water location ... I even named the save I was operating on ... for the water problem it wasn't
+  required at all." Right: the save they named is in this workspace (`run/saves`); CLAUDE.md now says so next to the
+  instances rule.
+- Stingers (to-do item 2): the user's yes to music with vanilla music fading out over about half a second; filed there.
+- The user's new to-do item 5 (a bigger sun per phase, optional, off by default): filed with Claude's reading.
+
 ## Turn 27 (2026-10-12)
 - The user's retest (the turn 26 list; ticked without a note = worked): `-Pcompat_mods` (their run configuration
   fixed), terrain updated before sending, break effects at each block, dark spots (every fire spot lit at night). The

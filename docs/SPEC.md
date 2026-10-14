@@ -298,7 +298,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   switches to flag 3. The blocks on top of and beside a change still get their neighbour update when their own neighbours
   are loaded (full blocks are not told; nothing around a change of air or fire, which hold nothing; solar fire beside
   a change, which only minds its ground), so what the new block cannot hold (plants and crops on paths, torches on top or
-  on the side, ladders, top halves, fire) pops off at once; sand, gravel and liquids are left alone. A plant a rule
+  on the side, ladders, top halves, fire) pops off at once; sand, gravel and liquids are left alone, except a falling
+  liquid under a liquid the engine takes: it is told, and drains the vanilla way instead of hanging in the air (turn 28). A plant a rule
   makes where it cannot live (a dead bush on grass or path; vanilla keeps dead bushes on sand, dirt and hardened clay
   only) is removed at once instead of popping off later with drops. No item drops or container spills unless `blocks.dropItems`, also from blocks that pop
   off (Forge's `restoringBlockSnapshots` switch is set during the change).
@@ -357,7 +358,9 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
   above are generated first (not lit or sent), or its sky would count as unknown and nothing that needs the sun would
   change (turn 26: the user's test saw new terrain arrive unchanged). Not held by the engine's time budget: it runs
   inside Cubic Chunks' cube generation, whose own time limit per tick (`maxCubeGenerationTimeMillis`) counts it, so it
-  slows loading, not ticks. Cubes that load during another cube's pass wait in the queue as before. Cubes such a pass
+  slows loading, not ticks. Nor does it use the budget up: its time and changes are not counted against
+  `tickBudgetMs` and `maxBlockChangesPerTick` (turn 28: counted, they left the engine nothing while players explored,
+  so the cube under a drained sea top waited and the user saw it full at the edge of view). Cubes that load during another cube's pass wait in the queue as before. Cubes such a pass
   opens (the next cube down a draining sea, the cube above whose fire waited for the ground) go first on the next tick,
   not at the end of the round (turn 27). Lighting still runs after the changes: doing them before
   the first light would need the engine to work without the column's height map. Cubic Chunks offers no hook there, so
@@ -517,7 +520,8 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   `phase_n.backgroundTemperature` where background heat does (as `backgroundDamage`); both add up in the sun. Simple
   Difficulty's scale: 11-14 normal, 15-19 hot, 20-25 burning. Defaults: sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0,
   0, 1, 1, 2, 2, 3, 4, 5, 6, 7 over the eleven phases (Claude's; in the sun hot from phase 4 or so, burning from 8). Fire
-  Resistance does not cool it (Simple Difficulty has its own means).
+  Resistance does not cool it (Simple Difficulty has its own means). Global switches (turn 28, the user's ask):
+  `entities.simpleDifficultySunTemperature` and `entities.simpleDifficultyBackgroundTemperature` (default true).
 - Damage source `solarapocalypse.sun` bypasses armour and is not fire damage; Fire Resistance protects as
   `entities.fireResistance` says (default `DIRECT`: the sun, not the heat). Skipped: creative/spectator players, armour stands, `entities.blacklist`, and
   fire-immune mobs only if `entities.spareFireImmune` (default false).

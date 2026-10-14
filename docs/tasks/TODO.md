@@ -9,28 +9,22 @@ brackets are the user's where they gave one, otherwise Claude's, with the reason
 
 ## Waiting for the user's decision
 Nothing here is dropped: each needs a yes or no (or another choice) from the user, with Claude's view given.
-- Simple Difficulty switches (the user's to-do item, turn 27): "simpleDifficultySunlightThirst=true and
-  simpleDifficultyBackgroundThirst=true global vars to enable/disable SimplyDifficulty integration without needing a
-  simpleDifficultyIntegration bool (which I think is stupid)". The mod has no such bool: the integration is on whenever
-  Simple Difficulty is installed, and each phase's `sunTemperature` / `backgroundTemperature` (0 = none) is its switch.
-  Claude reads "Thirst" two ways: (a) new: the sun makes players thirsty (Simple Difficulty's thirst drains faster in
-  the sun, and in the background heat), these two being its global switches; (b) global on/off switches for the
-  temperatures there now. Which one? Claude's view: (a) suits Simple Difficulty (its API has thirst exhaustion); then
-  also say whether the amounts are per phase (like the temperatures) or one global rate [low, user].
-- Versions for the current pack (turn 27: the user's current pack is Cubic Chunks SRP Test, not Cubic Chunks): the dev
-  setup and the Cubic Chunks patch are pinned to the old pack's Cubic Chunks 0.0.1271 and CubicWorldGen 0.0.152 (and
-  its Simple Difficulty and BuildCraft for `-Pcompat_mods`). If the current pack has other versions, tell Claude which,
-  or let it read that pack's mods folder once (it looks at instances only when asked) [Claude: before a release].
+- (none)
 
 ## Waiting for the user's test (client side: Claude cannot see a client)
-Turn 27 retest. Tick the boxes and write what you saw into prompt.txt.
-- [ ] Solar fire steps (turn 26, not ticked in turn 27): walking and jumping through solar fire sounds like stone.
-- [ ] Phase jumps: from phase 1, `/solar phase 11`: only phase 11's message, sound and splash (each start is still in
-  the log).
-- [ ] A sea drained before you see it: `evaporation.mode=LAYERS` (the default again) with your phases, `/solar set 10`
-  (the level is then far down), then teleport over a sea never loaded: it arrives drained down to the level, and a
-  sea deeper than 16 blocks drains its lower part within a second or so of arriving, not minutes later.
-- [ ] Optional: water you see start flowing (not leftovers): coordinates, and what changed next to it just before.
+Turn 28 retest. Tick the boxes and write what you saw into prompt.txt.
+- [ ] A sea while you explore (your Retest test): phase 10, fly fast over a sea never loaded. At the edge of your view
+  the water comes down to the level with the rest, and no sea is left standing in the cube under its drained top
+  (Y 32-47 there), even while cubes keep loading.
+- [ ] Hanging falls: water falling one or two blocks with nothing above it no longer stays; it drains away within
+  seconds (vanilla flow). Flat flowing water below the `LAYERS` level still waits for the level, as all water there.
+- [ ] Simple Difficulty switches: `entities.simpleDifficultySunTemperature=false` stops the sun's degrees,
+  `entities.simpleDifficultyBackgroundTemperature=false` the background heat's (both on by default).
+- [ ] From turn 27, not ticked: a sea drained before you see it: `evaporation.mode=LAYERS` with your phases,
+  `/solar set 10`, then teleport over a sea never loaded: it arrives drained down to the level, and a sea deeper than
+  16 blocks drains its lower part within a second or so of arriving.
+- [ ] Optional: water you see start flowing (not leftovers): coordinates, and what changed next to it just before
+  (gravel falling? see the falling gravel item below).
 
 ## Will do (Cubic Chunks)
 1. Ship the user's phase sound and splash font when they are made (`assets/solarapocalypse/sounds.json`,
@@ -41,7 +35,9 @@ Turn 27 retest. Tick the boxes and write what you saw into prompt.txt.
    takes the oldest one's channel for a new one when full, so many fires crackling cut the phase sound short; music
    streams on channels of its own. Likely way: the client plays the stinger as a streamed sound in the music category,
    stops (or fades) vanilla music when it starts, and holds new music back until it ends [low, user: future; with item
-   1].
+   1]. The user (turn 28): "For when we get to it: phase sounds as music, especially fading out Minecraft music
+   (quickly, over half a second or so, agree?): yes." Claude agrees: half a second (10 ticks) reads as a cut, not a
+   gap; a client setting if it needs tuning.
 3. Validate the CubicWorldGen surface model on the user's final world-gen preset [lowest until the user has chosen it,
    user]. Turn 19's offset on seed -5479930802988752619 (1,701 positions above the ground, up to 6) was CWG's snow
    populator turning surface water into ice after the model, so the self-test counted it as ground; turn 20 rerun with
@@ -57,6 +53,20 @@ Turn 27 retest. Tick the boxes and write what you saw into prompt.txt.
    `solarFirePollutionPercent=5`, `pollutionStartsPhase=2`, `pollutionEndsPhase=11`.
    Found (turn 27): Pollution of the Realms is `adpother` 1.12.2-1.2.25.0 (needs ForgeEndertech), in the user's current
    pack (Cubic Chunks SRP Test); its pollution package has carbon, sulfur and dust as gas blocks. Not started.
+5. The user's item (turn 28): "Optional make sun bigger per phase (in a compatible way. Defaults to off though).
+   Respects phases value, and if phases=1 then progressively expand the sun to max over 10 seconds (the fallback),
+   otherwise honor the phase's days if set to something other than 0" [low, user: optional, off by default]. Claude's
+   reading, to confirm when it starts: the sun grows from vanilla size to a configured maximum over the phases
+   (`phases.count`), each phase's share over its `days`; with one phase, or a phase whose `days` is 0, it grows over 10
+   seconds instead. Compatible way: scale only the sun's quad in the vanilla sky render (client), not replace the sky
+   renderer, which sky mods also replace.
+
+6. Falling gravel (Claude, turn 28) [low, Claude: an unproven cause]: the user's Retest save has 1,617 gravel blocks
+   with a pending tick (gravel placed by world generation is told to check its support once); gravel lies beside each
+   of the frozen falls. When such a tick runs after the engine took what held the gravel, it falls (vanilla), and
+   leaving and landing tells the blocks around it, which sets water there flowing (the flows the user keeps seeing).
+   Not proven; the turn 28 retest asks for a live sighting. If it holds: the engine makes such gravel settled (it
+   already does for sand and gravel its rules place) or clears its pending tick.
 
 ## Will do (vanilla worlds)
 - Block engine on chunks (sun damage already works there), recorded surface on chunks, fire.

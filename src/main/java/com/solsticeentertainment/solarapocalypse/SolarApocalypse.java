@@ -56,6 +56,10 @@ public class SolarApocalypse {
     private static double engineMs;
     private static long engineNanos;
     private static long tickStartChanges;
+    // this tick's updates before sending (performance.updateBeforeSending): Cubic Chunks' generation pays for them, and
+    // clients are sent nothing, so they leave the engine's budget and change cap alone (the cubes they open below would
+    // otherwise wait while players explore: the user's sea left under the drained top cube, turn 28)
+    private static long hookNanos, hookChanges;
     /** For /solar status: averages over ~100 ticks, and the slowest engine tick since the last status. */
     public static double averageEngineMs, averageChanges, maxEngineMs;
 
@@ -266,13 +270,19 @@ public class SolarApocalypse {
 
     /** hasBudget, counting engine time not yet added to CubeEngine.nanos (the cube being processed). */
     public static boolean hasBudget(long pendingNanos) {
-        return CubeEngine.nanos + pendingNanos - engineNanos < budgetNanos && mayChange();
+        return CubeEngine.nanos - hookNanos + pendingNanos - engineNanos < budgetNanos && mayChange();
+    }
+
+    /** Engine time and block changes spent updating a cube before sending: not counted against this tick's budget. */
+    public static void spentBeforeSending(long nanos, long changes) {
+        hookNanos += nanos;
+        hookChanges += changes;
     }
 
     /** Whether performance.maxBlockChangesPerTick (skipMaxBlockChangesPerTick right after a /time skip) allows another change. */
     public static boolean mayChange() {
         int cap = boost ? SolarConfig.skipMaxBlockChangesPerTick : SolarConfig.maxBlockChangesPerTick;
-        return cap <= 0 || BlockChanges.changed - tickStartChanges < cap;
+        return cap <= 0 || BlockChanges.changed - hookChanges - tickStartChanges < cap;
     }
 
     @SubscribeEvent
@@ -290,6 +300,7 @@ public class SolarApocalypse {
         averageEngineMs = engineMs;
         averageChanges = averageChanges * 0.99 + (BlockChanges.changed - tickStartChanges) * 0.01;
         tickStartChanges = BlockChanges.changed;
+        hookNanos = hookChanges = 0;
         double freeMs = Math.max(0, 50 - (averageMs - engineMs));
         double budgetMs = Math.max(MIN_BUDGET_MS, Math.min(SolarConfig.tickBudgetMs, SolarConfig.freeTickShare * freeMs));
         boost = server.getTickCounter() < boostUntil;

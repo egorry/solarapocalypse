@@ -83,6 +83,7 @@ public final class SelfTest {
     private static int fireCount, cap, planeY;
     private static long lastChanged, maxChanges;
     private static final float[] firstHit = new float[2];
+    private static BlockPos fallTop;
 
     private SelfTest() {}
 
@@ -114,6 +115,7 @@ public final class SelfTest {
                 carryCheck();
                 aboveCheck();
                 settleCheck();
+                fallSetup();
                 leafCheck();
                 backgroundSetup();
                 settledSetup();
@@ -130,6 +132,7 @@ public final class SelfTest {
                 if (!drained(600)) return;
                 census("after phase 1");
                 sendingCheck();
+                fallCheck();
                 backgroundCheck();
                 settledCheck();
                 log("items dropped on solar fire and on bare ground: burnt {} (true), still there {} (true)", burning.isDead, !bare.isDead);
@@ -1086,6 +1089,32 @@ public final class SelfTest {
                 world.getBlockState(c.up()).getBlock().getRegistryName(), world.getBlockState(d.up()).getBlock().getRegistryName(),
                 world.getBlockState(d.up(2)).getBlock().getRegistryName(),
                 world.getEntitiesWithinAABB(EntityItem.class, box).size() - before);
+    }
+
+    /**
+     * A water source on three blocks of falling water on stone, in open air: the engine takes the source (no block
+     * physics), and the falls must drain the vanilla way, not hang there (turn 28); checked after phase 1 (fallCheck).
+     */
+    private static void fallSetup() {
+        ICubeProvider cubes = ((ICubicWorld) world).getCubeCache();
+        BlockPos spawn = world.getSpawnPoint();
+        int y = Integer.MIN_VALUE;
+        for (int dx = -2; dx <= 2; dx++) for (int dz = 2; dz <= 6; dz++) y = Math.max(y, top(cubes, spawn.getX() + dx, spawn.getZ() + dz) + 8);
+        BlockPos floor = new BlockPos(spawn.getX(), y, spawn.getZ() + 4);
+        world.setBlockState(floor, Blocks.STONE.getDefaultState(), 18);
+        IBlockState fall = Blocks.WATER.getDefaultState().withProperty(BlockLiquid.LEVEL, 8);
+        for (int i = 1; i <= 3; i++) world.setBlockState(floor.up(i), fall, 18);
+        fallTop = floor.up(4);
+        world.setBlockState(fallTop, Blocks.WATER.getDefaultState(), 18);
+        BlockChanges.apply(world, fallTop, Blocks.WATER.getDefaultState(), Blocks.AIR.getDefaultState());
+    }
+
+    private static void fallCheck() {
+        int water = 0;
+        for (BlockPos pos : BlockPos.getAllInBox(fallTop.add(-3, -5, -3), fallTop.add(3, 0, 3))) {
+            if (world.getBlockState(pos).getMaterial() == Material.WATER) water++;
+        }
+        log("falling water left hanging when the engine takes the source above it: {} water blocks after phase 1 (0)", water);
     }
 
     /**

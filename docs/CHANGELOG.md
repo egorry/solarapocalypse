@@ -10,7 +10,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Block-breaking effects: players near the apocalypse's block changes see and hear them as vanilla breaks a block,
   and liquids that evaporate fizz and smoke (`blocks.breakEffects`, `breakEffectsRadius` 16, `breakEffectsPerTick` 8).
 - Simple Difficulty integration (optional): the sun and its heat raise the temperature there
-  (`phase_n.sunTemperature`, `phase_n.backgroundTemperature`).
+  (`phase_n.sunTemperature`, `phase_n.backgroundTemperature`), each with a global switch
+  (`entities.simpleDifficultySunTemperature`, `entities.simpleDifficultyBackgroundTemperature`).
 - Burning liquids: flammable liquids (BuildCraft oil and fuels) catch the sun's vanilla fire, which burns them away.
 - `performance.statusLogSeconds` (0 = off): a verbose debug log, the `/solar status` lines written to the log every
   that many seconds while a phase runs, per affected dimension.
@@ -139,6 +140,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   splash), not each one crossed.
 - An `evaporate` entry naming a still liquid (`minecraft:water`) takes its flowing form too.
 ### Fixed
+- Cubic Chunks: exploring fast over a sea could leave its water standing under the drained top cube at the edge of
+  view: updating cubes before sending used up the engine's budget for the tick.
+- Falling water left hanging in the air when the apocalypse took the water above it now drains away.
 - Cubic Chunks: after a teleport, the lower part of a sea deeper than 16 blocks could stay for minutes before draining.
 - Break effects all showed at one spot in each cube (the last block changed) instead of at each block.
 - Cubic Chunks: terrain updated before players get it often arrived unchanged, as the sky above a new surface was not

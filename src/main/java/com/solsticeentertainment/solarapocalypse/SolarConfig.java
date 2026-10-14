@@ -102,6 +102,7 @@ public final class SolarConfig {
     public static FireResistance fireResistance;
     public static int backgroundMinSkyLight;
     public static Set<String> entityBlacklist;
+    public static boolean simpleDifficultySunTemperature, simpleDifficultyBackgroundTemperature;
     // performance
     public static double tickBudgetMs;
     public static double freeTickShare;
@@ -242,9 +243,13 @@ public final class SolarConfig {
                 "openings), day and night. Sealed rooms and caves without sky light are safe.");
         entityBlacklist = new HashSet<>(Arrays.asList(c.getStringList("blacklist", cat, new String[0],
                 "Entity ids that never take sun damage, e.g. minecraft:villager_golem.")));
+        simpleDifficultySunTemperature = c.getBoolean("simpleDifficultySunTemperature", cat, true,
+                "With Simple Difficulty: the phases' sunTemperature applies (false: never, whatever the phases say).");
+        simpleDifficultyBackgroundTemperature = c.getBoolean("simpleDifficultyBackgroundTemperature", cat, true,
+                "With Simple Difficulty: the phases' backgroundTemperature applies (false: never, whatever the phases say).");
 
         cat = "performance";
-        tickBudgetMs = c.get(cat, "tickBudgetMs", 4.0, "At most this many milliseconds per server tick are spent changing blocks.").getDouble();
+        tickBudgetMs = c.get(cat, "tickBudgetMs", 4.0, "At most this many milliseconds per server tick are spent changing blocks (updateBeforeSending's work not counted).").getDouble();
         freeTickShare = c.get(cat, "freeTickShare", 0.5,
                 "...and at most this share of the time left in a 50 ms tick by everything else (average of the last 100 ticks),\n" +
                 "so a busy server slows the apocalypse down instead of lagging. At least 0.5 ms per tick always runs.").getDouble();
@@ -259,8 +264,9 @@ public final class SolarConfig {
                 "Block changes per server tick during that boost (0 = no limit).");
         updateBeforeSending = c.getBoolean("updateBeforeSending", cat, true,
                 "Cubic Chunks: bring each cube up to date the moment it is generated or loaded, before players are sent it, so\n" +
-                "exploring never shows terrain changing (within the time budget above; cubes past it change in view). Off: the\n" +
-                "engine's queue does it a moment later, in view. Uses the mod's one small patch to Cubic Chunks (no other mod needed).");
+                "exploring never shows terrain changing (a draining sea's lower cubes follow on the next tick). Off: the\n" +
+                "engine's queue does it a moment later, in view. Uses the mod's one small patch to Cubic Chunks (no other mod needed).\n" +
+                "Its work runs as cubes generate or load, outside tickBudgetMs and maxBlockChangesPerTick (clients are sent nothing for it).");
         statusLogSeconds = c.getInt("statusLogSeconds", cat, 0, 0, 86400,
                 "Verbose debug log: every this many seconds while a phase runs, the /solar status lines go to the log for each\n" +
                 "affected dimension (at its spawn point). Its slowest tick then counts from the last logged status. 0 = off.");
