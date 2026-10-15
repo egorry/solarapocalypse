@@ -22,10 +22,12 @@ automatically) has the working rules; this file points at everything else. Curre
 - Package root: mod wiring (`SolarApocalypse`), config (`SolarConfig`), time (`ApocalypseClock`, `Timeline`), block
   rules and their evaluation (`BlockRules`, `BlockChanges`, `SurfaceRecord`), sun, heat and fire (`Sky`, `SunDamage`, `SolarFire`), the vitrified sand block (`VitrifiedSand`),
   phase announcements and the network channel (`Announcer`), `/solar` (`SolarCommand`). No Cubic Chunks classes here.
-- `client/`: client-only rendering (the phase splash, the vitrified sand item model); never loaded on a dedicated server.
+- `client/`: client-only rendering and sound (the phase splash, the sun's size, phase sounds as music, the vitrified sand
+  item model); never loaded on a dedicated server.
 - `cc/`: everything that touches Cubic Chunks or CubicWorldGen classes; only loaded when they are installed.
 - `core/`: the Forge coremod (`SolarCore`): adds one call to Cubic Chunks' `Cube.trackSurface` (only when it is
-  installed). Loaded before the game: it uses no game or mod classes.
+  installed) and one to Minecraft's sky drawing (the sun's size, clients). Loaded before the game: it uses no game or
+  mod classes.
 - `debug/`: dev-only checks run by `scripts/probe_server.sh` (probe, self-test, bench).
 - `src/test/`: unit tests.
 

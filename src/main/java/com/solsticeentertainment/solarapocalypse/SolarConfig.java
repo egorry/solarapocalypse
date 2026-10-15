@@ -1,5 +1,6 @@
 package com.solsticeentertainment.solarapocalypse;
 
+import net.minecraft.util.math.MathHelper;
 import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
@@ -116,6 +117,31 @@ public final class SolarConfig {
     public static int splashTitleColor, splashFlickerColor, splashMessageColor;
     public static int splashFadeInTicks, splashStayTicks, splashFadeOutTicks;
     public static String splashTitleFont, splashMessageFont;
+    public static boolean soundAsMusic;
+    public static int musicFadeOutTicks;
+    // sun
+    public static boolean sunGrow;
+    public static double sunMaxSize;
+
+    /**
+     * Presets (the user, turns 29 and 30): whole config files with other defaults, written next to the main config as
+     * "solarapocalypse - <title>.cfg" and kept up to date like it (new keys get the preset's defaults; values changed in
+     * it stay). The mod never loads one: a player who wants it renames it to solarapocalypse.cfg. SOLAR is the main
+     * config's own defaults.
+     */
+    public enum Preset {
+        SOLAR(""), ICE("Ice Apocalypse");
+
+        public final String title;
+
+        Preset(String title) {
+            this.title = title;
+        }
+    }
+
+    /** Whose defaults load() fills in missing keys with. */
+    private static Preset defaults = Preset.SOLAR;
+    private static final String ABOUT = "about";
 
     private SolarConfig() {}
 
@@ -124,14 +150,42 @@ public final class SolarConfig {
         load();
     }
 
+    /** Writes each preset's file next to a config file, or brings it up to date. Before init: it fills every field in. */
+    public static void writePresets(File main) {
+        for (Preset preset : Preset.values()) {
+            if (preset == Preset.SOLAR) continue;
+            defaults = preset;
+            File presetFile = new File(main.getParentFile(), Tags.MOD_ID + " - " + preset.title + ".cfg");
+            try {
+                load(presetFile);
+            } catch (RuntimeException e) { // a file the mod never loads must not stop the game
+                SolarApocalypse.LOGGER.warn("Could not write the preset {}", presetFile, e);
+            } finally {
+                defaults = Preset.SOLAR;
+            }
+        }
+    }
+
     public static File file() {
         return file;
     }
 
     public static void load() {
-        Tracked c = new Tracked(file);
+        load(file);
+    }
+
+    private static void load(File from) {
+        Tracked c = new Tracked(from);
         numberedCategoriesInOrder(c);
         c.load();
+        // what a preset's file is; gone from the main config (a preset renamed to it is no longer one)
+        if (defaults != Preset.SOLAR) {
+            c.setCategoryComment(ABOUT, "The " + defaults.title + " preset. The mod never loads this file: to play it, rename it to\n" +
+                    Tags.MOD_ID + ".cfg (keep your own under another name). The mod writes it again if it is missing, adds new\n" +
+                    "settings to it as it does to its main config, and keeps your changes in it.");
+        } else if (c.hasCategory(ABOUT)) {
+            c.removeCategory(c.getCategory(ABOUT));
+        }
 
         String cat = "clock";
         c.setCategoryComment(cat, "How apocalypse time advances. 1 day = 24000 progress units.");
@@ -167,7 +221,8 @@ public final class SolarConfig {
         c.setCategoryComment(cat, "Where the apocalypse runs and how the sun's reach is measured.");
         dimensions = new HashSet<>();
         for (int d : c.get(cat, "dimensions", new int[]{0}, "Dimension ids the apocalypse affects.").getIntList()) dimensions.add(d);
-        depthReference = enumValue(c, cat, "depthReference", DepthReference.SURFACE,
+        // the Ice Apocalypse erodes nothing: TOP_Y spares the engine the terrain surface and looks at deeper layers it never needs
+        depthReference = enumValue(c, cat, "depthReference", defaults == Preset.ICE ? DepthReference.TOP_Y : DepthReference.SURFACE,
                 "What phase depths count down from (layer 1 is the reference itself, layer 2 the block below, ...):\n" +
                 "SURFACE: each column's own terrain surface, so every column loses the same thickness at any altitude. Taken\n" +
                 "from the generator in CubicWorldGen worlds, otherwise recorded when the column is first seen (ignoring trees).\n" +
@@ -235,7 +290,9 @@ public final class SolarConfig {
         cat = "entities";
         c.setCategoryComment(cat, "Sun damage. Amounts per phase are in the phase sections.");
         damageIntervalTicks = c.getInt("intervalTicks", cat, 20, 1, 72000, "Damage is dealt every this many ticks.");
-        sunNeedsDaytime = c.getBoolean("sunNeedsDaytime", cat, true, "Direct sun damage only while the world counts it as day.");
+        // the Ice Apocalypse's cold is the open sky's, day and night
+        sunNeedsDaytime = c.getBoolean("sunNeedsDaytime", cat, defaults != Preset.ICE,
+                "Direct sun damage (and phase_n.sunTemperature) only while the world counts it as day.");
         sunAtNightFromPhase = c.getInt("sunAtNightFromPhase", cat, 7, 0, 1000,
                 "With sunNeedsDaytime: from this phase on, direct sun damage happens at night too. 0 = never.");
         affectPlayers = c.getBoolean("affectPlayers", cat, true, "Players take damage (never in creative or spectator).");
@@ -294,8 +351,8 @@ public final class SolarConfig {
                 "affected dimension (at its spawn point). Its slowest tick then counts from the last logged status. 0 = off.");
 
         cat = "splash";
-        c.setCategoryComment(cat, "The splash title of a phase (phase_n.splash) on every player's screen. Text in a phase's message\n" +
-                "and splash can use & formatting codes (&c red, &l bold...).");
+        c.setCategoryComment(cat, "The splash title of a phase (phase_n.splash) on every player's screen, and how phase sounds play.\n" +
+                "Text in a phase's message and splash can use & formatting codes (&c red, &l bold...).");
         splashTitleColor = color(c, cat, "titleColor", "FF6A00", "Title colour (hex RGB).");
         splashFlickerColor = color(c, cat, "flickerColor", "FFC21F", "The title flickers between titleColor and this (same value: no flicker).");
         splashMessageColor = color(c, cat, "messageColor", "FFE0A0", "Colour of the phase's message under the title.");
@@ -306,6 +363,24 @@ public final class SolarConfig {
                 "Client: font texture of the title (a 16 x 16 character grid like minecraft:textures/font/ascii.png). Minecraft's\n" +
                 "own font while the texture is missing or this is empty.").trim();
         splashMessageFont = c.getString("messageFont", cat, "", "Client: font texture of the message; empty = Minecraft's own.").trim();
+        soundAsMusic = c.getBoolean("soundAsMusic", cat, false,
+                "Phase sounds (phase_n.sound) play as music: in the music category (its volume slider: at 0 a player hears none),\n" +
+                "heard the same anywhere and streamed, so that many sounds at once (fire crackling) cannot cut them short; vanilla\n" +
+                "music fades out as one starts (musicFadeOutTicks) and none starts until it has ended. false: played as a sound\n" +
+                "effect at the player (master category), which other sounds can cut short.");
+        musicFadeOutTicks = c.getInt("musicFadeOutTicks", cat, 10, 0, 200,
+                "Client: ticks vanilla music takes to fade out when a phase sound starts as music (20 = 1 s; 0 = it stops at once).");
+
+        cat = "sun";
+        c.setCategoryComment(cat, "How big players see the sun (looks only: the sun's effects do not depend on it).");
+        sunGrow = c.getBoolean("grow", cat, false,
+                "The sun grows over the phases in the apocalypse's dimensions, from its vanilla size to maxSize at the end of the\n" +
+                "last phase: each phase adds an equal step over its length, or over 10 seconds from its start with one phase\n" +
+                "(phases.count = 1) or in a phase whose days is 0. Clients draw the vanilla sky's sun bigger; a mod that draws\n" +
+                "a sky of its own (or replaces Minecraft's sky drawing) keeps its own sun.");
+        sunMaxSize = MathHelper.clamp(c.get(cat, "maxSize", 3.0,
+                "The sun's size by the end of the last phase, times the vanilla sun's (0.1 to 10). Above about 3, players with a\n" +
+                "render distance of 4 to 6 may see the edge of its glow cut off.", 0.1, 10.0).getDouble(), 0.1, 10.0);
 
         phases = new Phase[count];
         for (int i = 0; i < count; i++) phases[i] = loadPhase(c, i + 1);
@@ -453,10 +528,12 @@ public final class SolarConfig {
         p.backgroundFireSeconds = c.getInt("backgroundFireSeconds", cat, 0, 0, 3600, "Seconds background heat sets mobs on fire.");
         p.sunTemperature = c.get(cat, "sunTemperature", d.sunTemperature,
                 "With Simple Difficulty: degrees added to the temperature in direct sunlight (as sunDamage: by day unless the sun\n" +
-                "burns at night). Its scale: 11-14 normal, 15-19 hot, 20-25 burning; a desert adds a few.").getDouble();
+                "burns at night); negative degrees cool it instead. Its scale, from 12 before anything else: 0-5 freezing (2 or\n" +
+                "less hurts), 6-10 cold, 11-14 normal, 15-19 hot, 20-25 burning (23 or more hurts); a desert adds a few,\n" +
+                "snowfall takes 10.").getDouble();
         p.backgroundTemperature = c.get(cat, "backgroundTemperature", d.backgroundTemperature,
                 "With Simple Difficulty: degrees added wherever background heat reaches (as backgroundDamage), on top of\n" +
-                "sunTemperature in the sun.").getDouble();
+                "sunTemperature in the sun; negative degrees cool it instead (the scale: see sunTemperature).").getDouble();
         p.message = c.getString("message", cat, "Phase " + n,
                 "Chat message to every player when the phase starts; empty = none. (Defaults are placeholders for testing.)");
         p.sound = c.getString("sound", cat, "minecraft:entity.lightning.thunder",
@@ -473,6 +550,10 @@ public final class SolarConfig {
      * next, the ground degrades (dirt, gravel, sand, vitrified sand; stone cracks), then erosion: a few layers at one a day, and
      * from phase 11 infinite at 200 layers a day. Phases above 11 are empty. Out of the sun (backgroundConvert) each
      * phase's conversions follow three phases later (the user's choice, turn 21).
+     * The Ice Apocalypse preset (the user, turns 29 and 30): the same eleven phases, without erosion, evaporation, fire or
+     * sun damage. Water freezes over (some in phase 1, all from phase 2) and the ice thickens as the conversions reach
+     * deeper (convertDepth), small plants turn to snow, vines, leaves and gourds die, lava sets to obsidian and
+     * cobblestone, ice packs hard; Simple Difficulty degrees go down instead of up. Shaded ground follows three phases later.
      */
     private static final class Defaults {
         private static final double[] DAYS = {1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 0};
@@ -505,6 +586,21 @@ public final class SolarConfig {
         // water from phase 3, other liquids from 4, lava from 6
         private static final String[][] EVAPORATE = {{}, {}, {"material:water"}, {"*", "!material:lava"}, {}, {"material:lava"}};
         static final int COUNT = DAYS.length;
+        // Ice Apocalypse: water, then the ice under it, freezes a layer deeper as convertDepth grows (8 by phase 11)
+        private static final int[] ICE_CONVERT_DEPTH = {1, 1, 1, 1, 2, 2, 3, 4, 5, 6, 8};
+        // Simple Difficulty degrees, the Solar ones turned negative (its normal is 11-14, from 12): under the open sky cold
+        // from phase 2, freezing from phase 7, hurting (2 or less) from phase 8; in the shade cold from phase 7
+        private static final double[] ICE_SUN_TEMPERATURE = {-1, -2, -3, -3, -4, -4, -5, -6, -7, -8, -9};
+        private static final double[] ICE_BACKGROUND_TEMPERATURE = {0, 0, -1, -1, -2, -2, -3, -4, -5, -6, -7};
+        private static final String SMALL_PLANTS = "material:plants, !minecraft:waterlily"; // lily pads would float as snow
+        // fluid:water and fluid:lava take the flowing blocks too; no packed ice: it would darken the sea under it
+        private static final String[][] ICE_CONVERT = {
+                {"fluid:water -> minecraft:ice @ 30%", "minecraft:farmland -> minecraft:dirt", SMALL_PLANTS + " -> minecraft:snow_layer @ 30%"},
+                {"fluid:water -> minecraft:ice", SMALL_PLANTS + " -> minecraft:snow_layer", "minecraft:waterlily -> air", "material:vine -> air @ 50%"},
+                {"material:vine -> air", "material:cactus -> air", "material:gourd -> air", "material:leaves -> air @ 30%"},
+                {"material:leaves -> air"},
+                {"minecraft:lava[level=0], minecraft:flowing_lava[level=0] -> minecraft:obsidian", "fluid:lava -> minecraft:cobblestone"},
+                {}, {}, {}, {}, {}, {}};
 
         double days;
         String depth = "0";
@@ -522,6 +618,16 @@ public final class SolarConfig {
             Defaults d = new Defaults();
             if (n < 1 || n > COUNT) return d;
             int i = n - 1;
+            if (defaults == Preset.ICE) {
+                d.days = DAYS[i];
+                d.convertDepth = ICE_CONVERT_DEPTH[i];
+                d.convert = ICE_CONVERT[i];
+                // sky light passes 4 blocks into water: a water rule here would freeze 4 layers of every sea at once
+                if (i >= 3) d.backgroundConvert = Arrays.stream(ICE_CONVERT[i - 3]).filter(r -> !r.startsWith("fluid:water")).toArray(String[]::new);
+                d.sunTemperature = ICE_SUN_TEMPERATURE[i];
+                d.backgroundTemperature = ICE_BACKGROUND_TEMPERATURE[i];
+                return d;
+            }
             d.days = DAYS[i];
             d.depth = DEPTH[i];
             d.speed = i >= 6 ? Speed.RATE : Speed.PHASE;

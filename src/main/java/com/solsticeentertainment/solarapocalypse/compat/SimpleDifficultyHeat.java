@@ -13,10 +13,11 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 /**
- * Simple Difficulty (soft dependency, loaded only with it): the sun warms the temperature there, as it damages mobs:
- * phase_n.sunTemperature in direct sunlight (as sunDamage: by day unless the phase has the sun at night) plus
- * phase_n.backgroundTemperature wherever background heat reaches (as backgroundDamage). Each has a global switch
- * (entities.simpleDifficultySunTemperature, simpleDifficultyBackgroundTemperature).
+ * Simple Difficulty (soft dependency, loaded only with it): the apocalypse moves the temperature there, as it damages
+ * mobs: phase_n.sunTemperature degrees in direct sunlight (as sunDamage: by day unless the phase has the sun at night)
+ * plus phase_n.backgroundTemperature wherever background heat reaches (as backgroundDamage). Positive degrees warm,
+ * negative ones cool (the Ice Apocalypse preset). Each has a global switch (entities.simpleDifficultySunTemperature,
+ * simpleDifficultyBackgroundTemperature).
  */
 public final class SimpleDifficultyHeat implements ITemperatureModifier {
 
@@ -28,7 +29,10 @@ public final class SimpleDifficultyHeat implements ITemperatureModifier {
         return TemperatureRegistry.modifiers.containsKey(Tags.MOD_ID + ":sun");
     }
 
-    /** Degrees the apocalypse adds at a position (Simple Difficulty's scale: 11-14 normal, 15-19 hot, 20-25 burning). */
+    /**
+     * Degrees the apocalypse adds at a position, negative for cold (Simple Difficulty's scale, kept to 0-25: 0-5 freezing,
+     * 6-10 cold, 11-14 normal, 15-19 hot, 20-25 burning).
+     */
     public static float heat(World world, BlockPos pos) {
         if (world.isRemote || !SolarApocalypse.isActive(world)) return 0;
         int phase = SolarApocalypse.timeline().phaseAt(ApocalypseClock.progress());

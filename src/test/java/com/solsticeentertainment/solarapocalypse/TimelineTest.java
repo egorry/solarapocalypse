@@ -45,6 +45,29 @@ class TimelineTest {
     }
 
     @Test
+    void sunGrowsAStepPerPhase() {
+        SolarConfig.scaling = SolarConfig.Scaling.CONSTANT;
+        SolarConfig.baseDays = 1;
+        SolarConfig.clockMode = SolarConfig.ClockMode.SUN;
+        long day = Timeline.DAY;
+        Timeline t = new Timeline(1, new SolarConfig.Phase[]{
+                phase(2, 0, SolarConfig.Speed.PHASE, 0),   // days 1-3: step 1 of 2 over its 2 days
+                phase(0, 0, SolarConfig.Speed.PHASE, 0)}); // days 3-4 (baseDays): days 0, so its step takes 10 s
+        assertEquals(0, t.sunGrowth(day - 1), 1e-9);
+        assertEquals(0.25, t.sunGrowth(2 * day), 1e-9);
+        assertEquals(0.5, t.sunGrowth(3 * day), 1e-9);
+        assertEquals(0.75, t.sunGrowth(3 * day + 100), 1e-9);
+        assertEquals(1, t.sunGrowth(3 * day + 200), 1e-9);
+        assertEquals(1, t.sunGrowth(50 * day), 1e-9);
+        Timeline one = new Timeline(0, new SolarConfig.Phase[]{phase(5, 0, SolarConfig.Speed.PHASE, 0)});
+        assertEquals(0.5, one.sunGrowth(100), 1e-9); // one phase: 10 s whatever its days
+        SolarConfig.clockMode = SolarConfig.ClockMode.TICKS;
+        SolarConfig.ticksPerDay = 12000; // the clock counts 2 units a tick: 10 s is 400 units
+        assertEquals(0.5, new Timeline(0, new SolarConfig.Phase[]{phase(5, 0, SolarConfig.Speed.PHASE, 0)}).sunGrowth(200), 1e-9);
+        SolarConfig.clockMode = SolarConfig.ClockMode.SUN;
+    }
+
+    @Test
     void depthAndReachAgree() {
         SolarConfig.scaling = SolarConfig.Scaling.CONSTANT;
         SolarConfig.baseDays = 1;

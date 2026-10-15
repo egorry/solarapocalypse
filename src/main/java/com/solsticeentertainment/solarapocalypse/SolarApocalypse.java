@@ -68,7 +68,8 @@ public class SolarApocalypse {
         File config = event.getSuggestedConfigurationFile();
         // the self-test and the bench run on their own fixed configs (scripts/), never on the one being edited
         if (System.getProperty("solarapocalypse.selftest") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-selftest.cfg");
-        if (System.getProperty("solarapocalypse.bench") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-bench.cfg");
+        else if (System.getProperty("solarapocalypse.bench") != null) config = new File(config.getParentFile(), Tags.MOD_ID + "-bench.cfg");
+        else SolarConfig.writePresets(config); // the presets sit next to the main config (not the self-test's or bench's)
         SolarConfig.init(config);
         timeline = new Timeline(SolarConfig.safeDays, SolarConfig.phases);
         MinecraftForge.EVENT_BUS.register(SolarApocalypse.class);
@@ -81,6 +82,7 @@ public class SolarApocalypse {
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SplashOverlay.class);
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.VitrifiedSandModel.class);
         if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.SolarFireModel.class);
+        if (event.getSide().isClient()) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.Stinger.class);
         if (event.getSide().isClient() && CUBIC_CHUNKS) MinecraftForge.EVENT_BUS.register(com.solsticeentertainment.solarapocalypse.client.StaleTileEntities.class);
         SurfaceRecord.register();
         if (CUBIC_CHUNKS) CubeEngine.register();

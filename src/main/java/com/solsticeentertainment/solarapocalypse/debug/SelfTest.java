@@ -112,6 +112,7 @@ public final class SelfTest {
                 log("depth reference {}, CubicWorldGen model {}, phases start {} end {}", SolarConfig.depthReference,
                         CubicSky.model(world) != null, t.firstStart(), t.end(t.phaseCount() - 1));
                 configCheck();
+                presetCheck();
                 modelCheck();
                 rulesCheck();
                 settledRules();
@@ -817,6 +818,41 @@ public final class SelfTest {
         } finally {
             SolarConfig.init(fixture); // back to the fixture
             test.delete();
+        }
+    }
+
+    /**
+     * The Ice Apocalypse preset: written next to a config (here a throwaway folder), with its note; loaded as a player who
+     * renamed it would, it is a whole config of its own (no erosion, evaporation, fire or sun damage; water to ice; cold
+     * degrees; the sun at night too), and the note goes once it is the main config.
+     */
+    private static void presetCheck() {
+        java.io.File fixture = SolarConfig.file(), dir = new java.io.File(fixture.getParentFile(), "solarapocalypse-presetcheck");
+        java.io.File ice = new java.io.File(dir, "solarapocalypse - Ice Apocalypse.cfg");
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new java.io.IOException("cannot make " + dir);
+            SolarConfig.writePresets(new java.io.File(dir, "solarapocalypse.cfg"));
+            String text = new String(java.nio.file.Files.readAllBytes(ice.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            SolarConfig.init(ice);
+            boolean calm = true;
+            for (SolarConfig.Phase p : SolarConfig.phases) {
+                calm &= p.destroy.length == 0 && p.evaporate.length == 0 && p.ignitePercent == 0 && p.sunDamage == 0 && p.backgroundDamage == 0;
+            }
+            BlockRules rules = BlockRules.compile(SolarConfig.phases, 0);
+            String loaded = new String(java.nio.file.Files.readAllBytes(ice.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            log("Ice Apocalypse preset: written {} with its note {} (true, true); loaded as the main config: {} phases (11), no"
+                            + " erosion, evaporation, fire or sun damage {} (true), phase 2 freezes still and flowing water {} {} (true, true),"
+                            + " phase 1 sunTemperature {} and phase 11 {} (-1.0, -9.0), sunNeedsDaytime {} (false), depthReference {} (TOP_Y),"
+                            + " the note gone {} (true)", ice.isFile(), text.contains("about {"), SolarConfig.phases.length, calm,
+                    rules.convert(1, Blocks.WATER.getDefaultState()) != null, rules.convert(1, Blocks.FLOWING_WATER.getDefaultState()) != null,
+                    SolarConfig.phases[0].sunTemperature, SolarConfig.phases[10].sunTemperature, SolarConfig.sunNeedsDaytime,
+                    SolarConfig.depthReference, !loaded.contains("about {"));
+        } catch (java.io.IOException | RuntimeException e) {
+            log("preset check failed: {}", e);
+        } finally {
+            SolarConfig.init(fixture); // back to the fixture
+            ice.delete();
+            dir.delete();
         }
     }
 

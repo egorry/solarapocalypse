@@ -28,6 +28,9 @@ public final class Timeline {
     private final Speed[] speed;
     private final long[] convertStart; // conversions start once the phase's destruction is done
     private final long[] convertSpread;
+    private final long[] sunGrows;     // sun.grow: how long the phase's step of the sun's growth takes
+    /** sun.grow's quick step, 10 seconds: progress units the clock counts in 200 ticks. */
+    private final long quickSun;
 
     public Timeline(double safeDays, Phase[] phases) {
         int n = phases.length;
@@ -41,6 +44,8 @@ public final class Timeline {
         speed = new Speed[n];
         convertStart = new long[n];
         convertSpread = new long[n];
+        sunGrows = new long[n];
+        quickSun = SolarConfig.clockMode == SolarConfig.ClockMode.TICKS ? 200 * DAY / SolarConfig.ticksPerDay : 200;
         long t = days(safeDays);
         double[] line = new double[2];
         int ref = SolarConfig.depthReference == SolarConfig.DepthReference.TOP_Y ? TOP : SURFACE;
@@ -87,6 +92,8 @@ public final class Timeline {
             // this line continues from where this one got to
             if (infinite && i < n - 1) toDepth[ref][i] = depth + rate[i] * (end[i] - t);
             line[ref] = infinite ? depth + rate[i] * (end[i] - t) : target;
+            // the user's sun.grow (turn 28): one phase, or a phase whose days is 0, grows the sun in 10 seconds
+            sunGrows[i] = n == 1 || p.days <= 0 ? quickSun : end[i] - t;
             t = end[i];
         }
     }
@@ -189,6 +196,17 @@ public final class Timeline {
             return Math.max(t, start[i]);
         }
         return NEVER;
+    }
+
+    /**
+     * How far the sun has grown at progress p (sun.grow), 0 (vanilla, before the first phase) to 1 (sun.maxSize): each phase
+     * adds an equal step over its length, or over 10 seconds from its start with one phase or a phase whose days is 0.
+     */
+    public double sunGrowth(long p) {
+        int i = phaseAt(p);
+        if (i < 0) return 0;
+        double done = sunGrows[i] <= 0 ? 1 : Math.min(1, (p - start[i]) / (double) sunGrows[i]);
+        return (i + done) / start.length;
     }
 
     public long firstStart() {

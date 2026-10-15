@@ -4,6 +4,16 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Added
+- An Ice Apocalypse preset: `config/solarapocalypse - Ice Apocalypse.cfg` is written next to the config (and kept up
+  to date with new settings) but never loaded; rename it to `solarapocalypse.cfg` to play it. Water freezes over and
+  the ice thickens phase by phase, plants turn to snow, leaves die, lava sets; Simple Difficulty turns cold instead of
+  hot; no erosion, evaporation, fire or sun damage. A snow system for it is planned.
+- Simple Difficulty: negative `sunTemperature` and `backgroundTemperature` cool (the comments say so now).
+- `sun.grow` (default off) and `sun.maxSize` (3): the sun grows over the phases to that size, a step a phase over its
+  length (10 seconds with one phase or a phase whose `days` is 0). Clients draw the vanilla sky's sun bigger.
+- `splash.soundAsMusic` (default off) and `splash.musicFadeOutTicks` (10): phase sounds play as music (the music
+  slider), streamed so that other sounds such as fire cannot cut them short; vanilla music fades out and waits until
+  the phase sound has ended.
 - Cubic Chunks: terrain is brought up to date before it reaches players, so exploring never shows it changing
   (`performance.updateBeforeSending`, default on). For this the mod is also a small Forge coremod (no mixin mod or other
   dependency needed).
@@ -106,6 +116,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Depth-staged conversions: `depth=3` or `depth=2-3` on a convert rule limits it to those layers below the surface, so
   blocks step through stages as erosion lowers the surface (grass, path, dirt, gravel, sand, glass layer by layer).
 ### Changed
+- Water that a conversion turns into a block (ice) no longer fizzes and smokes with `blocks.breakEffects`; lava that
+  sets still does.
+- The mod's coremod now runs after Forge's deobfuscation (`@SortingIndex(1001)`), for its new patch of the sky drawing.
 - Fire an earlier phase lit comes back at once after night (`blocks.nightDousesFire`) or rain, instead of at the next
   phase's own moment for the spot.
 - Vitrified sand is opaque: more sand than glass, no light or sight through it (same texture).

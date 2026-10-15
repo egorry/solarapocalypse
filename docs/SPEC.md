@@ -68,6 +68,43 @@ The config file is rewritten on every load: sections in order (phase_2 before ph
 - Splash fonts are client textures in the layout of `minecraft:textures/font/ascii.png` (`splash.titleFont`, default
   `solarapocalypse:textures/font/splash.png`, not shipped yet; `splash.messageFont`); Minecraft's font while missing. The
   title flickers between `splash.titleColor` and `splash.flickerColor`.
+- Phase sounds as music (`splash.soundAsMusic`, default off until the user's stingers exist; turn 30, the foundation of
+  the user's turn 27 stingers): the server sends the phase's sound name to the client (`Announcer.PhaseSound`), which
+  plays it (`client/Stinger`) in the music category (the music slider sets its volume; at 0 a player hears none),
+  without position, and always streamed, whatever its sounds.json entry says: streamed sounds have the sound system's 4
+  streaming channels, which other sounds never take, so many fires crackling (28 normal channels) cannot cut it short.
+  Vanilla music playing fades out over `splash.musicFadeOutTicks` (10, this client's setting; 0 stops it at once), and
+  no music-category sound starts while the stinger plays (Minecraft then waits its usual pause before the next track);
+  jukeboxes (records) play on. A name the client cannot play (no sounds.json entry, or its files missing) plays
+  nothing and leaves the music. Off: the sound plays as before, a master-category effect at the player.
+- Sun size (`sun.grow`, default off; `sun.maxSize` 3; the user's turn 28 item, made in turn 30): the sun grows from its
+  vanilla size to `maxSize` at the end of the last phase, in the apocalypse's dimensions. Each phase adds an equal step
+  over its length (start to end, `Timeline.sunGrowth`); with one phase, or in a phase whose `days` is 0, the step takes
+  10 seconds from the phase's start (200 progress units, the clock's count for 200 ticks). The server sends each player
+  the size about once a second when it changed visibly (`Announcer.SunSize`), and at once on joining or changing
+  dimension; the client spreads each step over a second (`client/SkyHook`). The coremod (`core/SolarCore`, now sorted
+  after Forge's deobfuscation, `@SortingIndex(1001)`, so it sees Minecraft's SRG names in a pack) patches
+  `RenderGlobal.renderSky`: the sun's half-size (30 blocks at 100 away) passes through `SkyHook.sun`. Only the vanilla
+  sky drawing is changed: a dimension or mod with its own sky renderer keeps its own sun, and a mod that rewrote that
+  part of `renderSky` leaves the patch out with a warning. The texture is vanilla's 32-pixel `sun.png` (its bright square
+  is 8 pixels), drawn additively, so a big sun looks blocky unless a resource pack has a finer one; above size 3,
+  players with render distance 4-6 can see the edge of its glow cut off by the sky's far plane.
+- Presets (the user, turns 29 and 30: "one config file per preset, only the main one is loaded, the others are just
+  created adjacently"): at start the mod writes `config/solarapocalypse - Ice Apocalypse.cfg` next to the main config,
+  a whole config with the preset's defaults and an `about` note at the top; if it exists, it is brought up to date as
+  the main config is (keys added with the preset's defaults, values kept, unused keys dropped). It is never loaded: to
+  play it, a player renames it to `solarapocalypse.cfg`, which then drops the note. Not written by the self-test or the
+  bench. The Ice Apocalypse's defaults: the same eleven phases' days; no erosion, evaporation, fire or sun damage;
+  `fluid:water -> minecraft:ice` (30 % in phase 1, all from phase 2) with `convertDepth` 1, 1, 1, 1, 2, 2, 3, 4, 5, 6, 8,
+  so the ice grows a layer thicker per phase from phase 5 (top down; each block at its own moment over the phase);
+  farmland to dirt, small plants to snow layers (lily pads go), vines, cacti and gourds (phases 2-3), leaves (3-4),
+  lava sources to obsidian and other lava to cobblestone (phase 5); `backgroundConvert` the same three phases later,
+  without water (sky light passes 4 blocks into water, so a water rule there would freeze 4 layers of every sea at
+  once); Simple Difficulty degrees -1, -2, -3, -3, -4, -4, -5, -6, -7, -8, -9 and 0, 0, -1, -1, -2, -2, -3, -4, -5, -6,
+  -7; `entities.sunNeedsDaytime` false (the open sky's cold, day and night); `world.depthReference` `TOP_Y` (nothing
+  erodes: the engine needs no terrain surface and does not look again at layers the conversions have not reached).
+  Freezing is by conversions (Claude's call, turn 30, which the user left open): an evaporation-like pass would not
+  work as evaporation does, which relies on the top block going.
 
 ## 3. Block effects
 Per block, using the rules active in the running phase (`phases.convertRuleMode` and `phases.destroyRuleMode`, each
@@ -168,6 +205,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
    (selectors as for blocks, plus `fluid:<name>` and `temperature<K` / `<=` / `>` / `>=` on the Forge fluid temperature,
    water 300 K, lava 1300 K; e.g. `material:water, !temperature<250` early and `temperature<250` later for cold liquids).
    A vanilla still liquid's name takes its flowing block too (`minecraft:water` takes `minecraft:flowing_water`, turn 27).
+   `fluid:` and `temperature` selectors work in `convert` lists too (`fluid:water -> minecraft:ice` takes still and
+   flowing water); there a still liquid's name takes only the still block.
    `evaporation.mode`: `INSTANT` clears whole bodies as their phase starts, cube by cube, `LAYERS` (the default; turn 26
    made it `INSTANT` and turn 27 back, the user's call) lowers a level from `evaporation.topY` (auto: sea level, or the CubicWorldGen
    preset's water level) at `layersPerDay`. With `blocks.blockPhysics`, liquids cannot form new sources once their
@@ -290,7 +329,8 @@ Per block, using the rules active in the running phase (`phases.convertRuleMode`
 - Break effects (`blocks.breakEffects`, default on; the user's turn 14 item, made in turn 23): players within
   `blocks.breakEffectsRadius` (16) of a change see and hear it as vanilla shows a broken block (event 2001: the old
   block's particles and break sound), and a liquid that goes fizzes and smokes as water poured in the Nether (event 1009
-  and large smoke). Nothing for air or fire. At most `blocks.breakEffectsPerTick` (8) per player per tick; the rest
+  and large smoke), as does lava that sets into a block; water a conversion turns into a block (ice) makes none (turn
+  30). Nothing for air or fire. At most `blocks.breakEffectsPerTick` (8) per player per tick; the rest
   change silently. Each player gets their own packets, so players farther away are sent nothing. The user's own
   breaking sounds will come later; this setting is then to default to off.
 - Fire: no vanilla fire while the gamerule `doFireTick` is false (it would neither spread nor burn out) and none on
@@ -524,8 +564,10 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   add up in the sun.
 - Simple Difficulty (soft dependency, turn 23; DESIGN.md's optional integration): a temperature modifier adds
   `phase_n.sunTemperature` degrees where the direct sun reaches (as `sunDamage`, by day while the sun needs daytime) and
-  `phase_n.backgroundTemperature` where background heat does (as `backgroundDamage`); both add up in the sun. Simple
-  Difficulty's scale: 11-14 normal, 15-19 hot, 20-25 burning. Defaults: sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0,
+  `phase_n.backgroundTemperature` where background heat does (as `backgroundDamage`); both add up in the sun. Negative
+  degrees cool (the Ice Apocalypse preset; turn 30: only the comments changed, the code never assumed a sign). Simple
+  Difficulty's scale, from 12 before any modifier, kept to 0-25: 0-5 freezing (hypothermia at 2 or less), 6-10 cold,
+  11-14 normal, 15-19 hot, 20-25 burning (hyperthermia at 23 or more); it adds its own (snowfall -10, night, altitude). Defaults: sun 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9 and heat 0,
   0, 1, 1, 2, 2, 3, 4, 5, 6, 7 over the eleven phases (Claude's; in the sun hot from phase 4 or so, burning from 8). Fire
   Resistance does not cool it (Simple Difficulty has its own means). Global switches (turn 28, the user's ask):
   `entities.simpleDifficultySunTemperature` and `entities.simpleDifficultyBackgroundTemperature` (default true).
@@ -548,7 +590,10 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   killed without a player hitting them drop no experience in vanilla anyway.
 
 ## 7. Checks
-- `./gradlew test`: `TimelineTest` (depth and reach agree, also across infinite phases with different rates; two
+- `./gradlew test`: `SolarCoreTest` (the sun patch on `RenderGlobal` as in the dev client, MCP names, and in a pack,
+  SRG names from RetroFuturaGradle's `srg_merged_minecraft.jar`: one call after the sun's 30.0F, the moon's 20.0F
+  untouched); `TimelineTest` (the sun's growth per phase, 10 s steps, `TICKS` mode; depth and reach agree, also across
+  infinite phases with different rates; two
   reference lines).
 - `bash scripts/probe_server.sh <tag> selftest`: fresh default-preset world, on its own config `scripts/selftest.cfg`
   (the earlier five-phase set: 3 safe days, phases of 3 days, erosion in phase 5, plus a sixth `TOP_Y` phase at 64
@@ -624,6 +669,11 @@ preset (3D noise): 98.6 % exact against generated ground, 0.3 % off by one, 1 % 
   blocks at Y -38 gone below both lines (TOP_Y engine line at -29, SURFACE line there at 16-18), the same with turn 16's
   code, so not from this turn (TODO, terrain cut ahead of the TOP_Y line); the check now prints the SURFACE line at each
   such block.
+  Turn 30 (2026-10-15, `-Pcompat_mods`, a random seed): every check as in turn 29 (line checks 0, evenness 97.2 %,
+  TOP_Y lag 0 / 0 / 0, sea cube 0 water, Simple Difficulty 4.0 / 1.0 / 0.0, Pollution 5825 and 622 units, then 13509
+  gas blocks to 0), with the coremod at sort index 1001 (Cubic Chunks patch in); the Ice Apocalypse preset written with
+  its note, loaded as the main config: 11 phases, none eroding, evaporating, burning or hurting, phase 2 freezing still
+  and flowing water, degrees -1 to -9, `sunNeedsDaytime` false, `TOP_Y`, the note gone.
 - In-game tests (the user): days skipped with `/time add`, then a bed to the next morning (from turn 9), so every phase
   up to the infinite one can be watched. From turn 13, phase 11's settings as the only phase, starting after a quarter
   day, so it runs as in play without skips (no backlog from a jump). Turn 14 ("Phase 11 SURFACE Test 5", 2048 changes

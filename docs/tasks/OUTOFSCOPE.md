@@ -27,6 +27,13 @@
   the user). Not patched.
 - **Announcements** of earlier phases: a player who was offline gets only the running phase's announcement on
   joining (once), not the ones they missed before it.
+- **The bigger sun** (`sun.grow`) is drawn only by Minecraft's own sky drawing: a dimension or mod with a sky renderer
+  of its own keeps its own sun; OptiFine is untested. Vanilla's sun texture is coarse (an 8-pixel bright square), so a
+  big sun looks blocky without a finer resource pack texture.
+- **Phase sounds as music** follow the music slider: a player with music at 0 hears no phase sound
+  (`splash.soundAsMusic`), as they chose no music.
+- **Ice Apocalypse preset, shaded water**: its shade lists have no water rule (sky light passes 4 blocks into water, so
+  one would freeze 4 layers of every sea at once), so water under overhangs and in caves open to the sky stays liquid.
 - **Entities without nearby players** stop ticking (vanilla), so burning does no damage there; sun damage still applies
   but hurt cooldowns do not run down.
 - **Trees in the SURFACE reference** (the user's turn 14 enquiry; their decision, turn 15: the bandaid is enough, and

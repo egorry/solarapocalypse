@@ -396,7 +396,7 @@ public final class BlockChanges {
         }
         if (!SolarConfig.dropItems && from.getBlock().canSustainLeaves(from, world, pos) && !to.getBlock().canSustainLeaves(to, world, pos))
             zapLeaves(world, pos);
-        if (SolarConfig.breakEffects && !unseen) effects(world, pos, from);
+        if (SolarConfig.breakEffects && !unseen) effects(world, pos, from, to);
         if (Pollution.on) Pollution.changed(world, pos, from, to, destroyed);
         changed++;
         if (SolarFire.is(to)) solarFireLit++;
@@ -412,10 +412,12 @@ public final class BlockChanges {
     /**
      * blocks.breakEffects: a change as vanilla shows a broken block (event 2001: its particles and break sound) or, for a
      * liquid, the fizz and smoke of water poured in the Nether, sent to the players within breakEffectsRadius, at most
-     * breakEffectsPerTick each per tick. Nothing for air or fire.
+     * breakEffectsPerTick each per tick. Nothing for air or fire, nor for water a conversion turns into a block (ice): only
+     * a liquid that goes, or lava that sets, fizzes.
      */
-    private static void effects(World world, BlockPos pos, IBlockState from) {
+    private static void effects(World world, BlockPos pos, IBlockState from, IBlockState into) {
         if (from.getMaterial() == Material.AIR || from.getMaterial() == Material.FIRE || world.playerEntities.isEmpty()) return;
+        if (from.getMaterial().isLiquid() && into.getMaterial() != Material.AIR && from.getMaterial() != Material.LAVA) return;
         if (world.getTotalWorldTime() != effectsTick) {
             effectsTick = world.getTotalWorldTime();
             effectsSent.clear();

@@ -2,6 +2,25 @@
 
 Action items, newest first. Player-facing details are in [../CHANGELOG.md](../CHANGELOG.md).
 
+## Turn 30 (2026-10-15)
+- The user's answers: Simple Difficulty switches kept ("Keep the SD system as it is"; the waiting item closed). Presets
+  are one file each, only the main one loaded, the others written next to it. No testing this turn: not a blocker
+  (the turn 29 retest carries over).
+- Bigger sun (Will do item 5, the user's turn 28 item, off by default): `sun.grow`, `sun.maxSize` 3; equal steps per
+  phase over its length, 10 s with one phase or `days` 0 (Claude's reading in TODO since turn 28). The server sends the
+  size; the coremod (now `@SortingIndex(1001)`) patches `RenderGlobal.renderSky`'s sun size to `client/SkyHook`.
+  `SolarCoreTest` checks the patch on the dev (MCP) and pack (SRG) class files; `TimelineTest` the growth.
+- Phase stingers' foundation (Will do items 1 and 2, kept off until the user's assets): `splash.soundAsMusic` plays a
+  phase sound as streamed music (fire can no longer cut it short), vanilla music fades over `musicFadeOutTicks` 10 and
+  is held until it ends (`client/Stinger`). The splash font already fell back while missing.
+- Ice Apocalypse (Will do item 6, in progress): the preset file `solarapocalypse - Ice Apocalypse.cfg` (written and
+  kept up to date next to the main config, never loaded; an `about` note), its defaults (freezing by conversions,
+  Claude's decision as asked: conversions are enough; plants to snow, lava sets, negative degrees, `sunNeedsDaytime`
+  false, `TOP_Y`), negative Simple Difficulty degrees (comments only: the code was sign-neutral; Simple Difficulty
+  clamps to 0-25 and hurts at 2 or less). Water that freezes no longer fizzes. The snow system: questions filed.
+- Research (five read-only agents, `research30` notes in RESEARCH.md section 13) and an adversarial review of the
+  diff; self-test passes with `-Pcompat_mods` (SPEC section 7, turn 30).
+
 ## Turn 29 (2026-10-15)
 - The user's retest (turn 28 list): the sea while exploring, hanging falls and the turn 27 sea test ticked; the
   optional flow sighting answered (below). Simple Difficulty switches not tested yet (carried).

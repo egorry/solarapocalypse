@@ -372,3 +372,37 @@ From `javap` on the jar in the user's current pack (`AdPother-1.12.2-1.2.25.0-bu
   passes 0 (the spot only). Its block classes have methods naming client-only classes (`ParticleManager`) without
   `@SideOnly`: on a dedicated server, reflection over them (`Class.getMethod`) throws `NoClassDefFoundError`, which
   stopped the server through the engine's flammability cache until it caught `LinkageError`.
+
+## 13. Turn 30 (sun size, stingers, Simple Difficulty cold, freezing, snow)
+Read-only research by five agents; scratch output in the system temp folder `claude/research30`.
+- Sun: `RenderGlobal.renderSky(FI)V` (SRG `func_174976_a`) sets the sun's half-size with `ldc 30.0f` just before
+  `getstatic SUN_TEXTURES` (`field_110928_i`), 4 instructions apart in both the MCP and SRG jars; six earlier `30.0F`
+  are anaglyph colours, the moon's is `20.0F`. Forge's only change to the method is the `IRenderHandler` early return.
+  A coremod without `@SortingIndex` sees notch names in a pack; above 1000 (after `FMLDeobfTweaker`) SRG names; in dev
+  MCP names. Mixin's transformer (Cubic Chunks bundles it) runs after every coremod either way; nothing patches `Cube`.
+  `sun.png` is 32 x 32 with an 8 x 8 bright square, drawn additively with nearest filtering; the sky's far plane is
+  32 x render distance, so a big sun's faint glow can clip at render distance 4-6 above size 3.
+- Sound: the sound system has 28 normal and 4 streaming channels (paulscode defaults; neither Minecraft nor Forge
+  changes them). A new sound takes the next channel in turn when all are busy, never a streaming one for a normal
+  sound, so only streamed sounds are safe from fire's crackle (`BlockFire.randomDisplayTick`, 1 in 24 per call over
+  ~1,334 random blocks a tick). Whether a sound streams comes from its sounds.json entry, read into `Sound`; a
+  `PositionedSound` can swap in a streaming copy in `createAccessor`. `isSoundPlaying` reads false until the sound
+  system starts the source (within ~20 ticks). Music (`MusicTicker`) is a plain `PositionedSoundRecord`; its volume
+  can only be changed through `SoundManager.sndSystem` (`field_148620_e`), with the source name from Forge's
+  `PlayStreamingSourceEvent` / `PlaySoundSourceEvent`; `PlaySoundEvent.setResultSound(null)` stops a play, after which
+  `MusicTicker` waits its usual delay (GAME 12000-24000 ticks).
+- Simple Difficulty (3613814): the target temperature starts at 12 and sums every modifier with no sign check
+  (its own snowfall is -10, wet -7, altitude and night negative); only the result is clamped to 0-25. Hypothermia
+  at 2 or less, hyperthermia at 23 or more, 0.5 damage every 50 ticks of the potion. A larger offset only makes the
+  temperature move faster.
+- Freezing: a sea column's surface is its top water block (opacity 3, as ice), so `water -> ice` keeps the surface
+  where it is and the water below stays layer 2: conversions thicken ice a layer per `convertDepth`. Evaporation's
+  `LAYERS` level relies on the top going (only blocks at the heightmap top count as exposed), which ice does not.
+  `snowy` grass is not stored (derived from the block above), so only snow on top makes grass look snowy. Sky light
+  passes 4 blocks into water (15, 12, 9, 6), which background conversions would count as lit.
+- Snow (design, not built): `snow_layer` has opacity 0 and does not block movement, so stacked full layers change no
+  heightmap, light, surface or ground; `minecraft:snow` (opacity 255) would. Vanilla's `BlockSnow.canPlaceBlockAt`: not
+  on ice, packed ice or barriers; only on a solid top face, leaves, or a full snow layer. The engine keeps no history
+  per block (only the saved per-column ground), so refilling dug snow is told apart from catching up only by whether
+  a player has been sent the cube.
+
